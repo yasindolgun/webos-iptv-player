@@ -68,6 +68,7 @@ export interface ListSearchQueryRequest {
   owner: string;
   sessionId: number;
   query: string;
+  limit?: number;
 }
 
 export interface ScopedSearchReleaseRequest {

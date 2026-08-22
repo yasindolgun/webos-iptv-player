@@ -1,6 +1,7 @@
 import { retainAppWorker, runAppWorkerTask } from './app-worker-client';
 import type { ListSearchIndexRequest } from './tasks';
 import { createLogger } from '../utils/logger';
+import { runInFrameSlices } from '../utils/frame-slices';
 
 const log = createLogger('ListSearchWorker');
 
@@ -16,9 +17,9 @@ export class WorkerListSearch<T> {
     private readonly fields: (item: T) => string[],
   ) {}
 
-  async query(source: T[], query: string): Promise<T[]> {
+  async query(source: T[], query: string, limit?: number): Promise<T[]> {
     await this.ensureIndex(source);
-    let result = await this.runQuery(query);
+    let result = await this.runQuery(query, limit);
     if (!result) {
       log.warn(
         'List search index missing; rebuilding',
@@ -28,7 +29,7 @@ export class WorkerListSearch<T> {
         `session=${String(this.sessionId)}`,
       );
       await this.index(source);
-      result = await this.runQuery(query);
+      result = await this.runQuery(query, limit);
       if (result) {
         log.info(
           'List search index recovery completed',
@@ -50,6 +51,10 @@ export class WorkerListSearch<T> {
       throw new Error(`List search index unavailable: ${this.owner}`);
     }
     return result.indices.map(index => source[index]).filter(item => item !== undefined);
+  }
+
+  async warm(source: T[]): Promise<void> {
+    await this.ensureIndex(source);
   }
 
   release(): void {
@@ -84,11 +89,21 @@ export class WorkerListSearch<T> {
   private async index(source: T[]): Promise<boolean> {
     const sessionId = this.sessionId;
     try {
+      const documents: string[][] = new Array(source.length);
+      let index = 0;
+      const complete = source.length === 0 || await runInFrameSlices(() => {
+        documents[index] = this.fields(source[index]);
+        index++;
+        return index >= source.length;
+      }, {
+        shouldContinue: () => this.source === source && this.sessionId === sessionId,
+      });
+      if (!complete) return false;
       const response = await runAppWorkerTask('list-search.index', {
         owner: this.owner,
         sessionId,
         mode: this.mode,
-        documents: source.map(item => this.fields(item)),
+        documents,
       });
       const accepted = response.accepted && sessionId === this.sessionId;
       if (accepted) {
@@ -115,12 +130,13 @@ export class WorkerListSearch<T> {
     }
   }
 
-  private async runQuery(query: string) {
+  private async runQuery(query: string, limit?: number) {
     try {
       return await runAppWorkerTask('list-search.query', {
         owner: this.owner,
         sessionId: this.sessionId,
         query,
+        limit,
       });
     } catch (error) {
       log.error(

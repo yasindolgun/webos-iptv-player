@@ -16,7 +16,7 @@ export interface M3uCatalogItem {
   url: string;
 }
 
-function categoryName(channel: Channel): string {
+export function m3uCatalogCategoryName(channel: Channel): string {
   return channel.sourceGroup || channel.group || 'Other';
 }
 
@@ -25,13 +25,13 @@ function categoryId(name: string): string {
 }
 
 export function m3uCatalogCategoryId(channel: Channel): string {
-  return categoryId(categoryName(channel));
+  return categoryId(m3uCatalogCategoryName(channel));
 }
 
 export function m3uCatalogCategories(channels: Channel[]): M3uCatalogCategory[] {
   const counts = new Map<string, M3uCatalogCategory>();
   for (const channel of channels) {
-    const name = categoryName(channel);
+    const name = m3uCatalogCategoryName(channel);
     const id = m3uCatalogCategoryId(channel);
     const existing = counts.get(id);
     if (existing) existing.count++;
@@ -47,7 +47,7 @@ export function m3uCatalogItems(channels: Channel[], category?: string): M3uCata
       id: channel.id,
       name: channel.name,
       poster: channel.logo,
-      categoryId: categoryId(categoryName(channel)),
+      categoryId: categoryId(m3uCatalogCategoryName(channel)),
       playlistIds: channel.playlistIds.slice(),
       url: channel.url,
     }));

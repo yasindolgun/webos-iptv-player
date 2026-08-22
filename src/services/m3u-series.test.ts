@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Channel } from '../types';
-import { m3uSeriesCatalog, parseM3uSeriesEpisodeName } from './m3u-series';
+import {
+  m3uSeriesCatalog,
+  m3uSeriesCatalogInFrames,
+  parseM3uSeriesEpisodeName,
+} from './m3u-series';
 
 function channel(id: string, name: string): Channel {
   return {
@@ -33,5 +37,20 @@ describe('m3uSeriesCatalog', () => {
     expect(catalog.series[0].episodesBySeason[1].map(item => item.channel.id))
       .toEqual(['e1', 'e2']);
     expect(catalog.flat.map(item => item.id)).toEqual(['flat']);
+  });
+
+  it('builds the same series grouping in frame slices', async () => {
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(performance.now());
+      return 1;
+    });
+    const catalog = await m3uSeriesCatalogInFrames([
+      channel('e2', 'Show One S01E02 - Second'),
+      channel('e1', 'Show One S01E01 - First'),
+    ], () => true);
+    vi.unstubAllGlobals();
+
+    expect(catalog?.series[0].episodesBySeason[1].map(item => item.channel.id))
+      .toEqual(['e1', 'e2']);
   });
 });

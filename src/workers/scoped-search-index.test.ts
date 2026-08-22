@@ -63,6 +63,25 @@ describe('ScopedSearchIndex', () => {
     })).toBeNull();
   });
 
+  it('caps ranked list query results before returning them to the page', () => {
+    const index = new ScopedSearchIndex();
+    index.indexList({
+      owner: 'm3u-catalog',
+      sessionId: 1,
+      mode: 'names',
+      documents: [['Alpha one'], ['Alpha two'], ['Alpha three']],
+    });
+
+    const result = index.queryList({
+      owner: 'm3u-catalog',
+      sessionId: 1,
+      query: 'alpha',
+      limit: 2,
+    });
+    expect(result?.indices).toEqual([0, 1]);
+    expect(result?.hasMore).toBe(true);
+  });
+
   it('preserves EPG mapping source and selected ordering', () => {
     const index = new ScopedSearchIndex();
     index.indexMapping({

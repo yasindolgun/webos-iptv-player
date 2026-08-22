@@ -727,6 +727,8 @@ class App {
     if (section !== 'live' && this.channelList.isEditing) this.channelList.exitEditMode();
     if (section !== 'movies' && section !== 'search') this.movies.deactivate();
     if (section !== 'series' && section !== 'search') this.series.deactivate();
+    if (section !== 'movies') this.m3uMovies.deactivate();
+    if (section !== 'series') this.m3uSeries.deactivate();
     if (section !== 'search') this.search.deactivate();
     // Leaving the player via the tab bar (the pointer can reveal it over the
     // player) must tear down playback, like Back / red / blue do.

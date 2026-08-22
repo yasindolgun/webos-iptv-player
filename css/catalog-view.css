@@ -18,11 +18,26 @@
   padding: 28px 40px;
 }
 
+.m3u-catalog-controls { margin-bottom: 20px; }
+.m3u-catalog-search {
+  width: 520px;
+  box-sizing: border-box;
+  padding: 14px 18px;
+  border: 3px solid transparent;
+  border-radius: 10px;
+  background: var(--catalog-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 24px;
+}
+.m3u-catalog-search.focused,
+.m3u-catalog-search:focus { border-color: var(--accent, #3ea6ff); }
+
 .m3u-catalog-categories {
   display: flex;
   overflow-x: auto;
   gap: 12px;
-  margin-bottom: 24px;
+  margin-top: 16px;
 }
 
 .m3u-catalog-categories button {

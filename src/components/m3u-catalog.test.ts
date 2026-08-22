@@ -1,12 +1,21 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Channel } from '../types';
+import { CONFIG } from '../config';
 
-const { storageMock } = vi.hoisted(() => ({
+const { storageMock, catalogSearchMock } = vi.hoisted(() => ({
   storageMock: { getResume: vi.fn(() => null) },
+  catalogSearchMock: { query: vi.fn(), release: vi.fn(), warm: vi.fn() },
 }));
 
 vi.mock('../services/storage-service', () => ({ StorageService: storageMock }));
+vi.mock('../workers/list-search-client', () => ({
+  WorkerListSearch: class {
+    query = catalogSearchMock.query;
+    release = catalogSearchMock.release;
+    warm = catalogSearchMock.warm;
+  },
+}));
 
 import { M3uCatalog } from './m3u-catalog';
 import { m3uAccountId, m3uItemKey } from '../utils/m3u-item';
@@ -34,6 +43,8 @@ describe('M3uCatalog', () => {
     Element.prototype.scrollIntoView = vi.fn();
     vi.clearAllMocks();
     storageMock.getResume.mockReturnValue(null);
+    catalogSearchMock.query.mockResolvedValue([]);
+    catalogSearchMock.warm.mockResolvedValue(undefined);
     container = document.createElement('div');
     document.body.appendChild(container);
     onPlay = vi.fn();
@@ -43,10 +54,19 @@ describe('M3uCatalog', () => {
     const catalog = new M3uCatalog(container, onPlay);
     catalog.open([movie()], 'movie');
 
+    expect(catalogSearchMock.warm).toHaveBeenCalledTimes(1);
     (container.querySelector('[data-m3u-item^="channel:"]') as HTMLElement).click();
 
     expect(container.querySelector('.m3u-catalog-detail')?.textContent).toContain('Movie One');
     expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  it('releases the M3U worker index when its view is left', () => {
+    const catalog = new M3uCatalog(container, onPlay);
+    catalog.open([movie()], 'movie');
+    catalog.deactivate();
+
+    expect(catalogSearchMock.release).toHaveBeenCalled();
   });
 
   it('offers saved progress and passes the selected start mode to playback', () => {
@@ -90,6 +110,26 @@ describe('M3uCatalog', () => {
     );
   });
 
+  it('queries the selected M3U catalog category through the worker', async () => {
+    const first = movie('first');
+    const second = { ...movie('second'), name: 'Second Movie' };
+    catalogSearchMock.query.mockResolvedValue([second]);
+    const catalog = new M3uCatalog(container, onPlay);
+    catalog.open([first, second], 'movie');
+
+    const input = container.querySelector<HTMLInputElement>('.m3u-catalog-search')!;
+    input.value = 'second';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
+    await vi.waitFor(() => expect(catalogSearchMock.query).toHaveBeenCalledTimes(1));
+    const [source, query, limit] = catalogSearchMock.query.mock.calls[0];
+    expect(source.map((item: { name: string }) => item.name)).toEqual(['Movie One', 'Second Movie']);
+    expect(query).toBe('second');
+    expect(limit).toBe(CONFIG.M3U.CATALOG_SEARCH_RESULT_CAP);
+    expect(container.textContent).toContain('Second Movie');
+    expect(container.textContent).not.toContain('Movie One');
+  });
+
   it('opens structured M3U series by season and resumes an episode', () => {
     const first = {
       ...movie('e1'), name: 'Show One S01E01 - First', group: 'Series', sourceGroup: 'Series',
@@ -125,5 +165,22 @@ describe('M3uCatalog', () => {
 
     expect(container.querySelector('[data-m3u-item-index="20"]')).not.toBeNull();
     expect(container.querySelector('.m3u-catalog-scroll')?.scrollTop).toBeGreaterThan(0);
+  });
+
+  it('yields before preparing a large M3U catalog', async () => {
+    const movies = Array.from({ length: CONFIG.M3U.CATALOG_FRAME_THRESHOLD + 1 }, (_, index) => ({
+      ...movie(`m${index}`), name: `Movie ${index}`,
+    }));
+    const catalog = new M3uCatalog(container, onPlay);
+    catalog.open(movies, 'movie');
+
+    expect(container.querySelector('.catalog-loading')).not.toBeNull();
+    await vi.waitFor(() => expect(
+      container.querySelector('[data-m3u-item-index="0"]'),
+    ).not.toBeNull());
+
+    catalog.open(movies, 'movie');
+    expect(container.querySelector('.catalog-loading')).toBeNull();
+    expect(container.querySelector('[data-m3u-item-index="0"]')).not.toBeNull();
   });
 });

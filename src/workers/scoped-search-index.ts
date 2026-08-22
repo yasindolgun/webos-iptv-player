@@ -69,14 +69,14 @@ export class ScopedSearchIndex {
       const result = rankPreparedTopK(
         state.index.index,
         request.query,
-        state.index.index.length,
+        request.limit ?? state.index.index.length,
       );
       return { indices: result.items, hasMore: result.hasMore };
     }
     const result = rankPreparedNamesTopK(
       state.index.index,
       request.query,
-      state.index.index.items.length,
+      request.limit ?? state.index.index.items.length,
     );
     return {
       indices: result.items.map(item => item.index),
