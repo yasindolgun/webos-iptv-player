@@ -95,6 +95,7 @@
   .search-channel-row > * + * { margin-left: 24px; }
   .search-program-list > * + * { margin-top: 8px; }
   .search-program-row > * + * { margin-left: 24px; }
+  .m3u-catalog-categories > * + * { margin-left: 12px; }
   .catalog-rail-track > * + * { margin-left: 20px; }
   .movies-detail > * + * { margin-left: 56px; }
   .detail-actions > * + * { margin-left: 12px; }

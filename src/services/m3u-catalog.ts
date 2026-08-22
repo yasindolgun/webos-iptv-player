@@ -24,11 +24,15 @@ function categoryId(name: string): string {
   return name.toLowerCase();
 }
 
+export function m3uCatalogCategoryId(channel: Channel): string {
+  return categoryId(categoryName(channel));
+}
+
 export function m3uCatalogCategories(channels: Channel[]): M3uCatalogCategory[] {
   const counts = new Map<string, M3uCatalogCategory>();
   for (const channel of channels) {
     const name = categoryName(channel);
-    const id = categoryId(name);
+    const id = m3uCatalogCategoryId(channel);
     const existing = counts.get(id);
     if (existing) existing.count++;
     else counts.set(id, { id, name, count: 1 });
@@ -38,7 +42,7 @@ export function m3uCatalogCategories(channels: Channel[]): M3uCatalogCategory[] 
 
 export function m3uCatalogItems(channels: Channel[], category?: string): M3uCatalogItem[] {
   return channels
-    .filter(channel => !category || categoryId(categoryName(channel)) === category)
+    .filter(channel => !category || m3uCatalogCategoryId(channel) === category)
     .map(channel => ({
       id: channel.id,
       name: channel.name,

@@ -157,7 +157,7 @@ test('opening Search does not cancel the catalog loading underneath it', async (
   await expect(page.locator('#view-movies')).toContainText('Movie One');
 });
 
-test('M3U-only shows a docked bar with Live/Guide/Settings/Search only (no Movies/Series)', async ({ page }) => {
+test('M3U-only shows M3U catalog sections in the docked bar', async ({ page }) => {
   await page.route('**/playlist.m3u', (route) =>
     route.fulfill({ status: 200, contentType: 'application/x-mpegurl', body: SAMPLE_M3U }));
   await routeLiveManifest(page);
@@ -169,11 +169,13 @@ test('M3U-only shows a docked bar with Live/Guide/Settings/Search only (no Movie
   await page.goto('/');
   await expect(page.locator('#view-channels')).toBeVisible();
 
-  // The bar is docked, but with the reduced M3U section set.
+  // The bar is docked and M3U movie/series categories have their own sections.
   await expect(page.locator('.tab-bar')).toBeVisible();
-  await expect(page.locator('.tab-bar-item')).toHaveText(['Live', 'Guide', 'Settings', '']);
-  await expect(page.locator('.tab-bar-item[data-section="movies"]')).toHaveCount(0);
-  await expect(page.locator('.tab-bar-item[data-section="series"]')).toHaveCount(0);
+  await expect(page.locator('.tab-bar-item')).toHaveText(
+    ['Live', 'Guide', 'Movies', 'Series', 'Settings', ''],
+  );
+  await expect(page.locator('.tab-bar-item[data-section="movies"]')).toHaveCount(1);
+  await expect(page.locator('.tab-bar-item[data-section="series"]')).toHaveCount(1);
   await expect(page.locator('.tab-bar-item[data-section="search"] svg')).toBeVisible();
   await expect(page.locator('body.tabbar-docked')).toHaveCount(1);
 

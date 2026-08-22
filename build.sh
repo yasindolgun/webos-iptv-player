@@ -34,7 +34,12 @@ info "Building service..."
 rm -rf build/bundled-service
 npx tsc -p bundled-service/tsconfig.json
 node scripts/service-compat-gate.mjs build/bundled-service
-node scripts/run-service-smoke.mjs
+# The exact Node 0.12.2 runtime smoke harness is available on Linux and Apple
+# Silicon macOS. Windows still gets the TypeScript build and compatibility gate.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) info "Skipping service runtime smoke on Windows" ;;
+  *) node scripts/run-service-smoke.mjs ;;
+esac
 cp bundled-service/package.json build/bundled-service/
 cp bundled-service/src/services.json build/bundled-service/
 cp bundled-service/src/setup/setup-page.html build/bundled-service/setup/

@@ -30,11 +30,12 @@ import { ReminderManager } from './components/reminder-manager';
 import { setDisplayTz } from './utils/time';
 import { initTheme, applyTheme, applyOverlayStyle, applyTextSize } from './services/theme-service';
 import { channelKey } from './utils/channel';
+import { m3uAccountId, m3uItemKey } from './utils/m3u-item';
 import { isSourceEnabled } from './utils/playlist';
 import { truncate } from './utils/text';
 import { $, show, hide } from './utils/dom';
 import { createLogger, installGlobalErrorHandlers, logEnvironment } from './utils/logger';
-import type { Action, NumberEvent, CatchupInfo, EpgSource, PlaylistEntry } from './types';
+import type { Action, NumberEvent, CatchupInfo, Channel, EpgSource, PlaylistEntry } from './types';
 import { getLocale, initLocale, resolveLocale, setLocale, t, tp } from './i18n';
 
 const log = createLogger('App');
@@ -186,11 +187,11 @@ class App {
         });
       },
     });
-    this.m3uMovies = new M3uCatalog(this.views.movies, channel => {
-      this.playChannel(PlaylistService.indexOf(channel));
+    this.m3uMovies = new M3uCatalog(this.views.movies, (channel, resume) => {
+      this.playM3uVod(channel, resume, 'movies');
     });
-    this.m3uSeries = new M3uCatalog(this.views.series, channel => {
-      this.playChannel(PlaylistService.indexOf(channel));
+    this.m3uSeries = new M3uCatalog(this.views.series, (channel, resume) => {
+      this.playM3uVod(channel, resume, 'series');
     });
     this.search = new Search(this.views.search, {
       onRevealTabBar: () => this.tabBar.focus(),
@@ -730,6 +731,7 @@ class App {
     // Leaving the player via the tab bar (the pointer can reveal it over the
     // player) must tear down playback, like Back / red / blue do.
     this.player.stop();
+    this.m3uCatalogSection = null;
     if (section === 'live') { this.showView('channels'); this.channelList.render(); return; }
     if (section === 'epg') { this.openEpg(); return; }
     if (section === 'movies') {
@@ -840,6 +842,30 @@ class App {
     this.tabBar.setActive('live');
     this.showView('channels');
     this.channelList.render();
+  }
+
+  private playM3uVod(channel: Channel, resume: boolean, origin: 'movies' | 'series'): void {
+    const accountId = m3uAccountId(channel);
+    const kind = origin === 'series' ? 'episode' : 'vod';
+    const itemId = m3uItemKey(channel);
+    const saved = StorageService.getResume(accountId, kind, itemId);
+    this.tabBar.blur();
+    this.showView('player');
+    this.player.playVod({
+      url: channel.url,
+      title: channel.name,
+      poster: channel.logo,
+      accountId,
+      itemId,
+      kind,
+      resumeSecs: resume && saved ? saved.position : 0,
+      subtitles: [],
+      onBack: () => {
+        this.showView(origin);
+        if (origin === 'movies') this.m3uMovies.refreshPlaybackState();
+        else this.m3uSeries.refreshPlaybackState();
+      },
+    });
   }
 
   private activeXtreamAccount(): PlaylistEntry | null {
@@ -1063,8 +1089,16 @@ class App {
         }
         return;
       }
-      if (currentView === 'movies') { this.movies.handleAction('back'); return; }
-      if (currentView === 'series') { this.series.handleAction('back'); return; }
+      if (currentView === 'movies') {
+        if (this.m3uCatalogSection === 'movies') this.m3uMovies.handleAction('back');
+        else this.movies.handleAction('back');
+        return;
+      }
+      if (currentView === 'series') {
+        if (this.m3uCatalogSection === 'series') this.m3uSeries.handleAction('back');
+        else this.series.handleAction('back');
+        return;
+      }
       if (currentView === 'search') { this.search.handleAction('back'); return; }
       if (currentView === 'epg') {
         if (this.epgGrid.isFilterOpen) {
