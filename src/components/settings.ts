@@ -648,6 +648,10 @@ export class Settings {
                   </div>
                   <div class="settings-item-hint">${t('settings.timeCorrectionHint')}</div>
                 </div>
+                <div class="settings-item">
+                  <div class="settings-item-title">${t('settings.epgSources')}</div>
+                  ${this.epgSourceDiagnostics()}
+                </div>
                 <div class="settings-item settings-item--action">
                   <div class="settings-item-title">${t('reminderManager.title')}</div>
                   <button class="btn btn-secondary" data-focusable id="manage-reminders">
@@ -886,6 +890,46 @@ export class Settings {
       </div>`;
   }
 
+  private epgSourceDiagnostics(): Safe {
+    const sources = EpgService.getSourceStatuses();
+    return html`<div class="epg-source-diagnostics">
+      ${sources.map((source) => {
+        const name = source.sourceName || source.url;
+        const details = source.lastUpdatedAt === null
+          ? t('settings.epgSourceNoData')
+          : t('settings.epgSourceUpdated', {
+              time: new Date(source.lastUpdatedAt).toLocaleString(),
+            });
+        return html`<div class="epg-source-diagnostic" data-key="${source.url}">
+          <div class="epg-source-diagnostic-name">${name}</div>
+          <div class="epg-source-diagnostic-detail">${details}</div>
+          ${source.lastUpdatedAt === null ? '' : html`
+            <div class="epg-source-diagnostic-detail">
+              ${t('settings.epgSourceStats', {
+                channels: source.channelCount,
+                programmes: source.programmeCount,
+              })}
+            </div>`}
+          ${source.needsRefresh ? html`
+            <div class="epg-source-diagnostic-stale">${t('settings.epgSourceStale')}</div>` : ''}
+          ${source.lastError ? html`
+            <div class="epg-source-diagnostic-error">
+              ${t('settings.epgSourceError', { message: source.lastError })}
+            </div>` : ''}
+        </div>`;
+      })}
+    </div>`;
+  }
+
+  private updateEpgSourceDiagnostics(): void {
+    const target = $('.epg-source-diagnostics', this.container);
+    if (target) morph(target, this.epgSourceDiagnostics());
+  }
+
+  refreshEpgSourceDiagnostics(): void {
+    this.updateEpgSourceDiagnostics();
+  }
+
   private refreshEpgOffsetEditor(manualUrl: string): void {
     const editor = $('.epg-offset-editor', this.container);
     if (!editor) return;
@@ -1057,6 +1101,7 @@ export class Settings {
         this.updateRefreshStatus();
       });
       this.refreshState = { running: false, progress: null, result, error: false };
+      this.updateEpgSourceDiagnostics();
       showToast(t('settings.refreshComplete'));
     } catch (err) {
       log.error('Manual data refresh failed', err);

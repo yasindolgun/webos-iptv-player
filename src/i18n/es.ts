@@ -338,5 +338,11 @@ export const ES_MESSAGES = {
   'weekday.6': 'Sáb',
   'date.monthDay': '{day}/{month}',
   'duration.hoursMinutes': '{hours} h {minutes} min',
+  'settings.epgSources': 'Fuentes de guía de programas',
+  'settings.epgSourceUpdated': 'Actualizado: {time}',
+  'settings.epgSourceNoData': 'No se cargaron datos de guía',
+  'settings.epgSourceStats': '{channels} canales · {programmes} programas',
+  'settings.epgSourceStale': 'Se requiere actualización',
+  'settings.epgSourceError': 'Error: {message}',
   'duration.minutes': '{minutes} min',
 } satisfies MessageCatalog;

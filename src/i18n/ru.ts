@@ -346,5 +346,11 @@ export const RU_MESSAGES = {
   'weekday.6': 'Сб',
   'date.monthDay': '{day}.{month}',
   'duration.hoursMinutes': '{hours} ч {minutes} мин',
+  'settings.epgSources': 'Источники телегида',
+  'settings.epgSourceUpdated': 'Обновлено: {time}',
+  'settings.epgSourceNoData': 'Данные телегида не загружены',
+  'settings.epgSourceStats': '{channels} каналов · {programmes} программ',
+  'settings.epgSourceStale': 'Требуется обновление',
+  'settings.epgSourceError': 'Ошибка: {message}',
   'duration.minutes': '{minutes} мин',
 } satisfies MessageCatalog;

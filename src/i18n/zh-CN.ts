@@ -334,5 +334,11 @@ export const ZH_CN_MESSAGES = {
   'weekday.6': '周六',
   'date.monthDay': '{month}月{day}日',
   'duration.hoursMinutes': '{hours}小时{minutes}分钟',
+  'settings.epgSources': '节目指南来源',
+  'settings.epgSourceUpdated': '已更新：{time}',
+  'settings.epgSourceNoData': '未加载节目指南数据',
+  'settings.epgSourceStats': '{channels} 个频道 · {programmes} 个节目',
+  'settings.epgSourceStale': '需要刷新',
+  'settings.epgSourceError': '错误：{message}',
   'duration.minutes': '{minutes}分钟',
 } satisfies MessageCatalog;

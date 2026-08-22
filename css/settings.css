@@ -637,6 +637,41 @@
   color: var(--text-muted);
 }
 
+.epg-source-diagnostics {
+  display: flex;
+  max-width: 760px;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.epg-source-diagnostic {
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.epg-source-diagnostic-name {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.epg-source-diagnostic-detail,
+.epg-source-diagnostic-stale,
+.epg-source-diagnostic-error {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+.epg-source-diagnostic-stale { color: var(--warning); }
+.epg-source-diagnostic-error { color: var(--error); }
+
 .cache-usage {
   box-sizing: border-box;
   width: 520px;

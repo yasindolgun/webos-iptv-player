@@ -346,5 +346,11 @@ export const UK_MESSAGES = {
   'weekday.6': 'Сб',
   'date.monthDay': '{day}.{month}',
   'duration.hoursMinutes': '{hours} год {minutes} хв',
+  'settings.epgSources': 'Джерела телегіда',
+  'settings.epgSourceUpdated': 'Оновлено: {time}',
+  'settings.epgSourceNoData': 'Дані телегіда не завантажено',
+  'settings.epgSourceStats': '{channels} каналів · {programmes} програм',
+  'settings.epgSourceStale': 'Потрібне оновлення',
+  'settings.epgSourceError': 'Помилка: {message}',
   'duration.minutes': '{minutes} хв',
 } satisfies MessageCatalog;

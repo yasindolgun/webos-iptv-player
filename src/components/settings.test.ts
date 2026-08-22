@@ -522,6 +522,29 @@ describe('Settings.render', () => {
     expect(container.querySelector('.epg-offset-value')?.textContent?.trim()).toBe('+1 h');
   });
 
+  it('shows EPG source freshness, coverage, and a retained error detail', () => {
+    const statuses = vi.spyOn(EpgService, 'getSourceStatuses').mockReturnValue([{
+      url: 'http://host/a.xml',
+      kind: 'm3u',
+      playlistIds: ['p1'],
+      sourceName: 'Guide Alpha',
+      lastUpdatedAt: 0,
+      channelCount: 3,
+      programmeCount: 12,
+      needsRefresh: true,
+      lastError: 'Network unavailable',
+    }]);
+
+    settings.render();
+
+    const row = container.querySelector('.epg-source-diagnostic')!;
+    expect(row.textContent).toContain('Guide Alpha');
+    expect(row.textContent).toContain('3 channels · 12 programs');
+    expect(row.textContent).toContain('Refresh needed');
+    expect(row.textContent).toContain('Error: Network unavailable');
+    statuses.mockRestore();
+  });
+
   it('uses XMLTV names and numbers unnamed EPG feeds from one playlist', () => {
     state.playlists = [{ id: 'p1', name: 'Alpha', url: 'http://host/a' }];
     PlaylistService.epgSources = [

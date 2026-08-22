@@ -123,6 +123,45 @@ describe('EpgService programme lookup', () => {
 });
 
 describe('EpgService multi-source matching', () => {
+  it('reports loaded source diagnostics for the guide settings', async () => {
+    parseXMLTVMock.mockReturnValue({
+      ...parsed('a', 'Alpha', 'One'),
+      sourceName: 'Guide A',
+    });
+
+    await EpgService.load([source('http://a', ['a'])]);
+
+    expect(EpgService.getSourceStatuses()).toEqual([{
+      url: 'http://a',
+      kind: 'm3u',
+      playlistIds: ['a'],
+      sourceName: 'Guide A',
+      lastUpdatedAt: NOON,
+      channelCount: 1,
+      programmeCount: 1,
+      needsRefresh: false,
+      lastError: null,
+    }]);
+  });
+
+  it('reports a source failure without discarding its diagnostics entry', async () => {
+    fetchAndParseXMLTVMock.mockRejectedValue(new Error('Network unavailable'));
+
+    await EpgService.load([source('http://a', ['a'])]);
+
+    expect(EpgService.getSourceStatuses()).toEqual([{
+      url: 'http://a',
+      kind: 'm3u',
+      playlistIds: ['a'],
+      sourceName: null,
+      lastUpdatedAt: null,
+      channelCount: 0,
+      programmeCount: 0,
+      needsRefresh: true,
+      lastError: 'Network unavailable',
+    }]);
+  });
+
   it('reports stale manual mappings after rebuilding guide indexes', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     parseXMLTVMock.mockReturnValue(parsed('available', 'Alpha', 'Matched'));

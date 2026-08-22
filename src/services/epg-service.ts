@@ -42,6 +42,18 @@ export interface EpgMappingSearchEntry extends EpgMappingCandidate {
   sourceIndex: number;
 }
 
+export interface EpgSourceStatus {
+  url: string;
+  kind: EpgSource['kind'];
+  playlistIds: string[];
+  sourceName: string | null;
+  lastUpdatedAt: number | null;
+  channelCount: number;
+  programmeCount: number;
+  needsRefresh: boolean;
+  lastError: string | null;
+}
+
 interface PreparedEpgMappingSearchEntry {
   channelId: string;
   name: string;
@@ -59,6 +71,7 @@ class EpgServiceImpl {
   private channelIdsByName = new Map<string, Map<string, string[]>>();
   private timeIndexes = new Map<string, { source: Programme[]; index: EpgTimeIndex }>();
   private sourceOffsets = new Map<string, number>();
+  private sourceErrors = new Map<string, string>();
   private derivedOffsets = new Map<string, { id: string; baseId: string; minutes: number }>();
   private mappedChannelIds: string[] = [];
   private playlistChannels: Channel[] | null = null;
@@ -85,6 +98,7 @@ class EpgServiceImpl {
     this.channelIdsByName.clear();
     this.timeIndexes.clear();
     this.sourceOffsets.clear();
+    this.sourceErrors.clear();
     this.derivedOffsets.clear();
     this.mappedChannelIds = [];
     this.playlistChannels = null;
@@ -142,6 +156,28 @@ class EpgServiceImpl {
 
   getSourceName(url: string): string | null {
     return this.states.get(url)?.data.sourceName?.trim() || null;
+  }
+
+  getSourceStatuses(): EpgSourceStatus[] {
+    return this.sources.map((source) => {
+      const state = this.states.get(source.url);
+      const data = state?.data;
+      let programmeCount = 0;
+      if (data) {
+        for (const id in data.programmes) programmeCount += data.programmes[id].length;
+      }
+      return {
+        url: source.url,
+        kind: source.kind,
+        playlistIds: source.playlistIds.slice(),
+        sourceName: data?.sourceName?.trim() || null,
+        lastUpdatedAt: state?.timestamp ?? null,
+        channelCount: data ? Object.keys(data.channels).length : 0,
+        programmeCount,
+        needsRefresh: !state || state.needsRefresh,
+        lastError: this.sourceErrors.get(source.url) ?? null,
+      };
+    });
   }
 
   getSourceUrl(channel: Channel): string | null {
@@ -350,6 +386,7 @@ class EpgServiceImpl {
       if (!active.has(url)) {
         this.states.delete(url);
         this.channelIdsByName.delete(url);
+        this.sourceErrors.delete(url);
       }
     }
   }
@@ -434,6 +471,7 @@ class EpgServiceImpl {
         timestamp: Date.now(),
         needsRefresh: false,
       });
+      this.sourceErrors.delete(source.url);
       log.info('Loaded', source.url, '|', Object.keys(result.channels).length, 'channels,',
         programmeCount, 'programmes', filter ? `(of ${String(stats.programmesSeen)} seen)` : '');
       if (programmeCount > 0) {
@@ -442,6 +480,7 @@ class EpgServiceImpl {
         log.warn('EPG has 0 programmes — not caching:', source.url);
       }
     } catch (err) {
+      this.sourceErrors.set(source.url, errorMessage(err));
       log.error('Failed to load EPG:', source.url, err);
     }
     done();
@@ -584,6 +623,10 @@ class EpgServiceImpl {
 }
 
 export const EpgService = new EpgServiceImpl();
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function matchesChannelName(channel: EpgChannel, name: string, sourceName: string): boolean {
   const primary = channel.name.toLowerCase();

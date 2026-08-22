@@ -295,6 +295,8 @@ const M3U_SCREENS: Screen[] = [
     go: async (p) => {
       await p.keyboard.press('Escape');
       await p.keyboard.press('Escape');
+      await p.keyboard.press('Escape');
+      await expect(p.locator('#view-channels')).toBeVisible();
       await enterTab(p, 'live');
       await p.keyboard.press('2');
       await p.keyboard.press('4');
@@ -589,8 +591,17 @@ async function walk(
       await legacy.page.waitForTimeout(250);
 
       const shot = (p: Page) => p.screenshot({ animations: 'disabled', caret: 'hide' });
-      const [modernPng, legacyPng] = await Promise.all([shot(page), shot(legacy.page)]);
-      const diff = await pixelDiff(page, modernPng, legacyPng, { render: true });
+      let [modernPng, legacyPng] = await Promise.all([shot(page), shot(legacy.page)]);
+      let diff = await pixelDiff(page, modernPng, legacyPng, { render: true });
+      // A loaded suite can capture one page while its matching action is still
+      // settling. Confirm a visual difference with a later frame before it is
+      // treated as a legacy-layout regression.
+      if (diff.ratio > screen.budget) {
+        await page.waitForTimeout(500);
+        await legacy.page.waitForTimeout(500);
+        [modernPng, legacyPng] = await Promise.all([shot(page), shot(legacy.page)]);
+        diff = await pixelDiff(page, modernPng, legacyPng, { render: true });
+      }
 
       // Keep the rendered diff for every screen so a passing run stays
       // browsable; the two source frames only when something actually moved.

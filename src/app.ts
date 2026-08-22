@@ -659,6 +659,7 @@ class App {
           .then(() => {
             this.applyDisplayTz();
             this.channelList.render();
+            this.settings.refreshEpgSourceDiagnostics();
             void this.search.refreshPrograms();
           })
           .catch(err => log.error('EPG load failed:', err));
@@ -666,6 +667,7 @@ class App {
           .then(() => {
             this.applyDisplayTz();
             this.channelList.render();
+            this.settings.refreshEpgSourceDiagnostics();
             void this.search.refreshPrograms();
           })
           .catch(err => log.error('EPG refresh failed:', err)),
@@ -821,6 +823,7 @@ class App {
     EpgService.refresh().then(() => {
       this.applyDisplayTz();
       this.epgGrid.render();
+      this.settings.refreshEpgSourceDiagnostics();
       void this.search.refreshPrograms();
     });
   }
@@ -880,6 +883,7 @@ class App {
           .then(() => {
             this.applyDisplayTz();
             this.channelList.render();
+            this.settings.refreshEpgSourceDiagnostics();
             void this.search.refreshPrograms();
           })
           .catch(err => log.error('EPG refresh failed:', err)),

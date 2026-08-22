@@ -74,6 +74,7 @@
   .channel-health-progress > * + * { margin-left: 16px; }
   .settings-maintenance > * + * { margin-left: 16px; }
   .refresh-progress > * + * { margin-left: 16px; }
+  .epg-source-diagnostics > * + * { margin-top: 10px; }
   .cache-usage-value > * + * { margin-top: 4px; }
   .cache-usage-breakdown > * + * { margin-top: 8px; }
   .cache-usage-breakdown span > * + * { margin-left: 16px; }
