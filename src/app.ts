@@ -7,7 +7,6 @@ import { ChannelHealthService } from './services/channel-health';
 import { StorageService } from './services/storage-service';
 import {
   clearAllCachedData,
-  clearCachedPlaylist,
   flushCacheWrites,
 } from './services/idb-cache';
 import { SetupClient } from './services/setup-client';
@@ -21,6 +20,7 @@ import { PlayerMenu } from './components/player-menu';
 import { TabBar, type Section, sectionForView } from './components/tab-bar';
 import { Movies } from './components/movies';
 import { Series } from './components/series';
+import { M3uCatalog } from './components/m3u-catalog';
 import { Search } from './components/search';
 import { showToast } from './components/toast';
 import { showNumberEntry, hideNumberEntry } from './components/number-entry';
@@ -60,6 +60,9 @@ class App {
   private search!: Search;
   private movies!: Movies;
   private series!: Series;
+  private m3uMovies!: M3uCatalog;
+  private m3uSeries!: M3uCatalog;
+  private m3uCatalogSection: 'movies' | 'series' | null = null;
   private lastSearchQuery = '';
   private enterChannelsAfterUploadSync = false;
   private remindersInitialized = false;
@@ -182,6 +185,12 @@ class App {
           },
         });
       },
+    });
+    this.m3uMovies = new M3uCatalog(this.views.movies, channel => {
+      this.playChannel(PlaylistService.indexOf(channel));
+    });
+    this.m3uSeries = new M3uCatalog(this.views.series, channel => {
+      this.playChannel(PlaylistService.indexOf(channel));
     });
     this.search = new Search(this.views.search, {
       onRevealTabBar: () => this.tabBar.focus(),
@@ -571,7 +580,7 @@ class App {
     this.epgRefreshTimer = null;
   }
 
-  private async loadData(): Promise<void> {
+  private async loadData(forceRefresh = false): Promise<void> {
     const done = log.time('loadData');
     show(this.views.loading);
     this.stopEpgRefresh();
@@ -601,7 +610,8 @@ class App {
 
       const loadingText = $('#loading-text');
       if (loadingText) loadingText.textContent = t('app.loadingChannels');
-      await PlaylistService.load();
+      if (forceRefresh) await PlaylistService.refresh();
+      else await PlaylistService.load();
       await ChannelHealthService.initialize();
       log.info('Channels loaded:', PlaylistService.channels.length,
         '| groups:', PlaylistService.groups.length,
@@ -615,7 +625,9 @@ class App {
 
       const hasXtream = StorageService.getPlaylists()
         .some((p) => p.source === 'xtream' && isSourceEnabled(p));
-      this.tabBar.setSections(hasXtream);
+      const hasM3uCatalog = PlaylistService.getContentKindCount('movie') > 0
+        || PlaylistService.getContentKindCount('series') > 0;
+      this.tabBar.setSections(hasXtream || hasM3uCatalog);
       const xtreamAccounts = StorageService.getPlaylists()
         .filter((p) => p.source === 'xtream' && p.xtream && isSourceEnabled(p));
       this.tabBar.setAccounts(xtreamAccounts, this.activeXtreamAccount()?.id ?? '');
@@ -731,6 +743,9 @@ class App {
             'operation=movies',
             err,
           ));
+      } else {
+        this.m3uCatalogSection = 'movies';
+        this.m3uMovies.open(PlaylistService.getByContentKind('movie'), 'movie');
       }
       return;
     }
@@ -745,6 +760,9 @@ class App {
             'operation=series',
             err,
           ));
+      } else {
+        this.m3uCatalogSection = 'series';
+        this.m3uSeries.open(PlaylistService.getByContentKind('series'), 'series');
       }
       return;
     }
@@ -1091,10 +1109,12 @@ class App {
         break;
       }
       case 'movies':
-        this.movies.handleAction(action);
+        if (this.m3uCatalogSection === 'movies') this.m3uMovies.handleAction(action);
+        else this.movies.handleAction(action);
         break;
       case 'series':
-        this.series.handleAction(action);
+        if (this.m3uCatalogSection === 'series') this.m3uSeries.handleAction(action);
+        else this.series.handleAction(action);
         break;
       case 'search':
         this.search.handleAction(action);
@@ -1265,9 +1285,8 @@ class App {
       void SetupClient.publishState();
     }
     if (action === 'reload') {
-      await clearCachedPlaylist();
       this.showView('channels');
-      await this.loadData();
+      await this.loadData(true);
       return;
     }
     // 'apply': only display settings changed — re-apply + re-render, no re-fetch.

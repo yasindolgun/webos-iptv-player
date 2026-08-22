@@ -279,7 +279,7 @@ export const UK_MESSAGES = {
   'settings.username': 'Ім’я користувача',
   'settings.password': 'Пароль',
   'settings.dataManagement': 'Керування даними',
-  'settings.refreshAll': 'Оновити всі дані',
+  'settings.refreshAll': 'Оновити плейлист і телегід',
   'settings.clearCache': 'Очистити кеш',
   'settings.resetApp': 'Скинути застосунок',
   'settings.resetAppDescription': 'Видалити з цього пристрою всі облікові записи, джерела, налаштування, обране та історію переглядів.',

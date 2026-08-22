@@ -20,6 +20,11 @@ export default defineConfig({
     environment: 'node',
     setupFiles: ['src/test/setup.ts'],
     include: ['src/**/*.test.ts', 'bundled-service/src/**/*.test.ts', 'webOSjs/**/*.test.ts', 'scripts/**/*.test.mjs'],
+    // Large virtualized-list fixtures are deliberately CPU-heavy. Keep enough
+    // workers for a quick suite without letting 12-core desktop hosts starve
+    // their per-test timeout under concurrent jsdom workloads.
+    maxWorkers: 4,
+    minWorkers: 1,
     // Keep coverage output under the shared test-output/ folder.
     coverage: {
       reportsDirectory: 'test-output/coverage',

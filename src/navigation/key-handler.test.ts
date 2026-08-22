@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { CONFIG } from '../config';
 import type { Action, NumberEvent } from '../types';
+import { extractInputTimeline } from '../../scripts/tv-diag.mjs';
 
 // KeyHandler attaches its listeners to `document` and keeps module-level singleton
 // state. init() must run only once (re-running would stack duplicate listeners),
@@ -203,8 +204,7 @@ describe('KeyHandler', () => {
   // so parse the real output with the real extractor: a "dead button" report is
   // only answerable if the press, the mapping, and the buffer flush are visible.
   describe('diagnostic logging', () => {
-    it('emits key events that the tv-diag input timeline can parse', async () => {
-      const { extractInputTimeline } = await import('../../scripts/tv-diag.mjs');
+    it('emits key events that the tv-diag input timeline can parse', () => {
       const lines: Array<{ observedAt: string; level: string; text: string }> = [];
       const spy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
         lines.push({

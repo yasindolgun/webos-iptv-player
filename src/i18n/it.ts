@@ -273,7 +273,7 @@ export const IT_MESSAGES = {
   'settings.username': 'Nome utente',
   'settings.password': 'Password',
   'settings.dataManagement': 'Gestione dati',
-  'settings.refreshAll': 'Aggiorna tutti i dati',
+  'settings.refreshAll': 'Aggiorna playlist e guida',
   'settings.clearCache': 'Svuota cache',
   'settings.resetApp': 'Reimposta app',
   'settings.resetAppDescription': 'Rimuove da questo dispositivo tutti gli account, le sorgenti, le preferenze, i preferiti e la cronologia.',

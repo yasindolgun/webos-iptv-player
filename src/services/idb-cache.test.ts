@@ -244,6 +244,14 @@ describe('idb-cache', () => {
     expect(await getCachedPlaylist()).toBeNull();
   });
 
+  it('can retain an expired playlist for manual-refresh mode', async () => {
+    const channels = [channel('ch1')];
+    await setCachedPlaylist(channels, [], 0);
+
+    expect(await getCachedPlaylist()).toBeNull();
+    expect(await getCachedPlaylist(true)).toEqual({ channels, epgSources: [] });
+  });
+
   it('migrates a valid legacy playlist only after IndexedDB accepts it', async () => {
     const channels = [channel('ch1')];
     localStorage.setItem('iptv_cached_playlist', JSON.stringify({

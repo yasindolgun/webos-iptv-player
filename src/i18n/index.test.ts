@@ -37,6 +37,7 @@ describe('i18n', () => {
     expect(resolveLocale('system', 'ru-RU')).toBe('ru');
     expect(resolveLocale('system', 'ru-KZ')).toBe('ru');
     expect(resolveLocale('system', 'uk-UA')).toBe('uk');
+    expect(resolveLocale('system', 'tr-TR')).toBe('tr');
     expect(resolveLocale('zh-CN', 'en-US')).toBe('zh-CN');
   });
 
@@ -50,6 +51,7 @@ describe('i18n', () => {
     expect(isLocalePreference('pt-BR')).toBe(true);
     expect(isLocalePreference('ru')).toBe(true);
     expect(isLocalePreference('uk')).toBe(true);
+    expect(isLocalePreference('tr')).toBe(true);
     expect(isLocalePreference('zh-CN')).toBe(true);
     expect(isLocalePreference('l1')).toBe(false);
   });
@@ -64,6 +66,7 @@ describe('i18n', () => {
       { value: 'it', label: 'Italiano' },
       { value: 'pt-BR', label: 'Português (Brasil)' },
       { value: 'ru', label: 'Русский' },
+      { value: 'tr', label: 'Türkçe' },
       { value: 'uk', label: 'Українська' },
       { value: 'zh-CN', label: '简体中文' },
     ]);
@@ -81,6 +84,13 @@ describe('i18n', () => {
     expect(t('channel.recentlyWatched')).toBe('Zuletzt angesehen');
     expect(tp('channel.count', 12)).toBe('12 Sender');
     expect(document.documentElement.lang).toBe('de');
+  });
+
+  it('translates and interpolates Turkish messages', () => {
+    setLocale('tr');
+    expect(t('channel.recentlyWatched')).toBe('Son İzlenenler');
+    expect(tp('channel.count', 12)).toBe('12 kanal');
+    expect(document.documentElement.lang).toBe('tr');
   });
 
   it('translates and interpolates Spanish messages', () => {

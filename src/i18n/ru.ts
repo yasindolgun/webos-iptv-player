@@ -279,7 +279,7 @@ export const RU_MESSAGES = {
   'settings.username': 'Имя пользователя',
   'settings.password': 'Пароль',
   'settings.dataManagement': 'Управление данными',
-  'settings.refreshAll': 'Обновить все данные',
+  'settings.refreshAll': 'Обновить плейлист и телегид',
   'settings.clearCache': 'Очистить кэш',
   'settings.resetApp': 'Сбросить приложение',
   'settings.resetAppDescription': 'Удалить с этого устройства все аккаунты, источники, настройки, избранное и историю просмотров.',

@@ -1107,7 +1107,7 @@ export async function clearCachedChannelHealth(): Promise<void> {
   await clearStore(CHANNEL_HEALTH_STORE);
 }
 
-export async function getCachedPlaylist(): Promise<{
+export async function getCachedPlaylist(allowStale = false): Promise<{
   channels: Channel[];
   epgSources: EpgSource[];
 } | null> {
@@ -1118,7 +1118,7 @@ export async function getCachedPlaylist(): Promise<{
       payload?.version === PLAYLIST_CACHE_VERSION
       && payload.sourceSignature === playlistSourceSignature()
       && payload.channels?.length
-      && (raw.expiresAt === null || raw.expiresAt > Date.now())
+      && (allowStale || raw.expiresAt === null || raw.expiresAt > Date.now())
     ) {
       return { channels: payload.channels, epgSources: payload.epgSources ?? [] };
     }

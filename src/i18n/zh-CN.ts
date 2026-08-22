@@ -270,7 +270,7 @@ export const ZH_CN_MESSAGES = {
   'settings.username': '用户名',
   'settings.password': '密码',
   'settings.dataManagement': '数据管理',
-  'settings.refreshAll': '刷新所有数据',
+  'settings.refreshAll': '刷新播放列表和节目指南',
   'settings.clearCache': '清除缓存',
   'settings.resetApp': '重置应用',
   'settings.resetAppDescription': '移除此设备上的所有账号、播放源、偏好设置、收藏和观看记录。',

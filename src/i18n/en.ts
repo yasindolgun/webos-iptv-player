@@ -276,7 +276,7 @@ export const EN_MESSAGES = {
   'settings.username': 'Username',
   'settings.password': 'Password',
   'settings.dataManagement': 'Data Management',
-  'settings.refreshAll': 'Refresh All Data',
+  'settings.refreshAll': 'Refresh Playlist & Guide',
   'settings.clearCache': 'Clear Cache',
   'settings.resetApp': 'Reset App',
   'settings.resetAppDescription': 'Remove all accounts, sources, preferences, favorites, and viewing history from this device.',

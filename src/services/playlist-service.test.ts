@@ -15,6 +15,7 @@ const { storageMock, cacheMock, fetchTextMock } = vi.hoisted(() => ({
   cacheMock: {
     getCachedPlaylist: vi.fn(),
     scheduleCachedPlaylist: vi.fn(),
+    setCachedCatalog: vi.fn(() => Promise.resolve()),
   },
   fetchTextMock: vi.fn(),
 }));
@@ -243,6 +244,22 @@ describe('PlaylistService.refresh', () => {
     const channels = await PlaylistService.refresh();
     expect(channels.map(c => c.name)).toEqual(['Bravo Dup', 'Charlie']);
     expect(cacheMock.scheduleCachedPlaylist).not.toHaveBeenCalled();
+  });
+
+  it('keeps a source\'s last successful catalog after a refresh failure', async () => {
+    await PlaylistService.refresh();
+    fetchTextMock.mockImplementation((url: string) =>
+      url.includes('p1') ? Promise.reject(new Error('temporary failure')) : Promise.resolve(P2),
+    );
+
+    await PlaylistService.refresh();
+
+    expect(PlaylistService.channels.map(channel => channel.name)).toEqual(
+      expect.arrayContaining(['Alpha', 'Bravo', 'Charlie']),
+    );
+    expect(PlaylistService.channels.find(channel => channel.name === 'Bravo')?.playlistIds)
+      .toEqual(['a', 'b']);
+    expect(cacheMock.scheduleCachedPlaylist).toHaveBeenCalledTimes(2);
   });
 
   it('logs the loaded catalog size for a diagnostics report', async () => {
@@ -685,6 +702,29 @@ describe('PlaylistService.getByGroup', () => {
     storageMock.getFavorites.mockReturnValue([channelKey(first)]);
 
     expect(PlaylistService.getByGroup('builtin:favorites').map(c => c.name)).toEqual(['Alpha']);
+  });
+});
+
+describe('PlaylistService.getByContentKind', () => {
+  it('indexes mixed M3U entries by their inferred catalog kind', async () => {
+    fetchTextMock.mockResolvedValue([
+      '#EXTM3U',
+      '#EXTINF:-1 group-title="News",Channel One',
+      'http://host/a',
+      '#EXTINF:-1 group-title="Films",Film One',
+      'http://host/b',
+      '#EXTINF:-1 group-title="Series",Series One',
+      'http://host/c',
+    ].join('\n'));
+    await PlaylistService.refresh();
+
+    expect(PlaylistService.getByContentKind('live').map(channel => channel.name))
+      .toEqual(['Channel One']);
+    expect(PlaylistService.getByContentKind('movie').map(channel => channel.name))
+      .toEqual(['Film One']);
+    expect(PlaylistService.getByContentKind('series').map(channel => channel.name))
+      .toEqual(['Series One']);
+    expect(PlaylistService.getContentKindCount('movie')).toBe(1);
   });
 });
 

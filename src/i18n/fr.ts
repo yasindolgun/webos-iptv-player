@@ -273,7 +273,7 @@ export const FR_MESSAGES = {
   'settings.username': 'Nom d’utilisateur',
   'settings.password': 'Mot de passe',
   'settings.dataManagement': 'Gestion des données',
-  'settings.refreshAll': 'Actualiser toutes les données',
+  'settings.refreshAll': 'Actualiser la liste et le guide',
   'settings.clearCache': 'Vider le cache',
   'settings.resetApp': 'Réinitialiser l’application',
   'settings.resetAppDescription': 'Supprime de cet appareil tous les comptes, sources, préférences, favoris et historiques de visionnage.',

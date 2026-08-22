@@ -34,6 +34,8 @@ export interface Channel {
   sourceName?: string;
   /** The group as delivered by the source, kept when a customization changes `group`. */
   sourceGroup?: string;
+  /** Inferred from the source group for mixed live-TV and VOD M3U playlists. */
+  contentKind?: 'live' | 'movie' | 'series' | 'other';
   /** The customization key of the effective group, kept when a group rename makes
    *  the displayed `group` differ from the key user data is stored under. */
   groupKey?: string;

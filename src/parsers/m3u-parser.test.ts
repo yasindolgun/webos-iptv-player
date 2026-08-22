@@ -31,6 +31,21 @@ describe('parseM3U', () => {
     expect(ch.sourceAttributes).toBeUndefined();
   });
 
+  it('infers a catalog kind from a mixed M3U group', () => {
+    const m3u = [
+      '#EXTM3U',
+      '#EXTINF:-1 group-title="Films",Film One',
+      'http://host/a',
+      '#EXTINF:-1 group-title="Series",Series One',
+      'http://host/b',
+      '#EXTINF:-1 group-title="News",Channel One',
+      'http://host/c',
+    ].join('\n');
+    expect(parseM3U(m3u).channels.map(channel => channel.contentKind)).toEqual([
+      'movie', 'series', 'live',
+    ]);
+  });
+
   it('accepts single-quoted, unquoted and spaced attributes', () => {
     const m3u = [
       '#EXTM3U url-tvg = http://host/guide.xml',

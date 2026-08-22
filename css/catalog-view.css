@@ -14,6 +14,42 @@
   overflow-y: auto;
 }
 
+.m3u-catalog {
+  padding: 28px 40px;
+}
+
+.m3u-catalog-categories {
+  display: flex;
+  overflow-x: auto;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.m3u-catalog-categories button {
+  flex: 0 0 auto;
+}
+
+.m3u-catalog-categories button.active {
+  color: var(--accent);
+}
+
+.m3u-catalog-scroll {
+  height: 720px;
+  overflow-y: auto;
+}
+
+.m3u-catalog-grid {
+  position: relative;
+}
+
+.m3u-catalog-grid .catalog-tile {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  min-height: 112px;
+  text-align: left;
+}
+
 .catalog-loading,
 .catalog-empty { display: flex; align-items: center; justify-content: center; height: 100%; }
 

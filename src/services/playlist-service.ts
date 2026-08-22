@@ -39,6 +39,8 @@ import {
 } from './xtream-client';
 import { getCachedPlaylist, scheduleCachedPlaylist } from './idb-cache';
 import { isSourceEnabled } from '../utils/playlist';
+import { m3uContentKind, type M3uContentKind } from '../utils/m3u-content-kind';
+import { setCachedM3uCatalog } from './m3u-catalog-cache';
 
 const log = createLogger('Playlist');
 
@@ -95,6 +97,7 @@ class PlaylistServiceImpl {
   epgSources: EpgSource[] = [];
   private indexMap = new Map<Channel, number>(); // channel -> global index, O(1) indexOf
   private channelsByGroup = new Map<string, Channel[]>();
+  private channelsByContentKind = new Map<M3uContentKind, Channel[]>();
   private channelsByPlaylist = new Map<string, Channel[]>();
   private channelsByPlaylistGroup = new Map<string, Map<string, Channel[]>>();
   private groupsByPlaylist = new Map<string, string[]>();
@@ -128,6 +131,7 @@ class PlaylistServiceImpl {
     this.epgSources = [];
     this.indexMap = new Map();
     this.channelsByGroup = new Map();
+    this.channelsByContentKind = new Map();
     this.channelsByPlaylist = new Map();
     this.channelsByPlaylistGroup = new Map();
     this.groupsByPlaylist = new Map();
@@ -151,7 +155,9 @@ class PlaylistServiceImpl {
       this.logLoadCompleted('none', 0, 0);
       return [];
     }
-    const cached = await getCachedPlaylist();
+    // A configured M3U source is manually refreshed by default. Keep its last
+    // successful snapshot at startup until the user explicitly asks for a refresh.
+    const cached = await getCachedPlaylist(true);
     if (cached) {
       const channelsNeedFiltering = cached.channels
         .some(channel => channel.playlistIds.some(id => !enabledIds.has(id)));
@@ -198,6 +204,19 @@ class PlaylistServiceImpl {
     const allChannels: Channel[] = [];
     const byUrl = new Map<string, Channel>();
     const epgSources: EpgSource[] = [];
+    const previousChannelsByPlaylist = new Map<string, Channel[]>();
+    const previousEpgSourcesByPlaylist = new Map<string, EpgSource[]>();
+    for (const channel of this.allChannels) {
+      for (const playlistId of channel.playlistIds) {
+        this.appendIndexed(previousChannelsByPlaylist, playlistId, channel);
+      }
+    }
+    for (const source of this.epgSources) {
+      for (const playlistId of source.playlistIds) {
+        this.appendIndexed(previousEpgSourcesByPlaylist, playlistId, source);
+      }
+    }
+    const failedPlaylistIds = new Set<string>();
     let failedPlaylists = 0;
     const addEpgSource = (url: string, playlistId: string, kind: EpgSource['kind']): void => {
       const existing = epgSources.find((source) => source.url === url);
@@ -284,6 +303,18 @@ class PlaylistServiceImpl {
         }
         if (!parsed) throw new Error('Xtream source returned no playlist or live catalog');
 
+        if (pl.source !== 'xtream') {
+          for (const kind of ['movie', 'series', 'other'] as const) {
+            void setCachedM3uCatalog(pl, kind, parsed.channels).catch(err => log.warn(
+              'M3U catalog cache write failed',
+              'event=m3u.catalog.cache.write.failed',
+              `source=${plKey}`,
+              `kind=${kind}`,
+              err,
+            ));
+          }
+        }
+
         if (xtreamCredentials) {
           await this.applyXtreamCatchup(
             parsed.channels,
@@ -337,6 +368,7 @@ class PlaylistServiceImpl {
         }
       } catch (err) {
         failedPlaylists++;
+        failedPlaylistIds.add(plKey);
         if (pl.source === 'xtream') {
           log.error(
             `Failed to load Xtream playlist '${pl.name || pl.url}'`,
@@ -350,11 +382,63 @@ class PlaylistServiceImpl {
       plDone();
     }
 
+    const playlistRanks = new Map(playlists.map((playlist, index) => [playlist.id, index]));
+    let restoredPlaylists = 0;
+    for (const playlistId of failedPlaylistIds) {
+      const previousChannels = previousChannelsByPlaylist.get(playlistId) ?? [];
+      const previousSources = previousEpgSourcesByPlaylist.get(playlistId) ?? [];
+      if (!previousChannels.length && !previousSources.length) continue;
+      restoredPlaylists++;
+      for (const previous of previousChannels) {
+        const existing = byUrl.get(previous.url);
+        if (existing) {
+          const existingRank = existing.playlistIds.reduce(
+            (rank, id) => Math.min(rank, playlistRanks.get(id) ?? rank),
+            Infinity,
+          );
+          const restoredRank = playlistRanks.get(playlistId) ?? Infinity;
+          if (!existing.playlistIds.includes(playlistId)) existing.playlistIds.push(playlistId);
+          if (restoredRank < existingRank) {
+            const restored = { ...previous, playlistIds: existing.playlistIds.slice() };
+            const index = allChannels.indexOf(existing);
+            if (index >= 0) allChannels[index] = restored;
+            byUrl.set(restored.url, restored);
+          }
+        } else {
+          const restored = { ...previous, playlistIds: [playlistId] };
+          byUrl.set(restored.url, restored);
+          allChannels.push(restored);
+        }
+      }
+      for (const previous of previousSources) {
+        addEpgSource(previous.url, playlistId, previous.kind);
+      }
+      log.warn(
+        'Using last successful playlist data after refresh failure',
+        'event=playlist.refresh.stale_used',
+        `source=${playlistId}`,
+        `channels=${previousChannels.length}`,
+      );
+    }
+
+    for (const channel of allChannels) {
+      channel.playlistIds.sort((a, b) => (playlistRanks.get(a) ?? 0) - (playlistRanks.get(b) ?? 0));
+    }
+    const orderedChannels = allChannels.map((channel, index) => ({
+      channel,
+      index,
+      rank: channel.playlistIds.reduce(
+        (rank, id) => Math.min(rank, playlistRanks.get(id) ?? rank),
+        Infinity,
+      ),
+    })).sort((a, b) => a.rank - b.rank || a.index - b.index);
+    allChannels.splice(0, allChannels.length, ...orderedChannels.map(entry => entry.channel));
+
     this.allChannels = allChannels;
     this.epgSources = epgSources;
     // Cache the raw parse: customization is a view over it, so an edit re-sorts
     // memory instead of forcing a re-fetch.
-    if (!failedPlaylists) {
+    if (!failedPlaylists || restoredPlaylists === failedPlaylists) {
       scheduleCachedPlaylist(allChannels, epgSources);
     } else {
       log.warn('Skipping cache write because one or more playlists failed');
@@ -478,6 +562,7 @@ class PlaylistServiceImpl {
     const groupSetsByPlaylist = new Map<string, Set<string>>();
     this.indexMap = new Map();
     this.channelsByGroup = new Map();
+    this.channelsByContentKind = new Map();
     this.channelsByPlaylist = new Map();
     this.channelsByPlaylistGroup = new Map();
     this.groupKeyByDisplay = new Map();
@@ -508,6 +593,9 @@ class PlaylistServiceImpl {
         }
         this.appendIndexed(this.channelsByGroup, ch.group, ch);
       }
+      const contentKind = ch.contentKind ?? m3uContentKind(ch.sourceGroup ?? ch.group);
+      ch.contentKind = contentKind;
+      this.appendIndexed(this.channelsByContentKind, contentKind, ch);
       for (const playlistId of ch.playlistIds) {
         this.appendIndexed(this.channelsByPlaylist, playlistId, ch);
         if (!ch.group) continue;
@@ -612,6 +700,18 @@ class PlaylistServiceImpl {
     return playlist
       ? this.channelsByPlaylistGroup.get(playlist)?.get(sourceGroup) ?? []
       : this.channelsByGroup.get(sourceGroup) ?? [];
+  }
+
+  getByContentKind(kind: M3uContentKind, playlist?: string): Channel[] {
+    this.ensureDerivedIndexes();
+    const entries = this.channelsByContentKind.get(kind) ?? [];
+    return playlist
+      ? entries.filter(channel => channel.playlistIds.includes(playlist))
+      : entries;
+  }
+
+  getContentKindCount(kind: M3uContentKind, playlist?: string): number {
+    return this.getByContentKind(kind, playlist).length;
   }
 
   getGroupCount(group: ChannelGroupId, playlist?: string): number {

@@ -9,6 +9,7 @@ import {
   xtreamCatchupSources,
   xtreamCredentialsFromLiveUrl,
 } from '../utils/xtream-url';
+import { m3uContentKind } from '../utils/m3u-content-kind';
 
 export interface M3UParseOptions {
   maxChannels?: number;
@@ -177,6 +178,7 @@ export function parseM3U(
         }
         if (current.group) groupSet.add(current.group);
         for (const group of current.sourceGroups ?? []) groupSet.add(group);
+        current.contentKind = m3uContentKind(current.group);
         channels.push(current);
         current = null;
         if (maxChannels > 0 && channels.length >= maxChannels) {

@@ -10,6 +10,10 @@ const baseURL = 'http://localhost:3000';
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
+  // Browser builds and legacy-layout pixel comparisons are CPU intensive.
+  // Bound concurrency so they retain their per-test timing guarantees on
+  // desktop hosts while both browser projects run.
+  workers: 4,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'list' : [['list'], ['html', { outputFolder: 'test-output/report', open: 'never' }]],

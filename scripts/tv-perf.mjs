@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Sample a webOS app's performance counters (CPU, JS heap, DOM nodes, …) over the
 // Chrome DevTools Protocol, capture CPU profiles and heap snapshots, or force
 // GC — the headless counterpart of DevTools' Performance Monitor and panels.

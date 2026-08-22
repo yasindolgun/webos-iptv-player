@@ -273,7 +273,7 @@ export const DE_MESSAGES = {
   'settings.username': 'Benutzername',
   'settings.password': 'Passwort',
   'settings.dataManagement': 'Datenverwaltung',
-  'settings.refreshAll': 'Alle Daten aktualisieren',
+  'settings.refreshAll': 'Playlist und Programmführer aktualisieren',
   'settings.clearCache': 'Cache leeren',
   'settings.resetApp': 'App zurücksetzen',
   'settings.resetAppDescription': 'Alle Konten, Quellen, Einstellungen, Favoriten und Wiedergabeverläufe von diesem Gerät entfernen.',

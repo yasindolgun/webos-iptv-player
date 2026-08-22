@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { execFileSync, spawn as spawnChild } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';

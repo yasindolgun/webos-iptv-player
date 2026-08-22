@@ -1424,7 +1424,7 @@ export class Settings {
     this.nav.setRestrict(pane);
     const focused = this.nav.focusFirst();
     this.nav.setRestrict(null);
-    if (focused) this.setActiveCategory(category);
+    if (focused) this.scrollToCategory(category);
   }
 
   private syncCategoryFromScroll(main: HTMLElement): void {
