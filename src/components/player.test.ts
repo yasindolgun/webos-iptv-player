@@ -19,7 +19,7 @@ vi.mock('../services/storage-service', () => ({
     setLastChannel: vi.fn(), setLastChannelKey: vi.fn(),
     getSubtitlePref: vi.fn(), setSubtitlePref: vi.fn(),
     getAudioPref: vi.fn(), setAudioPref: vi.fn(),
-    setResume: vi.fn(), clearResume: vi.fn(),
+    setResume: vi.fn(), setWatchHistory: vi.fn(), clearResume: vi.fn(),
     removeWatchlist: vi.fn(),
     getPickedOnlineSub: vi.fn(), setPickedOnlineSub: vi.fn(),
     setCatchupProgress: vi.fn(), getCatchupProgress: vi.fn(), clearCatchupProgress: vi.fn(),
@@ -943,6 +943,9 @@ describe('Player VOD mode', () => {
     video.currentTime = 1200;
     player.handleAction('back');
     expect(StorageService.setResume).toHaveBeenCalledWith(expect.objectContaining({ itemId: '10', position: 1200, duration: 3600, ext: 'mp4' }));
+    expect(StorageService.setWatchHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ itemId: '10', position: 1200, duration: 3600 }),
+    );
     expect(r.onBack).toHaveBeenCalled();
     expect(player.isVod()).toBe(false); // stop() cleared VOD state
   });

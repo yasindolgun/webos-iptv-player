@@ -4,7 +4,16 @@ import type { Channel } from '../types';
 import { CONFIG } from '../config';
 
 const { storageMock, catalogSearchMock } = vi.hoisted(() => ({
-  storageMock: { getResume: vi.fn(() => null) },
+  storageMock: {
+    getResume: vi.fn(() => null),
+    getWatchHistory: vi.fn(() => null),
+    getWatchlist: vi.fn(() => []),
+    toggleWatchlist: vi.fn(() => true),
+    getPlaylists: vi.fn(() => [
+      { id: 'p1', name: 'Playlist One', url: 'http://host/a' },
+      { id: 'p2', name: 'Playlist Two', url: 'http://host/b' },
+    ]),
+  },
   catalogSearchMock: { query: vi.fn(), release: vi.fn(), warm: vi.fn() },
 }));
 
@@ -43,6 +52,9 @@ describe('M3uCatalog', () => {
     Element.prototype.scrollIntoView = vi.fn();
     vi.clearAllMocks();
     storageMock.getResume.mockReturnValue(null);
+    storageMock.getWatchHistory.mockReturnValue(null);
+    storageMock.getWatchlist.mockReturnValue([]);
+    storageMock.toggleWatchlist.mockReturnValue(true);
     catalogSearchMock.query.mockResolvedValue([]);
     catalogSearchMock.warm.mockResolvedValue(undefined);
     container = document.createElement('div');
@@ -70,12 +82,14 @@ describe('M3uCatalog', () => {
   });
 
   it('offers saved progress and passes the selected start mode to playback', () => {
-    storageMock.getResume.mockReturnValue({ position: 120 });
+    storageMock.getResume.mockReturnValue({ position: 120, duration: 600, updatedAt: 1784662200000 });
     const catalog = new M3uCatalog(container, onPlay);
     catalog.open([movie()], 'movie');
     (container.querySelector('[data-m3u-item^="channel:"]') as HTMLElement).click();
 
     expect(container.querySelector('[data-key="resume"]')?.textContent).toContain('Resume');
+    expect(container.querySelector('.m3u-detail-history')?.textContent).toContain('2:00 / 10:00');
+    expect(container.querySelector('.m3u-resume-fill')?.getAttribute('style')).toContain('20%');
     (container.querySelector('[data-key="resume"]') as HTMLElement).click();
     (container.querySelector('[data-key="play"]') as HTMLElement).click();
 
@@ -140,16 +154,93 @@ describe('M3uCatalog', () => {
       contentKind: 'series' as const,
     };
     storageMock.getResume.mockImplementation((_account: string, _kind: string, id: string) =>
-      id === m3uItemKey(second) ? { position: 120 } : null);
+      id === m3uItemKey(second) ? { position: 120, duration: 600, updatedAt: 1784662200000 } : null);
     const catalog = new M3uCatalog(container, onPlay);
     catalog.open([first, second], 'series');
 
     (container.querySelector('[data-m3u-item^="series:"]') as HTMLElement).click();
     expect(container.querySelector('.m3u-series-detail')?.textContent).toContain('Show One');
+    expect(container.querySelector('.catalog-hero-kicker')?.textContent).toContain('Series');
     (container.querySelector('[data-m3u-season="2"]') as HTMLElement).click();
     (container.querySelector(`[data-m3u-episode="${m3uItemKey(second)}"]`) as HTMLElement).click();
 
     expect(onPlay).toHaveBeenCalledWith(second, true);
+    expect(container.querySelector('.episode-resume')?.textContent).toContain('2:00 / 10:00');
+  });
+
+  it('moves focus between M3U movie detail actions by remote control', () => {
+    storageMock.getResume.mockReturnValue({ position: 120, duration: 600, updatedAt: 1784662200000 });
+    const catalog = new M3uCatalog(container, onPlay);
+    catalog.open([movie()], 'movie');
+    (container.querySelector('[data-m3u-item^="channel:"]') as HTMLElement).click();
+
+    (container.querySelector('[data-key="play"]') as HTMLElement)
+      .dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));
+    catalog.handleAction('select');
+
+    expect(onPlay).toHaveBeenCalledWith(movie(), false);
+  });
+
+  it('shows completed M3U playback as watched without offering a resume', () => {
+    storageMock.getWatchHistory.mockReturnValue({
+      position: 600, duration: 600, updatedAt: 1784662200000,
+    });
+    const catalog = new M3uCatalog(container, onPlay);
+    catalog.open([movie()], 'movie');
+    (container.querySelector('[data-m3u-item^="channel:"]') as HTMLElement).click();
+
+    expect(container.querySelector('.m3u-detail-history')?.textContent).toContain('Watched');
+    expect(container.querySelector('[data-key="resume"]')).toBeNull();
+    expect(container.querySelector('[data-key="play"]')?.textContent).toContain('Play');
+  });
+
+  it('keeps M3U movies in a persistent watchlist', () => {
+    const catalog = new M3uCatalog(container, onPlay);
+    catalog.open([movie()], 'movie');
+    (container.querySelector('[data-m3u-item^="channel:"]') as HTMLElement).click();
+    (container.querySelector('[data-key="watchlist"]') as HTMLElement).click();
+
+    expect(storageMock.toggleWatchlist).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'm3u-vod',
+      itemId: m3uItemKey(movie()),
+      name: 'Movie One',
+    }));
+  });
+
+  it('keeps an M3U series in a separate persistent watchlist', () => {
+    const episode = {
+      ...movie('s1'), name: 'Show One S01E01 - First', group: 'Series', sourceGroup: 'Series',
+      contentKind: 'series' as const,
+    };
+    const catalog = new M3uCatalog(container, onPlay);
+    catalog.open([episode], 'series');
+    (container.querySelector('[data-m3u-item^="series:"]') as HTMLElement).click();
+    (container.querySelector('[data-key="watchlist"]') as HTMLElement).click();
+
+    expect(storageMock.toggleWatchlist).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'm3u-series',
+      name: 'Show One',
+    }));
+  });
+
+  it('filters M3U catalog items by source and watchlist', () => {
+    const first = movie('m1');
+    const second = { ...movie('m2'), name: 'Second Movie', playlistIds: ['p2'] };
+    storageMock.getWatchlist.mockImplementation((account: string, kind: string) =>
+      kind === 'm3u-vod' && account === m3uAccountId(first)
+        ? [{ accountId: account, kind, itemId: m3uItemKey(first) }]
+        : []);
+    const catalog = new M3uCatalog(container, onPlay);
+    catalog.open([first, second], 'movie');
+
+    (container.querySelector('[data-m3u-source="p2"]') as HTMLElement).click();
+    expect(container.textContent).toContain('Second Movie');
+    expect(container.textContent).not.toContain('Movie One');
+
+    (container.querySelector('[data-m3u-source=""]') as HTMLElement).click();
+    (container.querySelector('[data-m3u-watchlist]') as HTMLElement).click();
+    expect(container.textContent).toContain('Movie One');
+    expect(container.textContent).not.toContain('Second Movie');
   });
 
   it('moves remote focus beyond the rendered M3U window', () => {

@@ -874,12 +874,14 @@
    its mini app-mock (tab bar, focused channel tile, list rows, status dots) and
    its own surfaces/text render in that theme's colors. */
 .theme-swatch-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 18px;
 }
 
 .theme-swatch {
+  box-sizing: border-box;
+  flex: 0 0 calc((100% - 72px) / 5);
   display: block;
   padding: 0;
   overflow: hidden;

@@ -503,7 +503,7 @@ export class Player {
     if (!v || !el) return;
     const dur = Number.isFinite(el.duration) ? el.duration : 0;
     if (dur <= 0) return; // metadata not loaded yet — currentTime is 0/unknown; don't clobber the stored point
-    StorageService.setResume({
+    const entry = {
       accountId: v.accountId, kind: v.kind, itemId: v.itemId,
       name: v.title, poster: v.poster, ext: extFromUrl(v.url),
       position: this.pendingSeekTarget ?? (el.currentTime || 0),
@@ -511,7 +511,9 @@ export class Player {
       updatedAt: Date.now(),
       episodeQueue: v.episodeQueue,
       watchlistOwner: v.watchlistOwner,
-    });
+    };
+    StorageService.setResume(entry);
+    StorageService.setWatchHistory(entry);
   }
 
   private saveCatchupProgress(opts?: { completed?: boolean }): void {

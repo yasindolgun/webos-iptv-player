@@ -396,6 +396,16 @@ describe('StorageService resume store', () => {
     expect(StorageService.getResume('x1', 'vod', '11')).toBeNull();
   });
 
+  it('keeps completed playback in history after its resume point is cleared', () => {
+    const entry = resume({ position: 5990, duration: 6000 });
+    StorageService.setWatchHistory(entry);
+    StorageService.setResume(entry);
+
+    expect(StorageService.getResume(entry.accountId, entry.kind, entry.itemId)).toBeNull();
+    expect(StorageService.getWatchHistory(entry.accountId, entry.kind, entry.itemId))
+      .toMatchObject({ position: 5990, duration: 6000 });
+  });
+
   it('clears a finished entry (near the end) instead of storing it', () => {
     StorageService.setResume(resume({ position: 100 }));
     StorageService.setResume(resume({ position: 5990, duration: 6000 })); // within RESUME_FINISH_PAD

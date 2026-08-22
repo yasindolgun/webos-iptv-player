@@ -305,6 +305,11 @@ const M3U_SCREENS: Screen[] = [
     name: 'search-empty',
     budget: 0,
     go: async (p) => {
+      // The prior screen deliberately leaves a pending direct-channel entry
+      // visible for its snapshot. Under a busy suite it may tune before this
+      // screen starts, putting the page back in the full-screen player.
+      // Escape either abandons that entry or returns from the resulting player.
+      await p.keyboard.press('Escape');
       await enterTab(p, 'search');
       await p.locator('.tab-bar-search-input').fill('zzqqxx');
       await expect(p.locator('#view-search')).toBeVisible();
@@ -330,17 +335,16 @@ const M3U_SCREENS: Screen[] = [
   },
   {
     // A past programme only offers to resume when a checkpoint exists for it;
-    // prepareM3U seeds one. RIGHT enters the programme column on programme 0,
-    // which is the past show, and ENTER activates it.
+    // prepareM3U seeds one. Select it directly so this visual test does not
+    // depend on which programme retained the D-pad focus between screens.
     name: 'catchup-resume',
     budget: 0,
     go: async (p) => {
-      await p.keyboard.press('Escape');
-      await p.keyboard.press('Escape');
+      await seedCatchupResume(p);
       await enterTab(p, 'epg');
-      await expect(p.locator('#epg-programmes .epg-programme-item').first()).toBeVisible();
-      await p.keyboard.press('ArrowRight');
-      await p.keyboard.press('Enter');
+      const programme = p.locator('#epg-programmes [data-prog-idx="0"]');
+      await expect(programme).toBeVisible();
+      await programme.click();
       await expect(p.locator('.catchup-resume-prompt')).toBeVisible();
     },
   },
@@ -529,6 +533,26 @@ async function seedUserData(
     };
   }), [store, records] as const);
   await page.reload();
+}
+
+async function seedCatchupResume(page: Page): Promise<void> {
+  const startMs = NOW.getTime() - 2 * 3600_000;
+  const stopMs = NOW.getTime() - 3600_000;
+  const channelKeyValue = channelKey({ url: 'http://streams.example.com/one.m3u8' } as Channel);
+  await seedUserData(page, 'playback-progress', [{
+    key: `catchup:${channelKeyValue}|${startMs}`,
+    value: {
+      channelKey: channelKeyValue,
+      progStart: startMs,
+      progEnd: stopMs,
+      position: 1800,
+      duration: 3600,
+      updatedAt: startMs,
+      completed: false,
+      expiresAt: stopMs + 7 * 86400_000,
+    },
+    updatedAt: startMs,
+  }]);
 }
 
 async function looseTextGaps(modern: Page, legacy: Page): Promise<string[]> {

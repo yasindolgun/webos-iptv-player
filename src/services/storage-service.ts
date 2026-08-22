@@ -37,6 +37,7 @@ interface UserDataState {
   subtitlePrefs: Record<string, SubtitlePref>;
   subtitleOffsets: Record<string, number>;
   resume: Record<string, ResumeEntry>;
+  watchHistory: Record<string, ResumeEntry>;
   watchlist: Record<string, WatchlistEntry>;
   onlineSubPicks: Record<string, PickedOnlineSub>;
   catchupProgress: Record<string, StoredCatchup>;
@@ -76,6 +77,10 @@ function reminderKey(item: Reminder): string {
 
 function resumeKey(entry: Pick<ResumeEntry, 'accountId' | 'kind' | 'itemId'>): string {
   return `resume:${entry.accountId}|${entry.kind}|${entry.itemId}`;
+}
+
+function historyKey(entry: Pick<ResumeEntry, 'accountId' | 'kind' | 'itemId'>): string {
+  return `history:${entry.accountId}|${entry.kind}|${entry.itemId}`;
 }
 
 function watchlistKey(entry: Pick<WatchlistEntry, 'accountId' | 'kind' | 'itemId'>): string {
@@ -134,6 +139,10 @@ function allUserRecords(data: UserDataState): Parameters<typeof replaceAllUserDa
       ...Object.keys(data.resume).map(key => {
         const entry = data.resume[key];
         return record(resumeKey(entry), entry, { updatedAt: entry.updatedAt });
+      }),
+      ...Object.keys(data.watchHistory).map(key => {
+        const entry = data.watchHistory[key];
+        return record(historyKey(entry), entry, { updatedAt: entry.updatedAt });
       }),
       ...Object.keys(data.catchupProgress).map(key => {
         const entry = data.catchupProgress[key];
@@ -219,6 +228,15 @@ function legacyRecords(key: string, value: unknown): {
         }),
         replacePrefix: 'resume:',
       };
+    case 'watch_history':
+      return {
+        store: 'playback-progress',
+        records: Object.keys(value as Record<string, ResumeEntry>).map(item => {
+          const entry = (value as Record<string, ResumeEntry>)[item];
+          return record(historyKey(entry), entry, { updatedAt: entry.updatedAt });
+        }),
+        replacePrefix: 'history:',
+      };
     case 'watchlist':
       return {
         store: 'watchlist',
@@ -286,6 +304,7 @@ async function loadUserDataState(): Promise<UserDataState> {
     subtitlePrefs: {},
     subtitleOffsets: {},
     resume: {},
+    watchHistory: {},
     watchlist: {},
     onlineSubPicks: {},
     catchupProgress: {},
@@ -324,6 +343,9 @@ async function loadUserDataState(): Promise<UserDataState> {
     if (item.key.startsWith('resume:')) {
       const entry = item.value as ResumeEntry;
       data.resume[`${entry.accountId}|${entry.kind}|${entry.itemId}`] = entry;
+    } else if (item.key.startsWith('history:')) {
+      const entry = item.value as ResumeEntry;
+      data.watchHistory[`${entry.accountId}|${entry.kind}|${entry.itemId}`] = entry;
     } else if (item.key.startsWith('catchup:')) {
       const entry = item.value as StoredCatchup;
       data.catchupProgress[`${entry.channelKey}|${entry.progStart}`] = entry;
@@ -346,6 +368,7 @@ async function initUserData(): Promise<void> {
     ['subtitle_prefs', {}],
     ['subtitle_offsets', {}],
     ['resume', {}],
+    ['watch_history', {}],
     ['watchlist', {}],
     ['online_sub_picks', {}],
     ['catchup_progress', {}],
@@ -867,6 +890,25 @@ export const StorageService = {
       .filter((e) => e.accountId === accountId)
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .map(cloneValue);
+  },
+  getWatchHistory(accountId: string, kind: ResumeKind, itemId: string): ResumeEntry | null {
+    const all = userData ? userData.watchHistory : get<Record<string, ResumeEntry>>('watch_history', {});
+    const entry = all[`${accountId}|${kind}|${itemId}`] ?? null;
+    return entry ? cloneValue(entry) : null;
+  },
+  setWatchHistory(entry: ResumeEntry): void {
+    if (entry.position < CONFIG.XTREAM.RESUME_MIN_SECS) return;
+    const key = `${entry.accountId}|${entry.kind}|${entry.itemId}`;
+    if (userData) {
+      userData.watchHistory[key] = cloneValue(entry);
+      persistUserChanges('playback-progress', [
+        record(historyKey(entry), entry, { updatedAt: entry.updatedAt }),
+      ]);
+      return;
+    }
+    const all = get<Record<string, ResumeEntry>>('watch_history', {});
+    all[key] = cloneValue(entry);
+    set('watch_history', all);
   },
   clearResume(accountId: string, kind: ResumeKind, itemId: string): void {
     const key = `${accountId}|${kind}|${itemId}`;

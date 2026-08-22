@@ -436,7 +436,7 @@ export interface SeriesInfo {
   episodesBySeason: Record<number, Episode[]>;
 }
 
-export type WatchlistKind = 'vod' | 'series';
+export type WatchlistKind = 'vod' | 'series' | 'm3u-vod' | 'm3u-series';
 
 export interface WatchlistEntry {
   accountId: string;

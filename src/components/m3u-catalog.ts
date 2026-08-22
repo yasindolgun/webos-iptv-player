@@ -1,4 +1,4 @@
-import type { Channel } from '../types';
+import type { Channel, ResumeEntry, WatchlistEntry, WatchlistKind } from '../types';
 import type { Action } from '../types';
 import type { M3uContentKind } from '../utils/m3u-content-kind';
 import { SpatialNav } from '../navigation/spatial-nav';
@@ -24,6 +24,7 @@ import { WorkerListSearch } from '../workers/list-search-client';
 import { CONFIG } from '../config';
 import { createLogger } from '../utils/logger';
 import { runInFrameSlices } from '../utils/frame-slices';
+import { formatPosition } from '../utils/time';
 import { t } from '../i18n';
 
 const CARD_HEIGHT = 128;
@@ -37,6 +38,7 @@ type M3uCatalogItem = {
   name: string;
   poster: string;
   categoryId: string;
+  playlistIds: string[];
   channel: Channel;
 } | {
   kind: 'series';
@@ -44,6 +46,7 @@ type M3uCatalogItem = {
   name: string;
   poster: string;
   categoryId: string;
+  playlistIds: string[];
   series: M3uSeries;
 };
 
@@ -51,10 +54,14 @@ export class M3uCatalog {
   private channels: Channel[] = [];
   private allItems: M3uCatalogItem[] = [];
   private itemsByCategory = new Map<string, M3uCatalogItem[]>();
+  private itemsBySource = new Map<string, M3uCatalogItem[]>();
   private categoryItems: M3uCatalogItem[] = [];
   private items: M3uCatalogItem[] = [];
   private categories: M3uCatalogCategory[] = [];
   private category = '';
+  private sourceId = '';
+  private watchlistOnly = false;
+  private watchlistKeys = new Set<string>();
   private query = '';
   private queryGeneration = 0;
   private queryPending = false;
@@ -91,6 +98,7 @@ export class M3uCatalog {
       if (this.current) {
         const key = element.closest<HTMLElement>('[data-key]')?.dataset.key;
         if (key === 'resume' || key === 'play') this.onPlay(this.current, key === 'resume');
+        else if (key === 'watchlist') this.toggleCurrentWatchlist();
         else if (key === 'back') this.closeDetail();
         return;
       }
@@ -103,7 +111,17 @@ export class M3uCatalog {
         }
         const episodeId = element.closest<HTMLElement>('[data-m3u-episode]')?.dataset.m3uEpisode;
         if (episodeId) this.playSeriesEpisode(episodeId);
+        else if (element.closest<HTMLElement>('[data-key="watchlist"]')) this.toggleCurrentWatchlist();
         else if (element.closest<HTMLElement>('[data-key="back"]')) this.closeDetail();
+        return;
+      }
+      const source = element.closest<HTMLElement>('[data-m3u-source]');
+      if (source) {
+        this.selectSource(source.dataset.m3uSource ?? '');
+        return;
+      }
+      if (element.closest<HTMLElement>('[data-m3u-watchlist]')) {
+        this.toggleWatchlistFilter();
         return;
       }
       const category = element.closest<HTMLElement>('[data-m3u-category]');
@@ -141,6 +159,8 @@ export class M3uCatalog {
     this.current = null;
     this.currentSeries = null;
     this.selectedSeason = 0;
+    this.sourceId = '';
+    this.watchlistOnly = false;
     this.query = '';
     this.queryPending = false;
     this.itemFocusIndex = 0;
@@ -165,6 +185,7 @@ export class M3uCatalog {
     this.items = [];
     this.categories = [];
     this.itemsByCategory = new Map();
+    this.itemsBySource = new Map();
     this.categoryItems = [];
     this.renderPreparing();
     void this.prepareInFrames(channels, kind, generation);
@@ -183,6 +204,9 @@ export class M3uCatalog {
       } else if (action === 'select') {
         const key = this.nav.focused?.dataset.key;
         if (key === 'resume' || key === 'play') this.onPlay(this.current, key === 'resume');
+        else if (key === 'watchlist') this.toggleCurrentWatchlist();
+      } else if (action === 'up' || action === 'down' || action === 'left' || action === 'right') {
+        this.nav.move(action);
       }
       return;
     }
@@ -197,6 +221,7 @@ export class M3uCatalog {
         } else {
           const episodeId = this.nav.focused?.dataset.m3uEpisode;
           if (episodeId) this.playSeriesEpisode(episodeId);
+          else if (this.nav.focused?.dataset.key === 'watchlist') this.toggleCurrentWatchlist();
         }
       } else if (action === 'up' || action === 'down' || action === 'left' || action === 'right') {
         this.nav.move(action);
@@ -207,6 +232,15 @@ export class M3uCatalog {
       const selectedCategory = this.nav.focused?.dataset.m3uCategory;
       if (selectedCategory !== undefined) {
         this.selectCategory(selectedCategory);
+        return;
+      }
+      const selectedSource = this.nav.focused?.dataset.m3uSource;
+      if (selectedSource !== undefined) {
+        this.selectSource(selectedSource);
+        return;
+      }
+      if (this.nav.focused?.dataset.m3uWatchlist !== undefined) {
+        this.toggleWatchlistFilter();
         return;
       }
       const item = this.nav.focused?.dataset.m3uItem;
@@ -229,7 +263,25 @@ export class M3uCatalog {
 
   private selectCategory(category: string): void {
     this.category = category;
-    this.categoryItems = this.itemsByCategory.get(category) ?? [];
+    this.applyFilters();
+    this.itemFocusIndex = 0;
+    this.virtualizer.setScrollOffset(0);
+    this.refreshQuery();
+    this.nav.focusFirst();
+  }
+
+  private selectSource(sourceId: string): void {
+    this.sourceId = sourceId;
+    this.applyFilters();
+    this.itemFocusIndex = 0;
+    this.virtualizer.setScrollOffset(0);
+    this.refreshQuery();
+    this.nav.focusFirst();
+  }
+
+  private toggleWatchlistFilter(): void {
+    this.watchlistOnly = !this.watchlistOnly;
+    this.applyFilters();
     this.itemFocusIndex = 0;
     this.virtualizer.setScrollOffset(0);
     this.refreshQuery();
@@ -309,15 +361,23 @@ export class M3uCatalog {
 
   private buildCategoryItems(): void {
     this.itemsByCategory = new Map([['', this.allItems]]);
+    this.itemsBySource = new Map();
     for (const item of this.allItems) {
       const entries = this.itemsByCategory.get(item.categoryId);
       if (entries) entries.push(item);
       else this.itemsByCategory.set(item.categoryId, [item]);
+      for (const sourceId of item.playlistIds) {
+        const sourceItems = this.itemsBySource.get(sourceId);
+        if (sourceItems) sourceItems.push(item);
+        else this.itemsBySource.set(sourceId, [item]);
+      }
     }
+    this.refreshWatchlistKeys();
   }
 
   private async buildCategoryItemsInFrames(shouldContinue: () => boolean): Promise<boolean> {
     const indexed = new Map<string, M3uCatalogItem[]>([['', this.allItems]]);
+    const bySource = new Map<string, M3uCatalogItem[]>();
     let index = 0;
     const complete = this.allItems.length === 0 || await runInFrameSlices(() => {
       const item = this.allItems[index];
@@ -325,9 +385,18 @@ export class M3uCatalog {
       const entries = indexed.get(item.categoryId);
       if (entries) entries.push(item);
       else indexed.set(item.categoryId, [item]);
+      for (const sourceId of item.playlistIds) {
+        const sourceItems = bySource.get(sourceId);
+        if (sourceItems) sourceItems.push(item);
+        else bySource.set(sourceId, [item]);
+      }
       return index >= this.allItems.length;
     }, { shouldContinue });
-    if (complete) this.itemsByCategory = indexed;
+    if (complete) {
+      this.itemsByCategory = indexed;
+      this.itemsBySource = bySource;
+      this.refreshWatchlistKeys();
+    }
     return complete;
   }
 
@@ -338,6 +407,16 @@ export class M3uCatalog {
     this.preparing = false;
     this.selectCategory('');
     this.warmSearchIndex();
+  }
+
+  private applyFilters(): void {
+    let selected = this.sourceId
+      ? this.itemsBySource.get(this.sourceId) ?? []
+      : this.allItems;
+    if (this.watchlistOnly) selected = selected.filter(item => this.isWatchlisted(item));
+    this.categoryItems = this.category
+      ? selected.filter(item => item.categoryId === this.category)
+      : selected;
   }
 
   private warmSearchIndex(): void {
@@ -420,6 +499,18 @@ export class M3uCatalog {
               </button>
             `)}
           </div>
+          <div class="m3u-catalog-categories m3u-catalog-sources">
+            <button data-focusable data-m3u-source="" class="${this.sourceId ? '' : 'active'}">${t('common.all')}</button>
+            ${this.sourceOptions().map(source => html`
+              <button data-focusable data-m3u-source="${source.id}"
+                      class="${this.sourceId === source.id ? 'active' : ''}">
+                ${source.name} (${source.count})
+              </button>
+            `)}
+            <button data-focusable data-m3u-watchlist class="${this.watchlistOnly ? 'active' : ''}">
+              ${t('common.watchlist')}
+            </button>
+          </div>
         </div>
         <div class="m3u-catalog-scroll">
           ${this.queryPending ? html`<p class="catalog-hint">${t('common.loading')}</p>`
@@ -471,6 +562,7 @@ export class M3uCatalog {
       name: channel.name,
       poster: channel.logo,
       categoryId: m3uCatalogCategoryId(channel),
+      playlistIds: channel.playlistIds,
       channel,
     };
   }
@@ -482,6 +574,7 @@ export class M3uCatalog {
       name: series.name,
       poster: series.poster,
       categoryId: series.categoryId,
+      playlistIds: this.seriesPlaylistIds(series),
       series,
     };
   }
@@ -518,10 +611,25 @@ export class M3uCatalog {
     this.onPlay(episode.channel, saved !== null);
   }
 
+  private toggleCurrentWatchlist(): void {
+    const item = this.current
+      ? this.channelItem(this.current)
+      : this.currentSeries ? this.seriesItem(this.currentSeries) : null;
+    if (!item) return;
+    const entry = this.watchlistEntry(item);
+    const added = StorageService.toggleWatchlist(entry);
+    const key = this.watchlistKey(item);
+    if (added) this.watchlistKeys.add(key);
+    else this.watchlistKeys.delete(key);
+    if (this.current) this.renderDetail();
+    else this.renderSeriesDetail();
+  }
+
   private renderSeriesDetail(): void {
     const series = this.currentSeries;
     if (!series) return;
     const episodes = series.episodesBySeason[this.selectedSeason] ?? [];
+    const category = episodes[0]?.channel.sourceGroup || episodes[0]?.channel.group || '';
     morph(this.container, html`
       <div class="catalog-view m3u-catalog m3u-series-detail" data-nav-container>
         <div class="series-detail-head">
@@ -530,7 +638,12 @@ export class M3uCatalog {
           </div>
           <div class="detail-body">
             <h1 class="detail-title">${series.name}</h1>
+            ${category ? html`<div class="catalog-hero-kicker">${category}</div>` : ''}
             <div class="detail-actions">
+              <button class="detail-btn" data-focusable data-key="watchlist">
+                ${t(this.isWatchlisted(this.seriesItem(series))
+    ? 'catalog.removeWatchlist' : 'catalog.addWatchlist')}
+              </button>
               <button class="detail-btn" data-focusable data-key="back">${t('common.back')}</button>
             </div>
             <div class="series-seasons">
@@ -556,13 +669,17 @@ export class M3uCatalog {
     const saved = StorageService.getResume(
       this.accountId(channel), this.resumeKind(channel), m3uItemKey(channel),
     );
+    const history = StorageService.getWatchHistory(
+      this.accountId(channel), this.resumeKind(channel), m3uItemKey(channel),
+    );
     return html`
       <button class="episode-row" data-focusable data-key="m3u-ep:${m3uItemKey(channel)}"
               data-m3u-episode="${m3uItemKey(channel)}">
         <span class="episode-badge">E${episode.episode}</span>
         <span class="episode-body">
           <span class="episode-title">${episode.title || channel.name}</span>
-          ${saved ? html`<span class="episode-resume">${t('common.resume')}</span>` : ''}
+          ${saved ? this.resumeStatus(saved, 'episode-resume', true)
+    : history ? this.resumeStatus(history, 'episode-resume', false) : ''}
         </span>
       </button>
     `;
@@ -575,6 +692,9 @@ export class M3uCatalog {
     const saved = StorageService.getResume(
       this.accountId(channel), this.resumeKind(channel), m3uItemKey(channel),
     );
+    const history = StorageService.getWatchHistory(
+      this.accountId(channel), this.resumeKind(channel), m3uItemKey(channel),
+    );
     morph(this.container, html`
       <div class="catalog-view m3u-catalog m3u-catalog-detail" data-nav-container>
         <div class="detail-poster-wrap">
@@ -583,6 +703,8 @@ export class M3uCatalog {
         <div class="detail-body">
           ${category ? html`<div class="catalog-hero-kicker">${category}</div>` : ''}
           <h1 class="detail-title">${channel.name}</h1>
+          ${saved ? this.resumeStatus(saved, 'm3u-detail-history', true)
+    : history ? this.resumeStatus(history, 'm3u-detail-history', false) : ''}
           <div class="detail-actions">
             ${saved ? html`
               <button class="detail-btn detail-btn-primary" data-focusable data-key="resume">
@@ -591,6 +713,10 @@ export class M3uCatalog {
             ` : ''}
             <button class="detail-btn ${saved ? '' : 'detail-btn-primary'}" data-focusable data-key="play">
               ${t(saved ? 'catalog.playFromStart' : 'catalog.play')}
+            </button>
+            <button class="detail-btn" data-focusable data-key="watchlist">
+              ${t(this.isWatchlisted(this.channelItem(channel))
+    ? 'catalog.removeWatchlist' : 'catalog.addWatchlist')}
             </button>
             <button class="detail-btn" data-focusable data-key="back">${t('common.back')}</button>
           </div>
@@ -606,5 +732,97 @@ export class M3uCatalog {
 
   private resumeKind(channel: Channel): 'episode' | 'vod' {
     return channel.contentKind === 'series' ? 'episode' : 'vod';
+  }
+
+  private resumeStatus(saved: ResumeEntry, className: string, resumable: boolean) {
+    const duration = Number.isFinite(saved.duration) && saved.duration > 0 ? saved.duration : 0;
+    const position = Math.max(0, saved.position || 0);
+    const percent = duration ? Math.min(100, Math.round((position / duration) * 100)) : 0;
+    const updatedAt = Number.isFinite(saved.updatedAt) && saved.updatedAt > 0
+      ? new Date(saved.updatedAt).toLocaleDateString()
+      : '';
+    return html`
+      <span class="${className}">
+        <span class="m3u-resume-label">${t(resumable ? 'common.resume' : 'epg.watched')}</span>
+        <span class="m3u-resume-time">${formatPosition(position)}${duration
+    ? ` / ${formatPosition(duration)}` : ''}</span>
+        ${updatedAt ? html`<span class="m3u-resume-date">${updatedAt}</span>` : ''}
+        ${duration ? html`<span class="m3u-resume-track" aria-hidden="true">
+          <span class="m3u-resume-fill" style="width: ${percent}%"></span>
+        </span>` : ''}
+      </span>`;
+  }
+
+  private sourceOptions(): { id: string; name: string; count: number }[] {
+    const names = new Map(StorageService.getPlaylists().map(source => [source.id, source.name]));
+    return Array.from(this.itemsBySource.entries()).map(([id, items]) => ({
+      id,
+      name: names.get(id) || id,
+      count: items.length,
+    }));
+  }
+
+  private seriesPlaylistIds(series: M3uSeries): string[] {
+    const ids = new Set<string>();
+    for (const season of series.seasons) {
+      for (const episode of series.episodesBySeason[season] ?? []) {
+        for (const id of episode.channel.playlistIds) ids.add(id);
+      }
+    }
+    return Array.from(ids).sort();
+  }
+
+  private itemWatchlistIdentity(item: M3uCatalogItem): {
+    accountId: string;
+    kind: WatchlistKind;
+    itemId: string;
+  } {
+    if (item.kind === 'channel') {
+      return {
+        accountId: this.accountId(item.channel),
+        kind: 'm3u-vod',
+        itemId: m3uItemKey(item.channel),
+      };
+    }
+    return {
+      accountId: `m3u:${item.playlistIds.join(',') || 'm3u'}`,
+      kind: 'm3u-series',
+      itemId: item.series.id,
+    };
+  }
+
+  private watchlistKey(item: M3uCatalogItem): string {
+    const identity = this.itemWatchlistIdentity(item);
+    return `${identity.accountId}|${identity.kind}|${identity.itemId}`;
+  }
+
+  private isWatchlisted(item: M3uCatalogItem): boolean {
+    return this.watchlistKeys.has(this.watchlistKey(item));
+  }
+
+  private refreshWatchlistKeys(): void {
+    const identities = new Map<string, { accountId: string; kind: WatchlistKind }>();
+    for (const item of this.allItems) {
+      const identity = this.itemWatchlistIdentity(item);
+      identities.set(`${identity.accountId}|${identity.kind}`, identity);
+    }
+    this.watchlistKeys = new Set();
+    for (const identity of identities.values()) {
+      for (const entry of StorageService.getWatchlist(identity.accountId, identity.kind)) {
+        this.watchlistKeys.add(`${entry.accountId}|${entry.kind}|${entry.itemId}`);
+      }
+    }
+  }
+
+  private watchlistEntry(item: M3uCatalogItem): WatchlistEntry {
+    const identity = this.itemWatchlistIdentity(item);
+    return {
+      ...identity,
+      name: item.name,
+      poster: item.poster,
+      rating: '',
+      categoryId: item.categoryId,
+      addedAt: Date.now(),
+    };
   }
 }
