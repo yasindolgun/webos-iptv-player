@@ -590,6 +590,53 @@
   margin-top: 28px;
 }
 
+.refresh-status {
+  max-width: 640px;
+  margin-top: 28px;
+  color: var(--text-secondary);
+  font-size: 18px;
+}
+
+.refresh-status-title {
+  color: var(--text-primary);
+}
+
+.refresh-progress {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.refresh-progress-track {
+  height: 8px;
+  overflow: hidden;
+  flex: 1;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+.refresh-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 160ms ease;
+}
+
+.refresh-status-success {
+  margin-top: 8px;
+  color: var(--success);
+}
+
+.refresh-status-error {
+  margin-top: 8px;
+  color: var(--error);
+}
+
+.refresh-status-detail {
+  margin-top: 6px;
+  color: var(--text-muted);
+}
+
 .cache-usage {
   box-sizing: border-box;
   width: 520px;

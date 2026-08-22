@@ -262,6 +262,28 @@ describe('PlaylistService.refresh', () => {
     expect(cacheMock.scheduleCachedPlaylist).toHaveBeenCalledTimes(2);
   });
 
+  it('reports per-source progress and stale sources to the refresh UI', async () => {
+    await PlaylistService.refresh();
+    fetchTextMock.mockImplementation((url: string) =>
+      url.includes('p1') ? Promise.reject(new Error('temporary failure')) : Promise.resolve(P2),
+    );
+    const progress: { completed: number; total: number }[] = [];
+
+    const report = await PlaylistService.refreshWithReport((next) => progress.push(next));
+
+    expect(progress).toEqual([
+      { completed: 0, total: 2 },
+      { completed: 1, total: 2 },
+      { completed: 2, total: 2 },
+    ]);
+    expect(report.sourceCount).toBe(2);
+    expect(report.failedSourceIds).toEqual(['a']);
+    expect(report.restoredSourceIds).toEqual(['a']);
+    expect(report.channels.map(channel => channel.name)).toEqual(
+      expect.arrayContaining(['Alpha', 'Bravo', 'Charlie']),
+    );
+  });
+
   it('logs the loaded catalog size for a diagnostics report', async () => {
     const info = vi.spyOn(console, 'log').mockImplementation(() => {});
     await PlaylistService.refresh();

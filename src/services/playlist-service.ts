@@ -44,6 +44,18 @@ import { setCachedM3uCatalog } from './m3u-catalog-cache';
 
 const log = createLogger('Playlist');
 
+export interface PlaylistRefreshProgress {
+  completed: number;
+  total: number;
+}
+
+export interface PlaylistRefreshReport {
+  channels: Channel[];
+  sourceCount: number;
+  failedSourceIds: string[];
+  restoredSourceIds: string[];
+}
+
 function usableDirectSource(value: string): string {
   try {
     const url = new URL(value);
@@ -191,6 +203,12 @@ class PlaylistServiceImpl {
   }
 
   async refresh(): Promise<Channel[]> {
+    return (await this.refreshWithReport()).channels;
+  }
+
+  async refreshWithReport(
+    onProgress?: (progress: PlaylistRefreshProgress) => void,
+  ): Promise<PlaylistRefreshReport> {
     const done = log.time('refresh');
     const playlists = StorageService.getPlaylists().filter(isSourceEnabled);
     if (!playlists.length) {
@@ -198,7 +216,12 @@ class PlaylistServiceImpl {
       this.reset();
       this.logLoadCompleted('none', 0, 0);
       done();
-      return [];
+      return {
+        channels: [],
+        sourceCount: 0,
+        failedSourceIds: [],
+        restoredSourceIds: [],
+      };
     }
 
     const allChannels: Channel[] = [];
@@ -218,6 +241,8 @@ class PlaylistServiceImpl {
     }
     const failedPlaylistIds = new Set<string>();
     let failedPlaylists = 0;
+    let completedPlaylists = 0;
+    onProgress?.({ completed: 0, total: playlists.length });
     const addEpgSource = (url: string, playlistId: string, kind: EpgSource['kind']): void => {
       const existing = epgSources.find((source) => source.url === url);
       if (existing) {
@@ -380,6 +405,8 @@ class PlaylistServiceImpl {
         }
       }
       plDone();
+      completedPlaylists++;
+      onProgress?.({ completed: completedPlaylists, total: playlists.length });
     }
 
     const playlistRanks = new Map(playlists.map((playlist, index) => [playlist.id, index]));
@@ -449,7 +476,14 @@ class PlaylistServiceImpl {
     log.info('Refresh complete:', allChannels.length, 'total channels,', epgSources.length, 'epg sources');
     this.logLoadCompleted('network', playlists.length, failedPlaylists);
     done();
-    return this.channels;
+    return {
+      channels: this.channels,
+      sourceCount: playlists.length,
+      failedSourceIds: Array.from(failedPlaylistIds),
+      restoredSourceIds: Array.from(failedPlaylistIds)
+        .filter(playlistId => previousChannelsByPlaylist.has(playlistId)
+          || previousEpgSourcesByPlaylist.has(playlistId)),
+    };
   }
 
   /**

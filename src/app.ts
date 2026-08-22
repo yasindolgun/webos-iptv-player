@@ -137,6 +137,7 @@ class App {
       (action) => this.onSettingsSaved(action),
       () => this.player.syncCurrentIndex(),
       () => this.openReminderManager('settings'),
+      (onProgress) => this.refreshDataFromSettings(onProgress),
     );
 
     this.player.init($('#video-player') as HTMLVideoElement);
@@ -844,6 +845,55 @@ class App {
     this.tabBar.setActive('live');
     this.showView('channels');
     this.channelList.render();
+  }
+
+  private async refreshDataFromSettings(
+    onProgress: (progress: import('./services/playlist-service').PlaylistRefreshProgress) => void,
+  ): Promise<import('./components/settings').SettingsRefreshResult> {
+    const done = log.time('refreshDataFromSettings');
+    this.stopEpgRefresh();
+    try {
+      const report = await PlaylistService.refreshWithReport(onProgress);
+      await ChannelHealthService.initialize();
+      const epgSources = this.epgSources();
+      if (epgSources.length) {
+        await EpgService.load(epgSources, PlaylistService.allChannels);
+        this.applyDisplayTz();
+        void this.search.refreshPrograms();
+      } else {
+        EpgService.reset();
+      }
+
+      const hasXtream = StorageService.getPlaylists()
+        .some((p) => p.source === 'xtream' && isSourceEnabled(p));
+      const hasM3uCatalog = PlaylistService.getContentKindCount('movie') > 0
+        || PlaylistService.getContentKindCount('series') > 0;
+      this.tabBar.setSections(hasXtream || hasM3uCatalog);
+      const xtreamAccounts = StorageService.getPlaylists()
+        .filter((p) => p.source === 'xtream' && p.xtream && isSourceEnabled(p));
+      this.tabBar.setAccounts(xtreamAccounts, this.activeXtreamAccount()?.id ?? '');
+      this.channelList.render();
+      this.scanReminders();
+      ReminderService.reschedulePending();
+      if (epgSources.length) {
+        this.epgRefreshTimer = setInterval(() => EpgService.refresh()
+          .then(() => {
+            this.applyDisplayTz();
+            this.channelList.render();
+            void this.search.refreshPrograms();
+          })
+          .catch(err => log.error('EPG refresh failed:', err)),
+        CONFIG.EPG_REFRESH_INTERVAL);
+      }
+
+      const completedAt = Date.now();
+      if (!report.failedSourceIds.length && report.sourceCount) {
+        StorageService.setLastPlaylistRefreshAt(completedAt);
+      }
+      return { report, completedAt };
+    } finally {
+      done();
+    }
   }
 
   private playM3uVod(channel: Channel, resume: boolean, origin: 'movies' | 'series'): void {

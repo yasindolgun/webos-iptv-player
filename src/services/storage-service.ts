@@ -516,6 +516,15 @@ export const StorageService = {
     return stored;
   },
 
+  getLastPlaylistRefreshAt(): number | null {
+    const value = get<unknown>('playlist_last_refresh_at', null);
+    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+  },
+  setLastPlaylistRefreshAt(timestamp: number): void {
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return;
+    set('playlist_last_refresh_at', Math.round(timestamp));
+  },
+
   getEpgUrl(): string {
     return get<string>('epg_url', '');
   },

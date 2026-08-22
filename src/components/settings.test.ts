@@ -34,6 +34,7 @@ const {
     tzOffset: null as number | null,
     epgOffsets: {} as Record<string, number>,
     locale: 'system' as const,
+    lastPlaylistRefreshAt: null as number | null,
     onlineSubtitles: {
       preferredLanguage: '',
       subdl: { apiKey: '' },
@@ -71,6 +72,7 @@ const {
       getEpgTzOffset: vi.fn(() => state.tzOffset),
       getEpgOffsets: vi.fn(() => ({ ...state.epgOffsets })),
       getLocalePreference: vi.fn(() => state.locale),
+      getLastPlaylistRefreshAt: vi.fn(() => state.lastPlaylistRefreshAt),
       getOnlineSubtitleConfig: vi.fn(() => state.onlineSubtitles),
       getSelectedXtreamAccountId: vi.fn(() => null),
       getShowHiddenChannels: vi.fn(() => state.showHidden),
@@ -90,6 +92,7 @@ const {
       }),
       migrateCatchupEpgOffsets: vi.fn(),
       setLocalePreference: vi.fn(),
+      setLastPlaylistRefreshAt: vi.fn((value: number) => { state.lastPlaylistRefreshAt = value; }),
       setOnlineSubtitleConfig: vi.fn((cfg: any) => { state.onlineSubtitles = cfg; }),
       remove: vi.fn(),
       clearRecentlyWatched: vi.fn(),
@@ -890,11 +893,31 @@ describe('Settings editing', () => {
     });
   });
 
-  it('cancel discards; refresh reloads', () => {
+  it('cancel discards; refresh reports its outcome in Settings', async () => {
+    const onRefreshData = vi.fn(async () => ({
+      report: {
+        channels: [],
+        sourceCount: 1,
+        failedSourceIds: ['p1'],
+        restoredSourceIds: ['p1'],
+      },
+      completedAt: 1784662200000,
+    }));
+    state.playlists = [{ id: 'p1', name: 'Alpha', url: 'http://host/a' }];
+    settings = new Settings(container, onSave, onChannelsChanged, () => {}, onRefreshData);
+    settings.render();
+
     click('#cancel-settings');
     expect(onSave).toHaveBeenLastCalledWith('cancel');
     click('#refresh-data');
-    expect(onSave).toHaveBeenLastCalledWith('reload');
+    await vi.waitFor(() => expect(onRefreshData).toHaveBeenCalledTimes(1));
+    expect(onSave).not.toHaveBeenCalledWith('reload');
+    expect(container.querySelector('#refresh-status')?.textContent).toContain(
+      '1 source could not be refreshed',
+    );
+    expect(container.querySelector('#refresh-status')?.textContent).toContain('Alpha');
+    expect(container.querySelector('#refresh-status')?.textContent)
+      .toContain('previous list was kept');
   });
 });
 

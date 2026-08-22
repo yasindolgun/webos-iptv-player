@@ -5,7 +5,7 @@ import { SpatialNav } from '../navigation/spatial-nav';
 import { StorageService } from '../services/storage-service';
 import { EpgService } from '../services/epg-service';
 import { ChannelCustomizationService } from '../services/channel-customization';
-import { PlaylistService } from '../services/playlist-service';
+import { PlaylistService, type PlaylistRefreshProgress, type PlaylistRefreshReport } from '../services/playlist-service';
 import {
   clearAllCachedData,
   getCacheUsage,
@@ -354,6 +354,18 @@ function formatExpiry(expiresAt: number | null): string {
  *  edit-channels = open the channel list in edit mode; cancel = discard. */
 export type SaveAction = 'reload' | 'apply' | 'reset' | 'cancel' | 'edit-channels';
 
+export interface SettingsRefreshResult {
+  report: PlaylistRefreshReport;
+  completedAt: number;
+}
+
+type RefreshState = {
+  running: boolean;
+  progress: PlaylistRefreshProgress | null;
+  result: SettingsRefreshResult | null;
+  error: boolean;
+};
+
 export class Settings {
   private container: HTMLElement;
   private onSave: (action: SaveAction) => void | Promise<void>;
@@ -374,17 +386,31 @@ export class Settings {
   private healthProgress: ChannelHealthProgress | null = null;
   private healthPaused = false;
   private healthResume: (() => void) | null = null;
+  private onRefreshData: (onProgress: (progress: PlaylistRefreshProgress) => void)
+    => Promise<SettingsRefreshResult>;
+  private refreshState: RefreshState = {
+    running: false,
+    progress: null,
+    result: null,
+    error: false,
+  };
 
   constructor(
     container: HTMLElement,
     onSave: (action: SaveAction) => void | Promise<void>,
     onChannelsChanged: () => void = () => {},
     onManageReminders: () => void = () => {},
+    onRefreshData: (onProgress: (progress: PlaylistRefreshProgress) => void)
+      => Promise<SettingsRefreshResult> = async () => ({
+        report: await PlaylistService.refreshWithReport(),
+        completedAt: Date.now(),
+      }),
   ) {
     this.container = container;
     this.onSave = onSave;
     this.onChannelsChanged = onChannelsChanged;
     this.onManageReminders = onManageReminders;
+    this.onRefreshData = onRefreshData;
     this.nav = new SpatialNav(container, (el) => this.onNavFocus(el));
 
     // Mouse/pointer support: clicking a focusable element behaves like remote OK.
@@ -730,6 +756,9 @@ export class Settings {
                 <div class="cache-usage" id="cache-usage" aria-live="polite">
                   <div class="cache-usage-loading">${t('common.loading')}</div>
                 </div>
+                <div class="refresh-status" id="refresh-status" aria-live="polite">
+                  ${this.refreshStatus()}
+                </div>
                 <div class="settings-maintenance">
                   <button class="btn btn-secondary" data-focusable id="refresh-data">${t('settings.refreshAll')}</button>
                   <button class="btn btn-danger" data-focusable id="clear-cache">${t('settings.clearCache')}</button>
@@ -967,6 +996,76 @@ export class Settings {
     this.nav.focus(entry);
   }
 
+  private refreshStatus(): Safe {
+    if (this.refreshState.running) {
+      const progress = this.refreshState.progress;
+      const total = progress?.total ?? 0;
+      const completed = progress?.completed ?? 0;
+      const percent = total ? Math.round((completed / total) * 100) : 0;
+      return html`
+        <div class="refresh-status-title">${t('settings.refreshingData')}</div>
+        <div class="refresh-progress">
+          <div class="refresh-progress-track" aria-hidden="true">
+            <div class="refresh-progress-fill" style="width: ${percent}%"></div>
+          </div>
+          <span>${t('settings.refreshProgress', { completed, total })}</span>
+        </div>`;
+    }
+
+    if (this.refreshState.error) {
+      return html`<div class="refresh-status-error">${t('settings.refreshFailed')}</div>`;
+    }
+
+    const result = this.refreshState.result;
+    const lastRefreshAt = result && !result.report.failedSourceIds.length
+      ? result.completedAt
+      : StorageService.getLastPlaylistRefreshAt();
+    const failedSourceIds = result?.report.failedSourceIds ?? [];
+    const names = new Map(StorageService.getPlaylists().map(source => [source.id, source.name]));
+    const failedNames = failedSourceIds.map(id => names.get(id) || t('settings.refreshSource'));
+    return html`
+      <div class="refresh-status-title">${lastRefreshAt
+    ? t('settings.lastUpdated', { time: new Date(lastRefreshAt).toLocaleString() })
+    : t('settings.notRefreshedYet')}</div>
+      ${failedNames.length ? html`
+        <div class="refresh-status-error">${tp('settings.refreshSourcesFailed', failedNames.length)}</div>
+        <div class="refresh-status-detail">${failedNames.join(', ')}</div>
+        ${result?.report.restoredSourceIds.length ? html`
+          <div class="refresh-status-detail">${t('settings.refreshStaleUsed')}</div>` : ''}
+      ` : result ? html`<div class="refresh-status-success">${t('settings.refreshComplete')}</div>` : ''}
+    `;
+  }
+
+  private updateRefreshStatus(): void {
+    const target = $('#refresh-status', this.container);
+    if (target) morph(target, this.refreshStatus());
+    const button = $('#refresh-data', this.container) as HTMLButtonElement | null;
+    if (!button) return;
+    button.disabled = this.refreshState.running;
+    button.textContent = this.refreshState.running
+      ? t('settings.refreshingData')
+      : t('settings.refreshAll');
+  }
+
+  private async refreshData(): Promise<void> {
+    if (this.refreshState.running) return;
+    this.refreshState = { running: true, progress: null, result: null, error: false };
+    this.updateRefreshStatus();
+    try {
+      const result = await this.onRefreshData((progress) => {
+        this.refreshState.progress = progress;
+        this.updateRefreshStatus();
+      });
+      this.refreshState = { running: false, progress: null, result, error: false };
+      showToast(t('settings.refreshComplete'));
+    } catch (err) {
+      log.error('Manual data refresh failed', err);
+      this.refreshState = { running: false, progress: null, result: null, error: true };
+      showToast(t('settings.refreshFailed'));
+    }
+    this.updateRefreshStatus();
+  }
+
   private activate(el: HTMLElement): void {
     if (el.classList.contains('settings-nav-item')) {
       this.scrollToCategory(el.dataset.settingsTarget as SettingsCategory);
@@ -1003,7 +1102,7 @@ export class Settings {
     } else if (el.id === 'cancel-settings') {
       this.onSave('cancel');
     } else if (el.id === 'refresh-data') {
-      this.onSave('reload');
+      void this.refreshData();
     } else if (el.id === 'clear-cache') {
       this.confirmationPrompt.show({
         title: t('settings.clearCacheTitle'),
