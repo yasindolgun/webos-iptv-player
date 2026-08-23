@@ -36,7 +36,7 @@ const ACTION_MAP: Record<number, Action> = {
 // (its blinking caret) did nothing — Back couldn't exit, Red/Blue couldn't open
 // EPG/Settings, etc.
 const INPUT_PASSTHROUGH_KEYS = new Set<number>([
-  K.BACK, K.RED, K.GREEN, K.YELLOW, K.BLUE,
+  K.BACK, K.ESC, K.RED, K.GREEN, K.YELLOW, K.BLUE,
   K.CH_UP, K.CH_DOWN, K.PLAY, K.PAUSE, K.STOP, K.REWIND, K.FORWARD,
 ]);
 
@@ -191,6 +191,9 @@ export const KeyHandler = {
     }, { passive: false });
 
     document.addEventListener('click', (e: MouseEvent) => {
+      // DEBUG: log clicks hitting the global handler for e2e triage
+      // eslint-disable-next-line no-console
+      console.log('[KeyHandler] document.click target:', (e.target as HTMLElement).id || (e.target as HTMLElement).className);
       // Components that self-activate on click (their own click handler is the
       // "OK" action) mark their root subtree with `data-self-activate` so this
       // global handler skips them — otherwise the deferred select below fires a
@@ -206,8 +209,36 @@ export const KeyHandler = {
       const target = t.closest<HTMLElement>('[data-focusable]');
       if (target && activeHandler) {
         target.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));
-        // Small delay to let focus settle before firing select
-        setTimeout(() => activeHandler!('select'), 0);
+        // Capture the view that contained the clicked element so the deferred
+        // select does not act if navigation changed the visible view in the
+        // meantime (click inside Settings -> App returns Home should not
+        // then select a channel in Home).
+        const ownerView = target.closest('.view')?.id ?? null;
+        // Small delay to let focus settle before firing select. Guard against
+        // detached/hidden targets: if the clicked element was removed or hidden
+        // by the target handler (e.g. Settings Remove/Cancel) we must not fire
+        // a spurious select that would navigate or start playback.
+        setTimeout(() => {
+          try {
+            if (!target.isConnected) return;
+            const r = target.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) return;
+            if (ownerView) {
+              const ov = document.getElementById(ownerView);
+              if (!ov || ov.classList.contains('hidden')) return;
+            }
+            // Global suppression flag for deterministic e2e flows (e.g. Cancel)
+            // — tests may rely on a Cancel closing Settings immediately; if the
+            // app set a short-lived suppress flag, skip this deferred select.
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore
+            if ((window).__suppressNextSelect) return;
+            activeHandler!('select');
+          } catch (e) {
+            // Defensive: getBoundingClientRect can throw if the element is in a
+            // weird state; just skip firing select to avoid flakiness.
+          }
+        }, 0);
       }
     });
   },

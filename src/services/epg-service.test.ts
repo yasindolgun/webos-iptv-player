@@ -397,6 +397,25 @@ describe('EpgService multi-source matching', () => {
 });
 
 describe('EpgService cache and refresh', () => {
+  it('shares an in-flight load and makes refresh wait for it', async () => {
+    let releaseCache: (() => void) | undefined;
+    vi.mocked(getCachedEpg).mockImplementation(() => new Promise(resolve => {
+      releaseCache = () => resolve(null);
+    }));
+    parseXMLTVMock.mockReturnValue(parsed('a', 'Alpha', 'Available'));
+
+    const first = EpgService.load([source('http://a', ['a'])]);
+    const second = EpgService.load([source('http://a', ['a'])]);
+    const refresh = EpgService.refresh();
+    expect(getCachedEpg).toHaveBeenCalledTimes(1);
+
+    releaseCache?.();
+    await Promise.all([first, second, refresh]);
+
+    expect(fetchMaybeGzipText).toHaveBeenCalledTimes(1);
+    expect(EpgService.loaded).toBe(true);
+  });
+
   it('loads every feed from its independent URL cache', async () => {
     vi.mocked(getCachedEpg).mockImplementation(async (url) => ({
       url,

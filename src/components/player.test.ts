@@ -1316,23 +1316,23 @@ describe('stream routing', () => {
   });
 
   it('separates extension-less channels by resource path', () => {
-    expect(streamRouteKey('http://host/play/ch1')).toBe('http://host/play/ch1');
-    expect(streamRouteKey('http://host/play/ch2?token=x')).toBe('http://host/play/ch2');
-    expect(streamRouteKey('http://host/catchup/ch1')).toBe('http://host/catchup/ch1');
+    const first = streamRouteKey('http://host/play/ch1');
+    expect(first).not.toBe(streamRouteKey('http://host/play/ch2?token=x'));
+    expect(first).not.toBe(streamRouteKey('http://host/catchup/ch1'));
+    expect(first).not.toContain('ch1');
     expect(streamRouteKey('not a url')).toBe('');
   });
 
   it('separates routes by the requested live output format', () => {
     // The same route serves a different container per requested format, so a
     // probe of one must not classify the other.
-    expect(streamRouteKey('http://host/live/ch1?output_format=m3u8'))
-      .toBe('http://host/live/ch1?output=m3u8');
-    expect(streamRouteKey('http://host/live/ch1?output_format=ts'))
-      .toBe('http://host/live/ch1?output=ts');
-    expect(streamRouteKey('http://host/live/ch1?output=m3u8'))
-      .toBe('http://host/live/ch1?output=m3u8');
-    expect(streamRouteKey('http://host/live/ch1?output_format=ts&token=x'))
-      .toBe('http://host/live/ch1?output=ts');
+    const hls = streamRouteKey('http://host/live/ch1?output_format=m3u8');
+    const ts = streamRouteKey('http://host/live/ch1?output_format=ts');
+    expect(hls).not.toBe(ts);
+    expect(hls).toBe(streamRouteKey('http://host/live/ch1?output=m3u8'));
+    expect(ts).toBe(streamRouteKey(
+      'http://host/live/ch1?output_format=ts&token=x',
+    ));
   });
 
   it('redacts stream credentials while retaining diagnostic routing data', () => {

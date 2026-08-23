@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { streamRouteKey } from '../utils/url';
 import type { PlayerPipelineOptions } from './player-pipeline';
 
 const cacheMocks = vi.hoisted(() => ({
@@ -52,7 +53,8 @@ describe('PlayerPipeline webOS stream MIME cache', () => {
     pipeline.load('http://host/live/ch1', null);
 
     await vi.waitFor(() => expect(video.play).toHaveBeenCalledOnce());
-    expect(cacheMocks.getCachedStreamMime).toHaveBeenCalledWith('http://host/live');
+    expect(cacheMocks.getCachedStreamMime)
+      .toHaveBeenCalledWith(streamRouteKey('http://host/live/ch1'));
     expect(fetchMock).not.toHaveBeenCalled();
     expect(video.querySelector('source')?.src).toBe('http://host/live/ch1');
   });
@@ -72,7 +74,7 @@ describe('PlayerPipeline webOS stream MIME cache', () => {
 
     await vi.waitFor(() => expect(video.play).toHaveBeenCalledOnce());
     expect(cacheMocks.setCachedStreamMime)
-      .toHaveBeenCalledWith('http://host/live', 'video/mp2t');
+      .toHaveBeenCalledWith(streamRouteKey('http://host/live/ch1'), 'video/mp2t');
   });
 
   it('ignores a cache result after a newer load supersedes it', async () => {
@@ -253,7 +255,8 @@ describe('PlayerPipeline webOS DASH', () => {
     pipeline.load('http://host/live/ch1', null);
 
     await vi.waitFor(() => expect(video.play).toHaveBeenCalledOnce());
-    expect(cacheMocks.getCachedStreamMime).toHaveBeenCalledWith('http://host/live');
+    expect(cacheMocks.getCachedStreamMime)
+      .toHaveBeenCalledWith(streamRouteKey('http://host/live/ch1'));
     // A cached classification skips probing and storage; routing still fetches
     // the MPD for track labels.
     expect(cacheMocks.setCachedStreamMime).not.toHaveBeenCalled();
@@ -276,7 +279,10 @@ describe('PlayerPipeline webOS DASH', () => {
 
     await vi.waitFor(() => expect(video.play).toHaveBeenCalledOnce());
     expect(cacheMocks.setCachedStreamMime)
-      .toHaveBeenCalledWith('http://host/live', 'application/dash+xml');
+      .toHaveBeenCalledWith(
+        streamRouteKey('http://host/live/ch1'),
+        'application/dash+xml',
+      );
     expect(parseMediaOption(video.querySelector('source')?.type ?? ''))
       .toEqual({ mediaTransportType: 'MPEG-DASH' });
   });
@@ -299,7 +305,10 @@ describe('PlayerPipeline webOS DASH', () => {
       .toEqual({ mediaTransportType: 'MPEG-DASH' });
     // A sniffed classification is cached like any other, keyed by route.
     expect(cacheMocks.setCachedStreamMime)
-      .toHaveBeenCalledWith('http://host/live', 'application/dash+xml');
+      .toHaveBeenCalledWith(
+        streamRouteKey('http://host/live/ch1'),
+        'application/dash+xml',
+      );
   });
 
   it.each(['application/xml', 'text/xml'])(
@@ -321,7 +330,10 @@ describe('PlayerPipeline webOS DASH', () => {
       expect(parseMediaOption(video.querySelector('source')?.type ?? ''))
         .toEqual({ mediaTransportType: 'MPEG-DASH' });
       expect(cacheMocks.setCachedStreamMime)
-        .toHaveBeenCalledWith('http://host/live', 'application/dash+xml');
+        .toHaveBeenCalledWith(
+          streamRouteKey('http://host/live/1'),
+          'application/dash+xml',
+        );
     },
   );
 

@@ -35,7 +35,13 @@ export function streamRouteKey(url: string): string {
       stream ? `stream=${encodeURIComponent(stream)}` : '',
       format ? `output=${encodeURIComponent(format)}` : '',
     ].filter(Boolean);
-    return `${parsed.origin}${parsed.pathname}${params.length ? `?${params.join('&')}` : ''}`;
+    const identity = `${parsed.pathname}${params.length ? `?${params.join('&')}` : ''}`;
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < identity.length; i++) {
+      hash ^= identity.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return `${parsed.origin}/.stream/${(hash >>> 0).toString(16)}`;
   } catch {
     return '';
   }

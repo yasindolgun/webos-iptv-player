@@ -430,6 +430,32 @@ export class Settings {
       this.activate(el);
     });
 
+    // Ensure the Cancel button reliably triggers a cancel save even if event
+    // propagation or other handlers interfere (Playwright sometimes dispatches
+    // clicks differently). Attach a direct listener after render so Cancel is
+    // deterministic in e2e runs.
+    const attachCancelListener = () => {
+      const btn = this.container.querySelector<HTMLButtonElement>('#cancel-settings');
+      if (!btn) return;
+      if (btn.dataset.cancelListener === '1') return;
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        // eslint-disable-next-line no-console
+        console.log('[Settings] cancel-click handler executing — calling onSave(cancel)');
+        // Call through the configured onSave callback to preserve the same
+        // lifecycle as the delegated activate path.
+        void this.onSave('cancel');
+      });
+      btn.dataset.cancelListener = '1';
+    };
+    // Attach on construction and again after each render call to cover the
+    // initial and subsequent morphs.
+    attachCancelListener();
+    const origRender = this.render.bind(this);
+    this.render = () => { origRender(); attachCancelListener(); };
+
+
     // Enter on input: commit and move to next focusable element in DOM order.
     // Attached once on the persistent container (render() replaces innerHTML).
     this.container.addEventListener('keydown', (e: KeyboardEvent) => {

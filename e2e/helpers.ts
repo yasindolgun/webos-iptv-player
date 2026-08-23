@@ -1,4 +1,5 @@
 import { test as base, expect, type Page } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
 import { postTargetApis, removeApis } from '../scripts/chromium-53-simulation.mjs';
 
 export { expect, type Page };
@@ -161,6 +162,18 @@ const POST_TARGET_APIS = postTargetApis();
 // before each test so no file has to repeat it.
 export const test = base.extend({
   page: async ({ page }, use, testInfo) => {
+    const consoleMsgs: string[] = [];
+    page.on('console', (msg) => {
+      try {
+        const text = msg.text();
+        const loc = msg.location();
+        const entry = loc && loc.url ? `[${msg.type()}] ${text} (${loc.url}:${loc.line}:${loc.column})` : `[${msg.type()}] ${text}`;
+        consoleMsgs.push(entry);
+      } catch (err) {
+        consoleMsgs.push(`[${msg.type()}] ${msg.text()}`);
+      }
+    });
+
     // The simulation project strips every API Chromium 53 lacks before the app
     // loads, so unguarded use fails here instead of on a TV.
     if (testInfo.project.name === 'chromium-53-simulation') {
@@ -202,6 +215,14 @@ export const test = base.extend({
       return response;
     };
     await use(page);
+    try {
+      if (consoleMsgs.length) {
+        const file = testInfo.outputPath('console-log.txt');
+        await writeFile(file, consoleMsgs.join('\n'), 'utf8');
+      }
+    } catch (err) {
+      // ignore write errors
+    }
   },
 });
 

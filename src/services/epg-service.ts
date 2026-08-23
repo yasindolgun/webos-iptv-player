@@ -77,6 +77,9 @@ class EpgServiceImpl {
   private playlistChannels: Channel[] | null = null;
   private revision = 0;
   private mappingRevisionValue = 0;
+  private loadPromise: Promise<void> | null = null;
+  private loadSignature = '';
+  private refreshPromise: Promise<void> | null = null;
 
   get mappingRevision(): number {
     return this.mappingRevisionValue;
@@ -102,9 +105,33 @@ class EpgServiceImpl {
     this.derivedOffsets.clear();
     this.mappedChannelIds = [];
     this.playlistChannels = null;
+    this.loadPromise = null;
+    this.loadSignature = '';
+    this.refreshPromise = null;
   }
 
-  async load(sources: EpgSource[], channels?: Channel[]): Promise<void> {
+  load(sources: EpgSource[], channels?: Channel[]): Promise<void> {
+    const signature = JSON.stringify([
+      sources.map(source => [
+        source.url,
+        source.kind,
+        source.playlistIds,
+        source.offsetMinutes ?? 0,
+      ]),
+      (channels ?? []).map(channel => [channelKey(channel), channel.playlistIds]),
+    ]);
+    if (this.loadPromise && signature === this.loadSignature) return this.loadPromise;
+    const promise = this.performLoad(sources, channels);
+    this.loadSignature = signature;
+    this.loadPromise = promise;
+    const clear = () => {
+      if (this.loadPromise === promise) this.loadPromise = null;
+    };
+    void promise.then(clear, clear);
+    return promise;
+  }
+
+  private async performLoad(sources: EpgSource[], channels?: Channel[]): Promise<void> {
     const revision = ++this.revision;
     this.playlistChannels = channels ?? null;
     this.mappedChannelIds = ChannelCustomizationService.epgChannelIds();
@@ -117,6 +144,18 @@ class EpgServiceImpl {
   }
 
   async refresh(): Promise<void> {
+    if (this.loadPromise) await this.loadPromise;
+    if (this.refreshPromise) return this.refreshPromise;
+    const promise = this.performRefresh();
+    this.refreshPromise = promise;
+    try {
+      await promise;
+    } finally {
+      if (this.refreshPromise === promise) this.refreshPromise = null;
+    }
+  }
+
+  private async performRefresh(): Promise<void> {
     const sourcesToRefresh = this.sources.filter((source) => {
       const state = this.states.get(source.url);
       return !state || state.needsRefresh

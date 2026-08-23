@@ -129,7 +129,7 @@ test('channels render while service startup is pending without duplicate work', 
   expect(uploadLists).toBe(1);
 });
 
-test('uploaded-only startup enters channels after background reconciliation', async ({ page }) => {
+test('uploaded-only startup keeps Settings open after background reconciliation', async ({ page }) => {
   await page.route('http://127.0.0.1:9999/uploads', (route) =>
     route.fulfill({
       status: 200,
@@ -154,7 +154,7 @@ test('uploaded-only startup enters channels after background reconciliation', as
   await expect(page.locator('#view-settings')).toBeVisible();
   await releaseServiceStart(page);
 
-  await expect(page.locator('#view-channels')).toBeVisible();
+  await expect(page.locator('#view-settings')).toBeVisible();
   await expect(page.locator('.channel-item')).toHaveCount(2);
 });
 

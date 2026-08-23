@@ -13,15 +13,33 @@ const DASH = 'application/dash+xml';
 describe('streamRouteKey', () => {
   it('scopes proxy MIME results to each resource path', () => {
     expect(streamRouteKey('http://host/play/token-a'))
-      .toBe('http://host/play/token-a');
-    expect(streamRouteKey('http://host/play/token-b'))
-      .toBe('http://host/play/token-b');
+      .not.toBe(streamRouteKey('http://host/play/token-b'));
   });
 
   it('keeps stream identity and format without persisting credentials', () => {
-    expect(streamRouteKey(
+    const key = streamRouteKey(
       'http://host/play?username=u&password=p&stream_id=42&output=m3u8',
-    )).toBe('http://host/play?stream=42&output=m3u8');
+    );
+    expect(key).toMatch(/^http:\/\/host\/\.stream\/[a-f0-9]+$/);
+    expect(key).not.toMatch(/(?:username|password|\bu\b|\bp\b)/);
+    expect(key).toBe(streamRouteKey(
+      'http://host/play?username=other&password=secret&stream_id=42&output=m3u8',
+    ));
+  });
+
+  it('does not persist path credentials or opaque tokens', () => {
+    const key = streamRouteKey('http://host/live/user/pass/42');
+    expect(key).not.toMatch(/user|pass|42/);
+    expect(streamRouteKey('http://host/play/token-a')).not.toContain('token-a');
+  });
+
+  it('separates stream resources and requested formats', () => {
+    expect(streamRouteKey('http://host/play?id=42&token=a'))
+      .toBe(streamRouteKey('http://host/play?id=42&token=b'));
+    expect(streamRouteKey('http://host/play?id=42'))
+      .not.toBe(streamRouteKey('http://host/play?id=43'));
+    expect(streamRouteKey('http://host/play?id=42&output=ts'))
+      .not.toBe(streamRouteKey('http://host/play?id=42&output=m3u8'));
   });
 });
 
