@@ -180,7 +180,7 @@ test.describe('Settings navigation', () => {
     expect(scrolled!.y).toBeCloseTo(actionBox!.y, 0);
   });
 
-  test('clicking Cancel in settings (opened via the tab bar) returns to the channel list, not the player', async ({ page }) => {
+  test('clicking Cancel in settings returns Home, not the player', async ({ page }) => {
     await routePlaylist(page);
     await seedPlaylist(page);
     await page.goto('/');
@@ -192,11 +192,11 @@ test.describe('Settings navigation', () => {
     await page.locator('#cancel-settings').click();
 
     // Give the document-level deferred select (setTimeout 0) a chance to fire,
-    // then assert we still land on the channel list rather than the player.
+    // then assert we land on Home rather than the player.
     // Before the fix, that second select fired on the channels view and played
     // the focused channel.
     await page.waitForTimeout(50);
-    await expect(page.locator('#view-channels')).toBeVisible();
+    await expect(page.locator('#view-home')).toBeVisible();
     await expect(page.locator('#view-player')).toBeHidden();
     await expect(page.locator('#view-settings')).toBeHidden();
   });
@@ -460,7 +460,8 @@ test.describe('Settings navigation', () => {
     expect(await fontSize()).toBeCloseTo(base * 1.3, 1);
 
     await page.locator('#save-settings').click();
-    await expect(page.locator('#view-channels')).toBeVisible();
+    await expect(page.locator('#view-home')).toBeVisible();
+    await page.locator('[data-home-action="live"]').click();
 
     // Persisted across a relaunch and applied outside Settings, without
     // changing the dimensions of controls.
@@ -512,6 +513,8 @@ test.describe('Settings playlists', () => {
     });
     await page.keyboard.press('Enter');
 
+    await expect(page.locator('#view-home')).toBeVisible();
+    await page.locator('[data-home-action="live"]').click();
     await expect(page.locator('#view-channels')).toBeVisible();
     await expect(page.locator('.channel-main .channel-name').filter({ hasText: 'Channel One' })).toBeVisible();
     await expect(page.locator('.channel-main .channel-name').filter({ hasText: 'Channel Two' })).toBeVisible();
@@ -547,7 +550,7 @@ test.describe('Settings playlists', () => {
     await expect(page.locator('.toast.visible'))
       .toContainText('Welcome! Add a playlist URL to get started.');
 
-    // Press Back to return to the channel list — it must NOT show the previous
+    // Press Back to return Home, then open Live — it must NOT show the previous
     // playlist's channels (the bug: PlaylistService kept stale in-memory state).
     // Use dispatchEvent(KeyboardEvent) rather than page.keyboard.press('Escape')
     // — in this Playwright/Chromium combo press('Escape') gets consumed by
@@ -557,6 +560,8 @@ test.describe('Settings playlists', () => {
     await page.evaluate(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
     });
+    await expect(page.locator('#view-home')).toBeVisible();
+    await page.locator('[data-home-action="live"]').click();
     await expect(page.locator('#view-channels')).toBeVisible();
     await expect(page.locator('.channel-main .channel-item')).toHaveCount(0);
     await expect(page.locator('.empty-state')).toContainText('No channels found');
@@ -641,6 +646,11 @@ test.describe('Settings Xtream: add -> cancel -> re-enter', () => {
   }
 
   async function openSettings(page: Page): Promise<void> {
+    if (await page.locator('#view-home').isVisible()) {
+      await page.locator('[data-home-action="settings"]').click();
+      await page.waitForSelector('#add-xtream');
+      return;
+    }
     await page.waitForSelector('.tab-bar-item[data-section="settings"]', { timeout: 20000 });
     await enterTab(page, 'settings');
     await page.waitForSelector('#add-xtream');
@@ -661,7 +671,7 @@ test.describe('Settings Xtream: add -> cancel -> re-enter', () => {
 
     // 3) Cancel.
     await page.click('#cancel-settings');
-    await expect(page.locator('#view-channels')).toBeVisible(); // back on channels
+    await expect(page.locator('#view-home')).toBeVisible();
 
     // 4) Re-enter Settings.
     await openSettings(page);

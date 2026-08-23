@@ -74,7 +74,7 @@ test('browse Series, open a detail, and play an episode', async ({ page }) => {
   await expect(page.locator('#view-series .episode-row[data-episode-id="10"]')).toContainText('Episode One');
 });
 
-test('Back walks Series detail -> browse -> Live instead of ejecting', async ({ page }) => {
+test('Back walks Series detail -> browse -> Home instead of ejecting', async ({ page }) => {
   await seedSeries(page);
   await routeLiveManifest(page);
   await page.goto('/');
@@ -98,9 +98,9 @@ test('Back walks Series detail -> browse -> Live instead of ejecting', async ({ 
   await expect(page.locator('#view-series .catalog-rail-title')).toContainText('Cat A');
   await expect(page.locator('#view-channels')).toBeHidden();
 
-  // Second Back from the browse top level returns to Live.
+  // Second Back from the browse top level returns to Home.
   await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 461, bubbles: true })));
-  await expect(page.locator('#view-channels')).toBeVisible();
+  await expect(page.locator('#view-home')).toBeVisible();
 });
 
 test('episode playback suppresses the live channel sidebar and shows a VOD-only menu at the pointer edges', async ({ page }) => {

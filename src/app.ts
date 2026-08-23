@@ -22,6 +22,7 @@ import { Movies } from './components/movies';
 import { Series } from './components/series';
 import { M3uCatalog } from './components/m3u-catalog';
 import { Search } from './components/search';
+import { Home, type HomeAction, type HomeState } from './components/home';
 import { showToast } from './components/toast';
 import { showNumberEntry, hideNumberEntry } from './components/number-entry';
 import { ReminderService } from './services/reminder-service';
@@ -40,15 +41,16 @@ import { getLocale, initLocale, resolveLocale, setLocale, t, tp } from './i18n';
 
 const log = createLogger('App');
 
-type ViewName = 'channels' | 'player' | 'epg' | 'settings' | 'reminders'
+type ViewName = 'home' | 'channels' | 'player' | 'epg' | 'settings' | 'reminders'
   | 'loading' | 'movies' | 'series' | 'search';
 
 class App {
   private views!: Record<ViewName, HTMLElement>;
-  private viewStack: ViewName[] = ['channels'];
+  private viewStack: ViewName[] = ['home'];
   private backPressTime = 0;
   private viewBeforeSearch: ViewName | null = null;
   private channelList!: ChannelList;
+  private home!: Home;
   private player!: Player;
   private epgGrid!: EpgGrid;
   private settings!: Settings;
@@ -80,6 +82,7 @@ class App {
     if (initialLoadingText) initialLoadingText.textContent = t('common.loading');
     initTheme();
     this.views = {
+      home: $('#view-home')!,
       channels: $('#view-channels')!,
       player: $('#view-player')!,
       epg: $('#view-epg')!,
@@ -109,6 +112,10 @@ class App {
         void this.search.refreshPrograms();
       },
     );
+    this.home = new Home(this.views.home, {
+      onAction: (action) => this.handleHomeAction(action),
+      onBack: () => this.requestExit(),
+    });
     this.player = new Player(this.views.player, () => {
       this.channelList.render();
       this.showView('channels');
@@ -162,7 +169,7 @@ class App {
 
     this.movies = new Movies(this.views.movies, {
       onRevealTabBar: () => this.tabBar.focus(),
-      onBack: () => this.goLive(),
+      onBack: () => this.goHome(),
       onPlayVod: (req) => {
         this.showView('player');
         this.player.playVod({
@@ -176,7 +183,7 @@ class App {
     });
     this.series = new Series(this.views.series, {
       onRevealTabBar: () => this.tabBar.focus(),
-      onBack: () => this.goLive(),
+      onBack: () => this.goHome(),
       onPlayVod: (req) => {
         this.showView('player');
         this.player.playVod({
@@ -638,8 +645,8 @@ class App {
         .filter((p) => p.source === 'xtream' && p.xtream && isSourceEnabled(p));
       this.tabBar.setAccounts(xtreamAccounts, this.activeXtreamAccount()?.id ?? '');
 
-      this.showView('channels');
       this.channelList.render();
+      this.goHome();
 
       showToast(tp('app.channelsLoaded', PlaylistService.channels.length));
 
@@ -727,6 +734,72 @@ class App {
     // Settings, EPG, the player, etc. updates the underline). Skipped while the
     // search box is open — it overlays other views but stays "Search".
     if (section && !this.tabBar.searchOpen) this.tabBar.setActive(section);
+  }
+
+  private homeState(): HomeState {
+    const account = this.activeXtreamAccount();
+    const accountIds = new Set<string>();
+    if (account) accountIds.add(account.id);
+    for (const channel of PlaylistService.getByContentKind('movie')) {
+      accountIds.add(m3uAccountId(channel));
+    }
+    for (const channel of PlaylistService.getByContentKind('series')) {
+      accountIds.add(m3uAccountId(channel));
+    }
+    let resume: HomeState['resume'] = null;
+    for (const accountId of accountIds) {
+      const entry = StorageService.getResumeList(accountId)[0];
+      if (entry && (!resume || entry.updatedAt > resume.updatedAt)) resume = entry;
+    }
+    return {
+      hasMovies: !!account || PlaylistService.getContentKindCount('movie') > 0,
+      hasSeries: !!account || PlaylistService.getContentKindCount('series') > 0,
+      resume,
+      lastRefreshAt: StorageService.getLastPlaylistRefreshAt(),
+    };
+  }
+
+  private goHome(): void {
+    this.movies.deactivate();
+    this.series.deactivate();
+    this.search.deactivate();
+    this.player.stop();
+    this.showView('home');
+    this.home.open(this.homeState());
+  }
+
+  private requestExit(): void {
+    const now = Date.now();
+    if (now - this.backPressTime < 3000) {
+      void this.exitApp();
+    } else {
+      this.backPressTime = now;
+      showToast(t('app.exitHint'));
+    }
+  }
+
+  private handleHomeAction(action: HomeAction): void {
+    if (action === 'live') { this.switchSection('live'); return; }
+    if (action === 'movies') { this.switchSection('movies'); return; }
+    if (action === 'series') { this.switchSection('series'); return; }
+    if (action === 'epg') { this.switchSection('epg'); return; }
+    if (action === 'settings') { this.switchSection('settings'); return; }
+    if (action === 'continue') {
+      const resume = this.homeState().resume;
+      if (resume) this.switchSection(resume.kind === 'vod' ? 'movies' : 'series');
+      return;
+    }
+    if (action === 'refresh') void this.refreshDataFromHome();
+  }
+
+  private async refreshDataFromHome(): Promise<void> {
+    this.home.setRefreshing(true);
+    try {
+      await this.refreshDataFromSettings(() => undefined);
+    } finally {
+      this.home.setRefreshing(false);
+      this.home.update(this.homeState());
+    }
   }
 
   // Map a tab-bar section to its view and show it (Live = the channels view).
@@ -1138,6 +1211,10 @@ class App {
 
     // Back handling
     if (action === 'back') {
+      if (currentView === 'home') {
+        this.home.handleAction(action);
+        return;
+      }
       if (currentView === 'player') {
         if (this.sidebar.visible) {
           if (!this.sidebar.handleBack()) this.sidebar.hide();
@@ -1166,16 +1243,12 @@ class App {
           return;
         }
         this.epgGrid.deactivateFilters();
-        this.tabBar.setActive('live');
-        this.channelList.render();
-        this.showView('channels');
+        this.goHome();
         return;
       }
       if (currentView === 'settings') {
         if (this.settings.dismissDropdown()) return;
-        this.tabBar.setActive('live');
-        this.channelList.render();
-        this.showView('channels');
+        this.goHome();
         return;
       }
       if (currentView === 'reminders') {
@@ -1184,19 +1257,16 @@ class App {
       }
       if (currentView === 'channels') {
         if (this.channelList.handleBack()) return;
-        const now = Date.now();
-        if (now - this.backPressTime < 3000) {
-          void this.exitApp();
-        } else {
-          this.backPressTime = now;
-          showToast(t('app.exitHint'));
-        }
+        this.goHome();
         return;
       }
     }
 
     // Delegate to active view
     switch (currentView) {
+      case 'home':
+        this.home.handleAction(action);
+        break;
       case 'channels': {
         const moved = this.channelList.handleAction(action, event);
         if (action === 'up' && !moved && this.tabBar.shown) this.tabBar.focus();
@@ -1259,8 +1329,7 @@ class App {
         break;
       case 'settings':
         if (action === 'back') {
-          this.channelList.render();
-          this.showView('channels');
+          this.goHome();
         } else {
           this.settings.handleAction(action);
         }
@@ -1389,7 +1458,7 @@ class App {
       this.epgGrid.resetDay();
     }
     this.channelList.render();
-    this.showView('channels');
+    this.goHome();
   }
 }
 

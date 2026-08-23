@@ -121,10 +121,11 @@ test('a modern engine activates none of the legacy CSS fallbacks', async ({ page
 test('the simulation reaches the worker realm too', async ({ page }) => {
   await routePlaylist(page);
   await seedPlaylist(page);
+  const workerReady = page.waitForEvent('worker');
   await page.goto('/');
   await expect(page.locator('#view-channels')).toBeVisible();
 
-  const worker = await page.waitForEvent('worker');
+  const worker = await workerReady;
   const surface = await worker.evaluate(() => ({
     // Post-53 and deliberately not polyfilled: shows the prelude ran.
     flat: typeof (Array.prototype as unknown as { flat?: unknown }).flat,

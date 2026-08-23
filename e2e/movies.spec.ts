@@ -108,7 +108,7 @@ test('browse Movies, open a detail, and start playback', async ({ page }) => {
   await expect(page.locator('#view-movies .detail-plot')).toContainText('A plot.');
 });
 
-test('Back walks Movies detail -> browse -> Live instead of ejecting', async ({ page }) => {
+test('Back walks Movies detail -> browse -> Home instead of ejecting', async ({ page }) => {
   await seedMovies(page);
   await routeLiveManifest(page);
   await page.goto('/');
@@ -132,9 +132,9 @@ test('Back walks Movies detail -> browse -> Live instead of ejecting', async ({ 
   await expect(page.locator('#view-movies .catalog-browse')).toBeVisible();
   await expect(page.locator('#view-channels')).toBeHidden();
 
-  // Second Back from the browse top level returns to Live.
+  // Second Back from the browse top level returns to Home.
   await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 461, bubbles: true })));
-  await expect(page.locator('#view-channels')).toBeVisible();
+  await expect(page.locator('#view-home')).toBeVisible();
 });
 
 test('Back from a movie detail restores the browse position and focused poster', async ({ page }) => {

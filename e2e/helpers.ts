@@ -167,6 +167,40 @@ export const test = base.extend({
       await page.addInitScript(removeApis, POST_TARGET_APIS);
     }
     await stubUploadService(page);
+    // The established suite predates the launch dashboard and exercises its
+    // target view directly. Preserve those entry assumptions in one place;
+    // home-specific tests opt out with ?home-test=1.
+    const enterLegacyStart = async (): Promise<void> => {
+      await page.waitForFunction(() => {
+        const visible = (id: string) => {
+          const el = document.getElementById(id);
+          return !!el && !el.classList.contains('hidden') && el.style.display !== 'none';
+        };
+        return visible('view-home') || visible('view-settings')
+          || visible('view-player') || visible('view-channels');
+      });
+      const home = page.locator('#view-home');
+      if (await home.isVisible()) {
+        if (await page.locator('.reminder-prompt:not(.hidden)').isVisible()) {
+          await home.locator('[data-home-action="live"]')
+            .evaluate((element: HTMLElement) => element.click());
+        } else {
+          await page.keyboard.press('Enter');
+        }
+      }
+    };
+    const originalGoto = page.goto.bind(page);
+    page.goto = async (url, options) => {
+      const response = await originalGoto(url, options);
+      if (!url.includes('home-test=1')) await enterLegacyStart();
+      return response;
+    };
+    const originalReload = page.reload.bind(page);
+    page.reload = async (options) => {
+      const response = await originalReload(options);
+      if (!page.url().includes('home-test=1')) await enterLegacyStart();
+      return response;
+    };
     await use(page);
   },
 });

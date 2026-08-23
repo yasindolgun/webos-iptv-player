@@ -11,6 +11,9 @@
 @supports not (inset: 0) {
   .loading-container > * + * { margin-top: 24px; }
   .reminder-buttons > * + *, .catchup-resume-buttons > * + *, .confirmation-buttons > * + * { margin-left: 24px; }
+  .home-shell > * + * { margin-top: 34px; }
+  .home-grid > * + * { margin-left: 22px; }
+  .home-card-copy > * + * { margin-top: 4px; }
   .playlist-tabs > * + * { margin-left: 4px; }
   .group-item > * + * { margin-left: 12px; }
   .channel-list-scroll.recent-list > * + * { margin-top: 4px; }

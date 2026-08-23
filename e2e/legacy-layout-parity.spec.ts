@@ -143,6 +143,7 @@ async function prepareM3U(page: Page): Promise<void> {
   }, channelKey({ url: 'http://streams.example.com/one.m3u8' } as Channel));
   await primePlaylistCache(page);
   await page.goto('/');
+  await enterLiveLanding(page);
   await expect(page.locator('#view-channels')).toBeVisible();
   await expect(page.locator('.channel-item')).toHaveCount(2);
 }
@@ -151,7 +152,21 @@ async function prepareXtream(page: Page): Promise<void> {
   await page.clock.setFixedTime(NOW);
   await seedXtream(page);
   await page.goto('/');
+  await enterLiveLanding(page);
   await expect(page.locator('#view-channels')).toBeVisible();
+}
+
+async function enterLiveLanding(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const visible = (id: string) => {
+      const el = document.getElementById(id);
+      return !!el && !el.classList.contains('hidden') && el.style.display !== 'none';
+    };
+    return visible('view-home') || visible('view-channels');
+  });
+  if (await page.locator('#view-home').isVisible()) {
+    await page.keyboard.press('Enter');
+  }
 }
 
 interface Screen {
@@ -382,6 +397,10 @@ const M3U_SCREENS: Screen[] = [
       }, channelKey({ url: 'http://streams.example.com/one.m3u8' } as Channel));
       await p.reload();
       await expect(p.locator('.reminder-prompt:not(.hidden)')).toBeVisible();
+      const homeLive = p.locator('#view-home [data-home-action="live"]');
+      if (await homeLive.isVisible()) {
+        await homeLive.evaluate((element: HTMLElement) => element.click());
+      }
     },
   },
   {
@@ -544,6 +563,7 @@ async function seedUserData(
     };
   }), [store, records] as const);
   await page.reload();
+  await enterLiveLanding(page);
 }
 
 async function seedCatchupResume(page: Page): Promise<void> {
