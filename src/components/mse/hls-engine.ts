@@ -30,6 +30,7 @@ export function createHlsEngine(hls: HlsInstance): MseEngine {
         audioCodec: level?.audioCodec ?? '',
         videoRange: level?.videoRange ?? '',
         frameRate: level?.frameRate ?? 0,
+        bitrate: level?.bitrate ?? 0,
         audioChannels: hls.audioTracks?.[hls.audioTrack]?.channels ?? '',
       };
     },

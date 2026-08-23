@@ -18,7 +18,7 @@ import { StorageService } from '../services/storage-service';
 import { CONFIG } from '../config';
 import { StallWatchdog, type StallProbe, type StallRecovery } from '../utils/stall-watchdog';
 import { StartupWatchdog, type StartupFailure, type StartupProbe } from '../utils/startup-watchdog';
-import { resolutionBadge, hdrLabel, frameRateLabel, pickVariant, codecName, audioSummary, subtitleSummary, type StreamVariant, type MediaInfo } from '../utils/stream-info';
+import { resolutionBadge, hdrLabel, frameRateLabel, bitrateLabel, pickVariant, codecName, audioSummary, subtitleSummary, type StreamVariant, type MediaInfo } from '../utils/stream-info';
 import { extFromUrl, diagnosticStreamUrl } from '../utils/url';
 import { probeMedia } from '../services/media-probe';
 import { ChannelHealthService } from '../services/channel-health';
@@ -1081,13 +1081,15 @@ export class Player {
     const aCodec = aCodecName && atmos ? `${aCodecName} Atmos` : aCodecName;
     const hdr = hdrLabel(lvl?.videoRange ?? variant?.videoRange ?? info?.hdr ?? '');
     const fps = frameRateLabel(lvl?.frameRate ?? variant?.frameRate ?? info?.fps ?? 0);
+    const bitrate = bitrateLabel(lvl?.bitrate ?? variant?.bitrate ?? 0);
     const audio = audioSummary(this.tracks.getAudioTracks());
     const subtitle = subtitleSummary(this.tracks.getSubtitleTracks());
-    if (!(badge || hdr || fps || vCodec || aCodec || audio || subtitle)) return null;
+    if (!(badge || hdr || fps || bitrate || vCodec || aCodec || audio || subtitle)) return null;
     return {
       resolution: badge,
       hdr,
       fps,
+      bitrate,
       videoCodec: vCodec,
       audioCodec: aCodec,
       audio,

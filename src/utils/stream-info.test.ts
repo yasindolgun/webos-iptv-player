@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import type { AudioTrackOption, SubtitleTrackOption } from '../types';
-import { resolutionBadge, hdrLabel, hdrFromTransfer, frameRateLabel, parseVariants, pickVariant, codecName, audioSummary, subtitleSummary } from './stream-info';
+import { resolutionBadge, hdrLabel, hdrFromTransfer, frameRateLabel, bitrateLabel, parseVariants, pickVariant, codecName, audioSummary, subtitleSummary } from './stream-info';
 
 const a = (over: Partial<AudioTrackOption>): AudioTrackOption => ({ index: 0, label: '', active: false, ...over });
 const s = (over: Partial<SubtitleTrackOption>): SubtitleTrackOption => ({ index: 0, label: '', active: false, ...over });
@@ -63,18 +63,29 @@ describe('frameRateLabel', () => {
   });
 });
 
+describe('bitrateLabel', () => {
+  it('formats manifest bitrate values for the OSD', () => {
+    expect(bitrateLabel(850_000)).toBe('850 kbps');
+    expect(bitrateLabel(5_000_000)).toBe('5 Mbps');
+    expect(bitrateLabel(4_500_000)).toBe('4.5 Mbps');
+  });
+  it('omits absent bitrate values', () => {
+    expect(bitrateLabel(0)).toBe('');
+  });
+});
+
 describe('parseVariants', () => {
   it('parses resolution and classifies codecs into video/audio', () => {
     const v = parseVariants(MASTER);
     expect(v).toEqual([
-      { width: 1920, height: 1080, videoCodec: 'avc1.640028', audioCodec: 'mp4a.40.2', atmos: false, videoRange: '', frameRate: 30 },
-      { width: 3840, height: 2160, videoCodec: 'hvc1.1.6.L150', audioCodec: 'ec-3', atmos: false, videoRange: 'PQ', frameRate: 59.94 },
-      { width: 0, height: 0, videoCodec: '', audioCodec: '', atmos: false, videoRange: '', frameRate: 0 },
+      { width: 1920, height: 1080, videoCodec: 'avc1.640028', audioCodec: 'mp4a.40.2', atmos: false, videoRange: '', frameRate: 30, bitrate: 5_000_000 },
+      { width: 3840, height: 2160, videoCodec: 'hvc1.1.6.L150', audioCodec: 'ec-3', atmos: false, videoRange: 'PQ', frameRate: 59.94, bitrate: 9_000_000 },
+      { width: 0, height: 0, videoCodec: '', audioCodec: '', atmos: false, videoRange: '', frameRate: 0, bitrate: 800_000 },
     ]);
   });
   it('classifies codecs by prefix regardless of order', () => {
     const m = ['#EXTM3U', '#EXT-X-STREAM-INF:RESOLUTION=1280x720,CODECS="mp4a.40.2,avc1.42c00d"', 'v.m3u8'].join('\n');
-    expect(parseVariants(m)).toEqual([{ width: 1280, height: 720, videoCodec: 'avc1.42c00d', audioCodec: 'mp4a.40.2', atmos: false, videoRange: '', frameRate: 0 }]);
+    expect(parseVariants(m)).toEqual([{ width: 1280, height: 720, videoCodec: 'avc1.42c00d', audioCodec: 'mp4a.40.2', atmos: false, videoRange: '', frameRate: 0, bitrate: 0 }]);
   });
   it('flags Dolby Atmos from an inline CHANNELS JOC marker', () => {
     const m = [

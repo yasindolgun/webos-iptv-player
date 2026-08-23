@@ -51,6 +51,7 @@ class FakeHls {
     audioCodec: 'mp4a.40.2',
     videoRange: 'PQ',
     frameRate: 30,
+    bitrate: 4_500_000,
   };
 
   constructor(readonly config: Record<string, unknown>) {
@@ -109,7 +110,7 @@ class FakeDashPlayer {
       { index: 4, lang: 'l2', labels: [],
         roles: [{ schemeIdUri: ROLE_SCHEME, value: 'forced-subtitle', id: '' }] },
     ],
-    video: [{ codec: 'video/mp4;codecs="hvc1.2.4.L120.90"' }],
+    video: [{ codec: 'video/mp4;codecs="hvc1.2.4.L120.90"', bitrate: 9_000_000 }],
   };
 
   getTracksFor(type: string): unknown[] {
@@ -423,6 +424,7 @@ describe('PlayerPipeline HLS integration', () => {
       audioCodec: 'mp4a.40.2',
       videoRange: 'PQ',
       frameRate: 30,
+      bitrate: 4_500_000,
       audioChannels: '2',
     });
   });
@@ -488,6 +490,7 @@ describe('PlayerPipeline desktop DASH', () => {
       audioCodec: 'ec-3',
       videoRange: '',
       frameRate: 0,
+      bitrate: 9_000_000,
       audioChannels: '6',
     });
   });
@@ -581,6 +584,7 @@ describe('PlayerPipeline manifest loading', () => {
         atmos: false,
         videoRange: '',
         frameRate: 30,
+        bitrate: 1,
       }],
       masterUrl: 'http://host/a',
     });

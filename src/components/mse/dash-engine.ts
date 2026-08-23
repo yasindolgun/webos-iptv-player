@@ -13,6 +13,7 @@ interface DashTrack {
   labels?: { text: string }[];
   roles?: DashDescriptor[] | null;
   codec?: string | null;
+  bitrate?: number | null;
   audioChannelConfiguration?: DashDescriptor[] | null;
 }
 
@@ -89,13 +90,15 @@ export function createDashEngine(player: DashPlayerLike): MseEngine {
     },
     streamInfo(): PipelineStreamInfo | null {
       const audio = player.getCurrentTrackFor('audio');
+      const video = player.getCurrentTrackFor('video');
       return {
-        videoCodec: codecName(player.getCurrentTrackFor('video')),
+        videoCodec: codecName(video),
         audioCodec: codecName(audio),
         // The OSD fills HDR and frame rate from the manifest variant matched to
         // the element's resolution.
         videoRange: '',
         frameRate: 0,
+        bitrate: video?.bitrate ?? 0,
         audioChannels: audio?.audioChannelConfiguration?.[0]?.value ?? '',
       };
     },

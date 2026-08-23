@@ -5,6 +5,7 @@ export interface PipelineStreamInfo {
   audioCodec: string;
   videoRange: string;
   frameRate: number;
+  bitrate: number;
   audioChannels: string;
 }
 

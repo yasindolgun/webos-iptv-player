@@ -3,7 +3,7 @@ import { t } from '../i18n';
 
 export type StreamVariant = {
   width: number; height: number; videoCodec: string; audioCodec: string;
-  atmos: boolean; videoRange: string; frameRate: number;
+  atmos: boolean; videoRange: string; frameRate: number; bitrate: number;
 };
 export type ResolutionBadge = { label: string; tier: 'uhd' | 'fhd' | 'hd' | 'sd' };
 
@@ -49,6 +49,13 @@ export function hdrFromTransfer(transfer: number): string {
 // FRAME-RATE → whole-number label (59.94 → "60", 23.976 → "24"); 0 → '' (unknown).
 export function frameRateLabel(fps: number): string {
   return fps > 0 ? String(Math.round(fps)) : '';
+}
+
+export function bitrateLabel(bitrate: number): string {
+  if (bitrate < 1000) return '';
+  if (bitrate < 1_000_000) return `${Math.round(bitrate / 1000)} kbps`;
+  const mbps = bitrate / 1_000_000;
+  return `${mbps >= 10 ? Math.round(mbps) : Math.round(mbps * 10) / 10} Mbps`;
 }
 
 // Codec registry — single source of truth for both classify() (video/audio
@@ -103,6 +110,8 @@ export function parseVariants(manifest: string): StreamVariant[] {
     const chan = line.match(/CHANNELS="([^"]*)"/i);
     const aud = line.match(/AUDIO="([^"]*)"/i);
     const fps = line.match(/FRAME-RATE=([\d.]+)/i);
+    const averageBitrate = line.match(/AVERAGE-BANDWIDTH=(\d+)/i);
+    const bitrate = line.match(/(?:^|[,:])BANDWIDTH=(\d+)/i);
     const range = line.match(/VIDEO-RANGE=([A-Za-z]+)/i);
     let videoCodec = '';
     let audioCodec = '';
@@ -121,6 +130,7 @@ export function parseVariants(manifest: string): StreamVariant[] {
       atmos: (chan ? /\bJOC\b/i.test(chan[1]) : false) || (aud ? atmosGroups.has(aud[1]) : false),
       videoRange: range ? range[1] : '',
       frameRate: fps ? parseFloat(fps[1]) : 0,
+      bitrate: parseInt((averageBitrate ?? bitrate)?.[1] ?? '0', 10) || 0,
     });
   }
   return variants;
