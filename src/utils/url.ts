@@ -21,18 +21,21 @@ export function containerMime(url: string): string {
 }
 
 // Identifies the route a stream URL belongs to, for the probed-MIME cache. A
-// provider serves one container per route, so the first path segment is enough —
-// except that the same route can serve a different container per requested format
-// (Xtream `output=`, its native `output_format=` spelling), which lives in the
-// query string. Keeping the format in the key stops a `ts` probe from deciding
-// how an `m3u8` request is played.
+// Provider proxy routes can serve a different container for every resource, so
+// keep the full path and any stream identity. Credentials and unrelated signed
+// query values stay out of the persistent key.
 export function streamRouteKey(url: string): string {
   try {
     const parsed = new URL(url);
-    const route = parsed.pathname.split('/').filter(Boolean)[0] ?? '';
+    const stream = parsed.searchParams.get('stream_id') ||
+      parsed.searchParams.get('stream') || parsed.searchParams.get('id') || '';
     const format = parsed.searchParams.get('output_format') ||
       parsed.searchParams.get('output') || '';
-    return `${parsed.origin}/${route}${format ? `?output=${format}` : ''}`;
+    const params = [
+      stream ? `stream=${encodeURIComponent(stream)}` : '',
+      format ? `output=${encodeURIComponent(format)}` : '',
+    ].filter(Boolean);
+    return `${parsed.origin}${parsed.pathname}${params.length ? `?${params.join('&')}` : ''}`;
   } catch {
     return '';
   }

@@ -4,10 +4,26 @@ import {
   mpdOpeningVerdict,
   sniffStreamContentType,
   streamMime,
+  streamRouteKey,
   streamUrlMime,
 } from './url';
 
 const DASH = 'application/dash+xml';
+
+describe('streamRouteKey', () => {
+  it('scopes proxy MIME results to each resource path', () => {
+    expect(streamRouteKey('http://host/play/token-a'))
+      .toBe('http://host/play/token-a');
+    expect(streamRouteKey('http://host/play/token-b'))
+      .toBe('http://host/play/token-b');
+  });
+
+  it('keeps stream identity and format without persisting credentials', () => {
+    expect(streamRouteKey(
+      'http://host/play?username=u&password=p&stream_id=42&output=m3u8',
+    )).toBe('http://host/play?stream=42&output=m3u8');
+  });
+});
 
 function bytes(text: string): Uint8Array {
   return new TextEncoder().encode(text);
