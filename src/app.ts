@@ -614,7 +614,11 @@ class App {
       if (loadingText) loadingText.textContent = t('app.loadingChannels');
       if (forceRefresh) await PlaylistService.refresh();
       else await PlaylistService.load();
-      await ChannelHealthService.initialize();
+      // Health history only decorates channel rows. Do not hold the initial
+      // channel view behind a potentially large IndexedDB getAll().
+      void ChannelHealthService.initialize()
+        .then(() => this.channelList.render())
+        .catch(err => log.warn('Channel health initialization failed:', err));
       log.info('Channels loaded:', PlaylistService.channels.length,
         '| groups:', PlaylistService.groups.length,
         '| epgSources:', PlaylistService.epgSources);

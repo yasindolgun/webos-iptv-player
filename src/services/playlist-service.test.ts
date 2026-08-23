@@ -635,13 +635,16 @@ describe('PlaylistService.load', () => {
     expect(fetchTextMock).not.toHaveBeenCalled();
   });
 
-  it('refreshes from the network on a cache miss', async () => {
+  it('waits for an explicit refresh on a cache miss', async () => {
     cacheMock.getCachedPlaylist.mockResolvedValue(null);
-    storageMock.getPlaylists.mockReturnValue([{ name: 'P2', url: 'http://host2/p2.m3u' }]);
+    storageMock.getPlaylists.mockReturnValue([
+      { id: 'P2', name: 'P2', url: 'http://host2/p2.m3u' },
+    ]);
     fetchTextMock.mockResolvedValue(P2);
     const result = await PlaylistService.load();
-    expect(result.map(c => c.name)).toEqual(['Bravo Dup', 'Charlie']);
-    expect(fetchTextMock).toHaveBeenCalled();
+    expect(result).toEqual([]);
+    expect(PlaylistService.playlistTabs).toEqual([{ id: 'P2', name: 'P2' }]);
+    expect(fetchTextMock).not.toHaveBeenCalled();
   });
 });
 

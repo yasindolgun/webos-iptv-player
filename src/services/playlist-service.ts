@@ -198,8 +198,14 @@ class PlaylistServiceImpl {
       this.logLoadCompleted('cache', enabledIds.size, 0);
       return this.channels;
     }
-    log.info('Cache miss — refreshing from network');
-    return this.refresh();
+    log.warn(
+      'Cache miss — waiting for an explicit refresh',
+      'event=playlist.load.cache_miss',
+    );
+    this.reset();
+    this.buildPlaylistTabs();
+    this.logLoadCompleted('none', enabledIds.size, 0);
+    return [];
   }
 
   async refresh(): Promise<Channel[]> {
