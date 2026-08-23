@@ -1137,6 +1137,23 @@ describe('Player VOD mode', () => {
     expect(showToast).toHaveBeenCalledTimes(1);
   });
 
+  it('ignores a delayed error from the replaced Matroska video element', () => {
+    const video = document.createElement('video');
+    container.appendChild(video);
+    player.init(video);
+    const r = req({ url: 'http://host:8080/movie/u/p/10.mkv' });
+    playlistMock.channels = [{}, {}];
+    playlistMock.getByIndex.mockClear();
+
+    player.playVod(r);
+    video.dispatchEvent(new Event('error'));
+    video.dispatchEvent(new Event('error'));
+    vi.advanceTimersByTime(3000);
+
+    expect(player.isVod()).toBe(true);
+    expect(playlistMock.getByIndex).not.toHaveBeenCalled();
+  });
+
   it('surfaces a source the element refused, which fires no error event', () => {
     const video = fakeVideo(3600);
     // NETWORK_NO_SOURCE: every <source> was skipped, so no 'error' ever arrives.

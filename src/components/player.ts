@@ -191,7 +191,10 @@ export class Player {
   }
 
   private bindVideoEvents(el: HTMLVideoElement): void {
-    el.addEventListener('error', () => this.onError());
+    el.addEventListener('error', () => {
+      if (el !== this.videoEl) return;
+      this.onError();
+    });
     // Resource selection starts here. Until then readyState/networkState still
     // describe the previous stream — on webOS the content-type probe can defer
     // the attach by up to MANIFEST_TIMEOUT — and recreateVideoEl() loads a
@@ -853,6 +856,7 @@ export class Player {
         this.playbackLabel(),
       );
     }
+    if (!this.currentChannel) return;
     const v = this.videoEl;
     if (this.errorAdvanceTimer !== null) return;
     this.markLiveUnavailable('playback_error');
