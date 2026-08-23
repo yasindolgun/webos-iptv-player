@@ -1118,6 +1118,25 @@ describe('Player VOD mode', () => {
     expect(showToast).toHaveBeenCalled();
   });
 
+  it('retries a rejected Matroska VOD once without ending VOD mode', () => {
+    const video = document.createElement('video');
+    container.appendChild(video);
+    player.init(video);
+    const r = req({ url: 'http://host:8080/movie/u/p/10.mkv' });
+    vi.mocked(showToast).mockClear();
+
+    player.playVod(r);
+    video.dispatchEvent(new Event('error'));
+
+    expect(player.isVod()).toBe(true);
+    expect(r.onBack).not.toHaveBeenCalled();
+    const retryVideo = container.querySelector('video')!;
+    retryVideo.dispatchEvent(new Event('error'));
+    expect(player.isVod()).toBe(false);
+    expect(r.onBack).toHaveBeenCalledTimes(1);
+    expect(showToast).toHaveBeenCalledTimes(1);
+  });
+
   it('surfaces a source the element refused, which fires no error event', () => {
     const video = fakeVideo(3600);
     // NETWORK_NO_SOURCE: every <source> was skipped, so no 'error' ever arrives.

@@ -9,6 +9,7 @@ import {
   CHANNEL_HEALTH_STORE,
   EPG_STORE,
   openPersistenceDb,
+  openPersistenceTransaction,
   PLAYLIST_STORE,
   requestResult,
   STREAM_MIME_STORE,
@@ -299,8 +300,8 @@ function normalizeRecord(
 }
 
 async function readRaw(store: CacheStore, key: IDBValidKey): Promise<StoredRecord | null> {
-  const db = await openDb();
-  if (!db) {
+  const tx = await openPersistenceTransaction(store, 'readonly');
+  if (!tx) {
     if (store === CATALOG_STORE) {
       log.warn(
         'Catalog cache is unavailable',
@@ -311,7 +312,6 @@ async function readRaw(store: CacheStore, key: IDBValidKey): Promise<StoredRecor
     return null;
   }
   try {
-    const tx = db.transaction(store, 'readonly');
     const raw = await requestResult(tx.objectStore(store).get(key)) as
       Record<string, unknown> | undefined;
     if (!raw) return null;
@@ -694,15 +694,14 @@ async function commitRecord(
   record: StoredRecord,
   previous: StoredRecord | null,
 ): Promise<void> {
-  const db = await openDb();
-  if (!db) throw new Error('IndexedDB unavailable');
   const metadata = await readMetadata();
   const category = categoryForStore(store);
   const deltaBytes = record.byteSize - (previous?.byteSize ?? 0);
   const deltaEntries = previous ? 0 : 1;
   const categoryUsage = metadata.categories[category];
   const now = Date.now();
-  const tx = db.transaction([store, META_STORE], 'readwrite');
+  const tx = await openPersistenceTransaction([store, META_STORE], 'readwrite');
+  if (!tx) throw new Error('IndexedDB unavailable');
   tx.objectStore(store).put(record);
   const key = record[cacheKeyPath(store)] as IDBValidKey;
   tx.objectStore(META_STORE).put(entryMeta(store, key, record));
@@ -827,9 +826,8 @@ async function readRawWithoutTouch(
   store: CacheStore,
   key: IDBValidKey,
 ): Promise<StoredRecord | null> {
-  const db = await openDb();
-  if (!db) return null;
-  const tx = db.transaction(store, 'readonly');
+  const tx = await openPersistenceTransaction(store, 'readonly');
+  if (!tx) return null;
   const raw = await requestResult(tx.objectStore(store).get(key)) as
     Record<string, unknown> | undefined;
   if (!raw) return null;
@@ -837,18 +835,15 @@ async function readRawWithoutTouch(
 }
 
 async function readStoreEntries(store: CacheStore): Promise<CacheEntryMeta[]> {
-  const db = await openDb();
-  if (!db) throw new Error('IndexedDB unavailable');
   await ensureMetadata();
-  const tx = db.transaction(META_STORE, 'readonly');
+  const tx = await openPersistenceTransaction(META_STORE, 'readonly');
+  if (!tx) throw new Error('IndexedDB unavailable');
   const records = await requestResult(tx.objectStore(META_STORE).getAll()) as unknown[];
   return records.filter((record): record is CacheEntryMeta =>
     isCacheEntryMeta(record) && record.store === store);
 }
 
 async function clearStoreNow(store: CacheStore): Promise<void> {
-  const db = await openDb();
-  if (!db) throw new Error('IndexedDB unavailable');
   await ensureMetadata();
   const metadata = await readMetadata();
   const category = categoryForStore(store);
@@ -858,7 +853,8 @@ async function clearStoreNow(store: CacheStore): Promise<void> {
     entries: usage.entries + 1,
   }), { bytes: 0, entries: 0 });
   const categoryUsage = metadata.categories[category];
-  const tx = db.transaction([store, META_STORE], 'readwrite');
+  const tx = await openPersistenceTransaction([store, META_STORE], 'readwrite');
+  if (!tx) throw new Error('IndexedDB unavailable');
   tx.objectStore(store).clear();
   for (const entry of storeEntries) {
     tx.objectStore(META_STORE).delete(entry.category);
@@ -1200,10 +1196,9 @@ export async function clearAllCachedData(): Promise<void> {
     } catch {
       // Continue clearing IndexedDB when Web Storage is unavailable.
     }
-    const db = await openDb();
-    if (!db) throw new Error('IndexedDB unavailable');
     try {
-      const tx = db.transaction([...CACHE_STORES, META_STORE], 'readwrite');
+      const tx = await openPersistenceTransaction([...CACHE_STORES, META_STORE], 'readwrite');
+      if (!tx) throw new Error('IndexedDB unavailable');
       for (const store of CACHE_STORES) tx.objectStore(store).clear();
       tx.objectStore(META_STORE).clear();
       await transactionDone(tx);

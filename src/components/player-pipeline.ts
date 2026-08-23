@@ -118,7 +118,11 @@ export class PlayerPipeline {
     return this.engine?.streamInfo() ?? null;
   }
 
-  load(url: string, extras: Record<string, string> | null, opts?: { direct?: boolean }): void {
+  load(
+    url: string,
+    extras: Record<string, string> | null,
+    opts?: { direct?: boolean; sniff?: boolean },
+  ): void {
     const videoEl = this.videoEl;
     if (!videoEl) return;
     const token = ++this.loadToken;
@@ -138,10 +142,10 @@ export class PlayerPipeline {
     // probe; only a cold ambiguous route pays the bounded classification cost.
     if (isWebOS) {
       if (opts?.direct) {
-        const mime = containerMime(url);
+        const mime = opts.sniff ? '' : containerMime(url);
         log.info('Selected webOS native playback', 'event=playback.path.native',
           this.callbacks.playbackLabel(token),
-          'reason=direct', 'url=', safeUrl,
+          `reason=${opts.sniff ? 'vod-sniff-retry' : 'direct'}`, 'url=', safeUrl,
           '| webOS native VOD | MIME', mime || '(sniffed)');
         this.playNative(url, mime);
         return;

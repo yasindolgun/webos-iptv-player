@@ -244,6 +244,16 @@ describe('idb-cache', () => {
     expect(await getCachedPlaylist()).toBeNull();
   });
 
+  it('reopens a closed database connection before reading the catalog', async () => {
+    await setCachedCatalog('x1|vod_categories', [{ id: '1', name: 'Movies' }]);
+    const db = await openPersistenceDb();
+    db?.close();
+
+    expect((await getCachedCatalog<Array<{ id: string; name: string }>>(
+      'x1|vod_categories',
+    ))?.data).toEqual([{ id: '1', name: 'Movies' }]);
+  });
+
   it('can retain an expired playlist for manual-refresh mode', async () => {
     const channels = [channel('ch1')];
     await setCachedPlaylist(channels, [], 0);

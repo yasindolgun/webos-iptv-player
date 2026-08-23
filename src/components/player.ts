@@ -19,7 +19,7 @@ import { CONFIG } from '../config';
 import { StallWatchdog, type StallProbe, type StallRecovery } from '../utils/stall-watchdog';
 import { StartupWatchdog, type StartupFailure, type StartupProbe } from '../utils/startup-watchdog';
 import { resolutionBadge, hdrLabel, frameRateLabel, bitrateLabel, pickVariant, codecName, audioSummary, subtitleSummary, type StreamVariant, type MediaInfo } from '../utils/stream-info';
-import { extFromUrl, diagnosticStreamUrl } from '../utils/url';
+import { containerMime, extFromUrl, diagnosticStreamUrl } from '../utils/url';
 import { probeMedia } from '../services/media-probe';
 import { ChannelHealthService } from '../services/channel-health';
 import { createLogger } from '../utils/logger';
@@ -53,6 +53,7 @@ export class Player {
   private currentIndexAnchor = -1;
   private catchupInfo: CatchupInfo | null = null;
   private vod: VodPlayback | null = null;
+  private vodSniffRetry = false;
   private upNextSeconds = 0;
   private upNextTimer: ReturnType<typeof setInterval> | null = null;
   private pendingResumeSecs = 0;
@@ -478,6 +479,7 @@ export class Player {
     this.currentIndex = -1;
     this.catchupInfo = null;
     this.vod = v;
+    this.vodSniffRetry = false;
     this.pendingResumeSecs = v.resumeSecs > 0 ? v.resumeSecs : 0;
     this.pendingSeekTarget = null;
     this.osd.clearFailedIcons();
@@ -735,7 +737,11 @@ export class Player {
     back?.();
   }
 
-  private loadStream(url: string, extras: Record<string, string> | null, opts?: { direct?: boolean }): void {
+  private loadStream(
+    url: string,
+    extras: Record<string, string> | null,
+    opts?: { direct?: boolean; sniff?: boolean },
+  ): void {
     this.tracks.resetForLoad();
     this.manifestVariants = [];
     this.startupPending = true;
@@ -792,6 +798,19 @@ export class Player {
     this.cancelLiveHistoryTimer();
     if (this.vod) {
       const v = this.vod;
+      if (!this.vodSniffRetry && containerMime(v.url) === 'video/x-matroska') {
+        this.vodSniffRetry = true;
+        log.warn(
+          'Matroska source was rejected; retrying without a MIME hint',
+          'event=playback.vod.sniff_retry',
+          this.playbackLabel(),
+        );
+        this.recreateVideoEl();
+        this.videoEl?.classList.add('active');
+        this.loadStream(v.url, null, { direct: true, sniff: true });
+        this.tracks.attachVod(v);
+        return;
+      }
       this.vod = null;            // so stop() won't overwrite/wipe the resume point on error
       log.warn('VOD playback error', 'event=playback.vod.error',
         this.playbackLabel(), v.title);

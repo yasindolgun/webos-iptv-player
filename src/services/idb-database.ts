@@ -35,6 +35,14 @@ export type UserDataStore = typeof USER_DATA_STORES[number];
 export const USER_META_STORE = 'user-meta';
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
+let activeDb: IDBDatabase | null = null;
+
+function forgetDatabase(db: IDBDatabase): void {
+  if (activeDb !== db) return;
+  activeDb = null;
+  dbPromise = null;
+  try { db.close(); } catch { /* The connection is already closing. */ }
+}
 
 export function cacheKeyPath(store: CacheStore): 'url' | 'key' {
   return store === EPG_STORE ? 'url' : 'key';
@@ -100,10 +108,11 @@ export function openPersistenceDb(): Promise<IDBDatabase | null> {
     };
     req.onsuccess = () => {
       const db = req.result;
+      activeDb = db;
       db.onversionchange = () => {
-        db.close();
-        dbPromise = null;
+        forgetDatabase(db);
       };
+      db.onclose = () => { forgetDatabase(db); };
       resolve(db);
     };
     req.onerror = () => {
@@ -127,6 +136,32 @@ export function openPersistenceDb(): Promise<IDBDatabase | null> {
     };
   });
   return dbPromise;
+}
+
+function isClosingConnection(error: unknown): boolean {
+  return !!error && typeof error === 'object'
+    && (error as { name?: unknown }).name === 'InvalidStateError';
+}
+
+export async function openPersistenceTransaction(
+  stores: string | string[] | readonly string[],
+  mode: IDBTransactionMode,
+): Promise<IDBTransaction | null> {
+  let db = await openPersistenceDb();
+  if (!db) return null;
+  try {
+    return db.transaction(stores, mode);
+  } catch (error) {
+    if (!isClosingConnection(error)) throw error;
+    log.warn(
+      'Database connection closed; reopening',
+      'event=persistence.db.reopened',
+      'operation=transaction',
+    );
+    forgetDatabase(db);
+    db = await openPersistenceDb();
+    return db ? db.transaction(stores, mode) : null;
+  }
 }
 
 export function transactionDone(

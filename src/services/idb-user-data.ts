@@ -1,5 +1,6 @@
 import {
   openPersistenceDb,
+  openPersistenceTransaction,
   requestResult,
   transactionDone,
   USER_DATA_STORES,
@@ -43,8 +44,8 @@ export async function loadUserRecords<T = unknown>(
   storeName: UserDataStore,
 ): Promise<UserDataRecord<T>[]> {
   await writeChain;
-  const db = await openPersistenceDb();
-  if (!db) {
+  const tx = await openPersistenceTransaction(storeName, 'readonly');
+  if (!tx) {
     log.warn(
       'User data storage is unavailable',
       'event=persistence.user.unavailable',
@@ -54,7 +55,6 @@ export async function loadUserRecords<T = unknown>(
     return [];
   }
   try {
-    const tx = db.transaction(storeName, 'readonly');
     return await requestResult(tx.objectStore(storeName).getAll()) as UserDataRecord<T>[];
   } catch (err) {
     log.error(
@@ -72,8 +72,8 @@ export async function loadAllUserRecords(): Promise<
 Record<UserDataStore, UserDataRecord[]>
 > {
   await writeChain;
-  const db = await openPersistenceDb();
-  if (!db) {
+  const tx = await openPersistenceTransaction(USER_DATA_STORES, 'readonly');
+  if (!tx) {
     log.warn(
       'User data storage is unavailable',
       'event=persistence.user.unavailable',
@@ -90,7 +90,6 @@ Record<UserDataStore, UserDataRecord[]>
     };
   }
   try {
-    const tx = db.transaction(USER_DATA_STORES, 'readonly');
     const records = await Promise.all(USER_DATA_STORES.map(async (storeName) => [
       storeName,
       await requestResult(tx.objectStore(storeName).getAll()) as UserDataRecord[],
@@ -111,10 +110,9 @@ Record<UserDataStore, UserDataRecord[]>
 
 // TODO: Remove this marker helper once all supported installs have upgraded to IndexedDB v4.
 export async function loadMigrationMarkers(): Promise<Set<string>> {
-  const db = await openPersistenceDb();
-  if (!db) return new Set();
+  const tx = await openPersistenceTransaction(USER_META_STORE, 'readonly');
+  if (!tx) return new Set();
   try {
-    const tx = db.transaction(USER_META_STORE, 'readonly');
     const keys = await requestResult(tx.objectStore(USER_META_STORE).getAllKeys());
     const migrated = new Set<string>();
     for (const key of keys) {
@@ -162,13 +160,15 @@ export function migrateUserRecordSets(migrations: UserDataMigration[]): Promise<
         .filter(item => item.replaceExisting)
         .map(item => item.storeName))];
       for (const storeName of replacementStores) {
-        const readTx = db.transaction(storeName, 'readonly');
+        const readTx = await openPersistenceTransaction(storeName, 'readonly');
+        if (!readTx) throw new Error('IndexedDB unavailable');
         const readDone = transactionDone(readTx);
         const keys = await requestResult(readTx.objectStore(storeName).getAllKeys());
         await readDone;
         existingKeys.set(storeName, keys.filter((key): key is string => typeof key === 'string'));
       }
-      const tx = db.transaction([...storeNames, USER_META_STORE], 'readwrite');
+      const tx = await openPersistenceTransaction([...storeNames, USER_META_STORE], 'readwrite');
+      if (!tx) throw new Error('IndexedDB unavailable');
       const meta = tx.objectStore(USER_META_STORE);
       for (const migration of migrations) {
         const store = tx.objectStore(migration.storeName);
@@ -213,8 +213,8 @@ export function applyUserChanges(
 ): Promise<void> {
   if (!puts.length && !deletes.length) return Promise.resolve();
   return enqueueWrite(async () => {
-    const db = await openPersistenceDb();
-    if (!db) {
+    const tx = await openPersistenceTransaction(storeName, 'readwrite');
+    if (!tx) {
       log.warn(
         'User data storage is unavailable',
         'event=persistence.user.unavailable',
@@ -224,7 +224,6 @@ export function applyUserChanges(
       throw new Error('IndexedDB unavailable');
     }
     try {
-      const tx = db.transaction(storeName, 'readwrite');
       const store = tx.objectStore(storeName);
       for (const key of deletes) store.delete(key);
       for (const record of puts) store.put(record);
@@ -246,8 +245,8 @@ export function replaceAllUserData(
   records: Partial<Record<UserDataStore, UserDataRecord[]>>,
 ): Promise<void> {
   return enqueueWrite(async () => {
-    const db = await openPersistenceDb();
-    if (!db) {
+    const tx = await openPersistenceTransaction(USER_DATA_STORES, 'readwrite');
+    if (!tx) {
       log.warn(
         'User data storage is unavailable',
         'event=persistence.user.unavailable',
@@ -256,7 +255,6 @@ export function replaceAllUserData(
       throw new Error('IndexedDB unavailable');
     }
     try {
-      const tx = db.transaction(USER_DATA_STORES, 'readwrite');
       for (const storeName of USER_DATA_STORES) {
         const store = tx.objectStore(storeName);
         store.clear();
@@ -277,8 +275,8 @@ export function replaceAllUserData(
 
 export function clearAllUserData(): Promise<void> {
   return enqueueWrite(async () => {
-    const db = await openPersistenceDb();
-    if (!db) {
+    const tx = await openPersistenceTransaction([...USER_DATA_STORES, USER_META_STORE], 'readwrite');
+    if (!tx) {
       log.warn(
         'User data storage is unavailable',
         'event=persistence.user.unavailable',
@@ -287,7 +285,6 @@ export function clearAllUserData(): Promise<void> {
       throw new Error('IndexedDB unavailable');
     }
     try {
-      const tx = db.transaction([...USER_DATA_STORES, USER_META_STORE], 'readwrite');
       for (const storeName of USER_DATA_STORES) tx.objectStore(storeName).clear();
       tx.objectStore(USER_META_STORE).clear();
       await transactionDone(tx);
