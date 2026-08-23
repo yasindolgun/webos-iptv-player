@@ -2,7 +2,7 @@ import type { PlaylistEntry, VodCategory, VodItem, VodInfo, ResumeKind, Watchlis
 import { html, raw, Safe } from '../utils/dom';
 import { morph } from '../utils/morph';
 import { StorageService } from '../services/storage-service';
-import { loadVodCategories, loadVodStreams, loadVodInfo } from '../services/xtream-catalog';
+import { loadAllVodStreams, loadVodCategories, loadVodStreams, loadVodInfo } from '../services/xtream-catalog';
 import { xtreamVodUrl } from '../utils/xtream-url';
 import { CatalogView } from './catalog-view';
 import { PLAY_ICON, watchlistIcon } from './icons';
@@ -22,18 +22,26 @@ export class Movies extends CatalogView<VodCategory, VodItem> {
   private currentInfo: VodInfo | null = null;
   private openedFromWatchlist = false;
   private detailController: AbortController | null = null;
+  private uncategorizedItems: VodItem[] | null = null;
 
-  protected loadCategories(
+  protected async loadCategories(
     account: PlaylistEntry,
     signal: AbortSignal,
   ): Promise<VodCategory[]> {
-    return loadVodCategories(account, signal);
+    this.uncategorizedItems = null;
+    const categories = await loadVodCategories(account, signal);
+    if (categories.length) return categories;
+    const items = await loadAllVodStreams(account, signal);
+    if (!items.length) return [];
+    this.uncategorizedItems = items;
+    return [{ id: '', name: t('common.movies') }];
   }
   protected loadItems(
     account: PlaylistEntry,
     categoryId: string,
     signal: AbortSignal,
   ): Promise<VodItem[]> {
+    if (categoryId === '' && this.uncategorizedItems) return Promise.resolve(this.uncategorizedItems);
     return loadVodStreams(account, categoryId, signal);
   }
   protected itemId(v: VodItem): string { return v.streamId; }

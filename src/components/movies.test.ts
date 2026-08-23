@@ -5,7 +5,10 @@ import type { PlaylistEntry, WatchlistEntry, WatchlistKind } from '../types';
 const { catalogMock, storageMock, watchlistState, toastMock } = vi.hoisted(() => {
   const watchlistState = { entries: [] as WatchlistEntry[] };
   return {
-    catalogMock: { loadVodCategories: vi.fn(), loadVodStreams: vi.fn(), loadVodInfo: vi.fn() },
+    catalogMock: {
+      loadAllVodStreams: vi.fn(), loadVodCategories: vi.fn(),
+      loadVodStreams: vi.fn(), loadVodInfo: vi.fn(),
+    },
     watchlistState,
     storageMock: {
       getResumeList: vi.fn(() => [] as unknown[]),
@@ -66,6 +69,19 @@ describe('Movies browse + grid', () => {
     await openWith([{ id: '1', name: 'Cat A' }], [vod('10', 'Movie One')]);
     expect(container.querySelector('.catalog-rail-title')?.textContent).toContain('Cat A');
     expect(container.querySelector('.catalog-tile[data-item-id="10"]')?.textContent).toContain('Movie One');
+  });
+
+  it('loads the full catalog when the provider returns no categories', async () => {
+    catalogMock.loadVodCategories.mockResolvedValue([]);
+    catalogMock.loadAllVodStreams.mockResolvedValue([vod('10', 'Movie One', '')]);
+    const handlers = { onRevealTabBar: vi.fn(), onBack: vi.fn(), onPlayVod: vi.fn() };
+    const view = new Movies(container, handlers);
+
+    await view.open(account);
+
+    expect(catalogMock.loadVodStreams).not.toHaveBeenCalled();
+    expect(container.querySelector('.catalog-tile[data-item-id="10"]')?.textContent)
+      .toContain('Movie One');
   });
 
   it('updates the hero title and backdrop to the focused movie', async () => {

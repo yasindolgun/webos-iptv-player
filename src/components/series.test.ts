@@ -5,7 +5,10 @@ import type { PlaylistEntry, WatchlistEntry, WatchlistKind } from '../types';
 const { catalogMock, storageMock, watchlistState, toastMock } = vi.hoisted(() => {
   const watchlistState = { entries: [] as WatchlistEntry[] };
   return {
-    catalogMock: { loadSeriesCategories: vi.fn(), loadSeries: vi.fn(), loadSeriesInfo: vi.fn() },
+    catalogMock: {
+      loadAllSeries: vi.fn(), loadSeriesCategories: vi.fn(),
+      loadSeries: vi.fn(), loadSeriesInfo: vi.fn(),
+    },
     watchlistState,
     storageMock: {
       getResumeList: vi.fn(() => [] as unknown[]),
@@ -66,6 +69,19 @@ describe('Series browse + grid', () => {
     await openWith([{ id: '1', name: 'Cat A' }], [series('s1', 'Series One')]);
     expect(container.querySelector('.catalog-rail-title')?.textContent).toContain('Cat A');
     expect(container.querySelector('.catalog-tile[data-item-id="s1"]')?.textContent).toContain('Series One');
+  });
+
+  it('loads the full catalog when the provider returns no categories', async () => {
+    catalogMock.loadSeriesCategories.mockResolvedValue([]);
+    catalogMock.loadAllSeries.mockResolvedValue([series('s1', 'Series One', '')]);
+    const handlers = { onRevealTabBar: vi.fn(), onBack: vi.fn(), onPlayVod: vi.fn() };
+    const view = new Series(container, handlers);
+
+    await view.open(account);
+
+    expect(catalogMock.loadSeries).not.toHaveBeenCalled();
+    expect(container.querySelector('.catalog-tile[data-item-id="s1"]')?.textContent)
+      .toContain('Series One');
   });
 
   it('updates the hero title and backdrop to the focused series', async () => {

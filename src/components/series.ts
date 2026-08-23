@@ -2,7 +2,7 @@ import type { Action, PlaylistEntry, SeriesCategory, SeriesItem, SeriesInfo, Epi
 import { html, raw, Safe } from '../utils/dom';
 import { morph } from '../utils/morph';
 import { StorageService } from '../services/storage-service';
-import { loadSeriesCategories, loadSeries, loadSeriesInfo } from '../services/xtream-catalog';
+import { loadAllSeries, loadSeriesCategories, loadSeries, loadSeriesInfo } from '../services/xtream-catalog';
 import { xtreamEpisodeUrl, type XtreamCredentials } from '../utils/xtream-url';
 import { CatalogView, type CatalogHandlers } from './catalog-view';
 import { PLAY_ICON, watchlistIcon } from './icons';
@@ -36,6 +36,7 @@ export class Series extends CatalogView<SeriesCategory, SeriesItem> {
   private episodeSource: Episode[] | null = null;
   private measuredEpisodes = new Set<number>();
   private detailController: AbortController | null = null;
+  private uncategorizedItems: SeriesItem[] | null = null;
   private readonly episodeVirtualizer = new VirtualList({
     overscan: EPISODE_OVERSCAN,
     fallbackViewportSize: EPISODE_VIEWPORT_FALLBACK,
@@ -46,17 +47,24 @@ export class Series extends CatalogView<SeriesCategory, SeriesItem> {
     super(container, handlers);
   }
 
-  protected loadCategories(
+  protected async loadCategories(
     account: PlaylistEntry,
     signal: AbortSignal,
   ): Promise<SeriesCategory[]> {
-    return loadSeriesCategories(account, signal);
+    this.uncategorizedItems = null;
+    const categories = await loadSeriesCategories(account, signal);
+    if (categories.length) return categories;
+    const items = await loadAllSeries(account, signal);
+    if (!items.length) return [];
+    this.uncategorizedItems = items;
+    return [{ id: '', name: t('common.series') }];
   }
   protected loadItems(
     account: PlaylistEntry,
     categoryId: string,
     signal: AbortSignal,
   ): Promise<SeriesItem[]> {
+    if (categoryId === '' && this.uncategorizedItems) return Promise.resolve(this.uncategorizedItems);
     return loadSeries(account, categoryId, signal);
   }
   protected itemId(s: SeriesItem): string { return s.seriesId; }
