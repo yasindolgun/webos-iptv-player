@@ -1,4 +1,4 @@
-import { test, expect, isChromium53, type Page, routePlaylist } from './helpers';
+import { test, expect, isChromium53, type Page, routePlaylist, primePlaylistCache } from './helpers';
 
 // EPG guide: the LIVE badge and the day/time-zone handling. Both need a fixed
 // clock and a UTC device zone so wall-clock == absolute time.
@@ -30,10 +30,13 @@ test.describe('EPG live badge', () => {
     await page.route('**/epg.xml', r => r.fulfill({ status: 200, contentType: 'application/xml', body: EPG }));
     await page.clock.setFixedTime(NOW);
     await page.addInitScript(() => {
-      localStorage.setItem('iptv_playlists', JSON.stringify([{ name: 'P', url: 'http://host/playlist.m3u' }]));
+      if (!localStorage.getItem('iptv_playlists')) {
+        localStorage.setItem('iptv_playlists', JSON.stringify([{ name: 'P', url: 'http://host/playlist.m3u' }]));
+      }
       localStorage.setItem('iptv_epg_url', JSON.stringify('http://host/epg.xml'));
       localStorage.setItem('iptv_tz_mode', JSON.stringify('device'));
     });
+    await primePlaylistCache(page);
   }
 
   test('the EPG marks the currently-airing program with a pulsing LIVE badge', async ({ page }) => {
@@ -163,10 +166,13 @@ test.describe('EPG time zone', () => {
     await page.route('**/epg.xml', r => r.fulfill({ status: 200, contentType: 'application/xml', body: EPG }));
     await page.clock.setFixedTime(NOW);
     await page.addInitScript((mode) => {
-      localStorage.setItem('iptv_playlists', JSON.stringify([{ name: 'P', url: 'http://host/playlist.m3u' }]));
+      if (!localStorage.getItem('iptv_playlists')) {
+        localStorage.setItem('iptv_playlists', JSON.stringify([{ name: 'P', url: 'http://host/playlist.m3u' }]));
+      }
       localStorage.setItem('iptv_epg_url', JSON.stringify('http://host/epg.xml'));
       localStorage.setItem('iptv_tz_mode', JSON.stringify(mode));
     }, tzMode);
+    await primePlaylistCache(page);
   }
 
   async function openEpg(page: Page): Promise<void> {

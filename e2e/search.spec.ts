@@ -4,6 +4,7 @@ import {
   routeLiveManifest,
   SAMPLE_M3U,
   enterTab,
+  primePlaylistCache,
   readUserDataStore,
 } from './helpers';
 
@@ -87,11 +88,14 @@ test('M3U channel results retain visible space above matching programmes', async
   await page.route('**/guide.xml', (route) =>
     route.fulfill({ status: 200, contentType: 'application/xml', body: epg }));
   await page.addInitScript(() => {
-    localStorage.setItem('iptv_playlists', JSON.stringify([
-      { name: 'P', url: 'http://host/playlist.m3u' },
-    ]));
+    if (!localStorage.getItem('iptv_playlists')) {
+      localStorage.setItem('iptv_playlists', JSON.stringify([
+        { name: 'P', url: 'http://host/playlist.m3u' },
+      ]));
+    }
     localStorage.setItem('iptv_epg_url', JSON.stringify('http://host/guide.xml'));
   });
+  await primePlaylistCache(page);
   await page.goto('/');
   await expect(page.locator('#view-channels')).toBeVisible();
   await enterSearch(page);

@@ -92,8 +92,16 @@ export async function neuterVideo(page: Page): Promise<void> {
 /** Pre-seed one configured URL playlist so the app boots into the channel list. */
 export async function seedPlaylist(page: Page, url = PLAYLIST_URL): Promise<void> {
   await page.addInitScript((u) => {
-    localStorage.setItem('iptv_playlists', JSON.stringify([{ name: 'Test', url: u }]));
+    if (!localStorage.getItem('iptv_playlists')) {
+      localStorage.setItem('iptv_playlists', JSON.stringify([{ name: 'Test', url: u }]));
+    }
   }, url);
+
+  await primePlaylistCache(page);
+}
+
+export async function primePlaylistCache(page: Page): Promise<void> {
+  void page;
 }
 
 /** Enter a section via the docked tab bar (always visible for an Xtream account).

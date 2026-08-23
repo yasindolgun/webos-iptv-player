@@ -6,6 +6,7 @@ import {
   SEARCH_M3U,
   enterTab,
   routeLiveManifest,
+  neuterVideo,
   measureRowTextFit,
 } from './helpers';
 
@@ -150,6 +151,7 @@ test('the list follows the playing channel however it was tuned', async ({ page 
   }
   await routePlaylist(page, lines.join('\n'));
   await routeLiveManifest(page);
+  await neuterVideo(page);
   await seedPlaylist(page);
   await page.goto('/');
   await expect(page.locator('#view-channels')).toBeVisible();
@@ -196,6 +198,7 @@ test('direct channel entry scrolls the list to the tuned channel and keeps it on
   }
   await routePlaylist(page, lines.join('\n'));
   await routeLiveManifest(page);
+  await neuterVideo(page);
   await seedPlaylist(page);
   await page.goto('/');
   await expect(page.locator('#view-channels')).toBeVisible();

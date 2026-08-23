@@ -4,6 +4,8 @@ import {
   type Page,
   enterTab,
   LIVE_MANIFEST,
+  neuterVideo,
+  primePlaylistCache,
   readUserDataStore,
 } from './helpers';
 
@@ -37,17 +39,20 @@ function stableChannelKey(url: string): string {
 
 async function setup(page: Page, seedHistory = true): Promise<void> {
   await page.clock.setFixedTime(NOW);
+  await neuterVideo(page);
   await page.route('**/playlist.m3u', route =>
     route.fulfill({ status: 200, contentType: 'application/x-mpegurl', body: M3U }));
   await page.route('**/*.m3u8*', route =>
     route.fulfill({ status: 200, contentType: 'application/vnd.apple.mpegurl', body: LIVE_MANIFEST }));
   await page.addInitScript((seed) => {
-    localStorage.setItem('iptv_playlists', JSON.stringify([{
-      id: 'p1',
-      name: 'Playlist 1',
-      url: 'http://host/playlist.m3u',
-      source: 'url',
-    }]));
+    if (!localStorage.getItem('iptv_playlists')) {
+      localStorage.setItem('iptv_playlists', JSON.stringify([{
+        id: 'p1',
+        name: 'Playlist 1',
+        url: 'http://host/playlist.m3u',
+        source: 'url',
+      }]));
+    }
     if (!seed.seedHistory) return;
     localStorage.setItem('iptv_recently_watched_live', JSON.stringify([{
       channelKey: seed.liveKey,
@@ -89,6 +94,7 @@ async function setup(page: Page, seedHistory = true): Promise<void> {
     now: NOW.getTime(),
     seedHistory,
   });
+  await primePlaylistCache(page);
 }
 
 async function openRecentlyWatched(page: Page): Promise<void> {
@@ -188,10 +194,12 @@ test('filters Recently Watched by the selected playlist', async ({ page }) => {
     body: '#EXTM3U\n#EXTINF:-1 group-title="Group 2",Channel Bravo\nhttp://host/b.m3u8',
   }));
   await page.addInitScript((keys) => {
-    localStorage.setItem('iptv_playlists', JSON.stringify([
-      { id: 'p1', name: 'Playlist 1', url: 'http://host/p1.m3u', source: 'url' },
-      { id: 'p2', name: 'Playlist 2', url: 'http://host/p2.m3u', source: 'url' },
-    ]));
+    if (!localStorage.getItem('iptv_playlists')) {
+      localStorage.setItem('iptv_playlists', JSON.stringify([
+        { id: 'p1', name: 'Playlist 1', url: 'http://host/p1.m3u', source: 'url' },
+        { id: 'p2', name: 'Playlist 2', url: 'http://host/p2.m3u', source: 'url' },
+      ]));
+    }
     localStorage.setItem('iptv_recently_watched_live', JSON.stringify([
       { channelKey: keys.bravo, updatedAt: 2000 },
       { channelKey: keys.alpha, updatedAt: 1000 },
@@ -200,6 +208,8 @@ test('filters Recently Watched by the selected playlist', async ({ page }) => {
     alpha: stableChannelKey(CATCHUP_CHANNEL_URL),
     bravo: stableChannelKey(LIVE_URL),
   });
+
+  await primePlaylistCache(page);
 
   await page.goto('/');
   await expect(page.locator('#view-channels')).toBeVisible();

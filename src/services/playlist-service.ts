@@ -159,9 +159,8 @@ class PlaylistServiceImpl {
   }
 
   async load(): Promise<Channel[]> {
-    const enabledIds = new Set(
-      StorageService.getPlaylists().filter(isSourceEnabled).map(source => source.id),
-    );
+    const enabledSources = StorageService.getPlaylists().filter(isSourceEnabled);
+    const enabledIds = new Set(enabledSources.map(source => source.id));
     if (!enabledIds.size) {
       this.reset();
       this.logLoadCompleted('none', 0, 0);
@@ -198,14 +197,8 @@ class PlaylistServiceImpl {
       this.logLoadCompleted('cache', enabledIds.size, 0);
       return this.channels;
     }
-    log.warn(
-      'Cache miss — waiting for an explicit refresh',
-      'event=playlist.load.cache_miss',
-    );
-    this.reset();
-    this.buildPlaylistTabs();
-    this.logLoadCompleted('none', enabledIds.size, 0);
-    return [];
+    log.info('Refreshing playlist sources after a cache miss');
+    return this.refresh();
   }
 
   async refresh(): Promise<Channel[]> {
@@ -301,36 +294,47 @@ class PlaylistServiceImpl {
         }
 
         let fallbackStreams: XtreamLiveStream[] | undefined;
-        if (xtreamCredentials && (!parsed || !parsed.channels.length)) {
-          if (parsed) {
+        if (xtreamCredentials) {
+          const hasLivePlaylistEntries = parsed?.channels.some(channel =>
+            channel.contentKind === 'live'
+            && !/\/(?:movie|series)\//i.test(channel.url)) ?? false;
+          if (!hasLivePlaylistEntries) {
             log.warn(
-              'Xtream playlist contained no channels; trying the Player API live catalog',
+              'Xtream playlist contained no live channels; trying the Player API live catalog',
               'event=xtream.live_fallback.used',
-              'reason=no_channels',
+              `reason=${parsed?.channels.length ? 'no_live_channels' : parsed ? 'no_channels' : 'request_failed'}`,
             );
+            try {
+              const client = createXtreamClient(xtreamCredentials);
+              const [categories, streams] = await Promise.all([
+                client.getLiveCategories(),
+                client.getLiveStreams(),
+              ]);
+              fallbackStreams = streams;
+              log.info(
+                'Xtream Player API live catalog completed',
+                'event=xtream.live_api.completed',
+                `categories=${categories.length}`,
+                `streams=${streams.length}`,
+              );
+              if (streams.length) {
+                parsed = xtreamLivePlaylist(
+                  xtreamCredentials,
+                  xtreamOutput,
+                  categories,
+                  streams,
+                );
+              }
+            } catch (err) {
+              if (!parsed || !parsed.channels.length) throw playlistError ?? err;
+              log.warn(
+                'Xtream Player API live catalog unavailable; keeping get.php channels',
+                'event=xtream.live_api.fallback',
+                err,
+              );
+            }
           }
-          const client = createXtreamClient(xtreamCredentials);
-          const [categories, streams] = await Promise.all([
-            client.getLiveCategories(),
-            client.getLiveStreams(),
-          ]);
-          fallbackStreams = streams;
-          log.info(
-            'Xtream Player API live catalog completed',
-            'event=xtream.live_api.completed',
-            `categories=${categories.length}`,
-            `streams=${streams.length}`,
-          );
-          if (streams.length) {
-            parsed = xtreamLivePlaylist(
-              xtreamCredentials,
-              xtreamOutput,
-              categories,
-              streams,
-            );
-          } else if (!parsed && playlistError) {
-            throw playlistError;
-          }
+          if ((!parsed || !parsed.channels.length) && playlistError) throw playlistError;
         }
         if (!parsed) throw new Error('Xtream source returned no playlist or live catalog');
 

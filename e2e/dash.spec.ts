@@ -165,7 +165,17 @@ test('routes an MPD through dash.js and renders its stream info', async ({ page 
 
 test('loads the real dash.js engine in the desktop preview', async ({ page }) => {
   test.skip(isChromium53(), 'dash.js is a modern-browser desktop preview dependency');
+  await routePlaylist(page, DASH_M3U);
+  await page.route(DASH_URL, route => route.fulfill({
+    status: 200,
+    contentType: 'application/dash+xml',
+    body: DASH_MPD,
+  }));
+  await seedPlaylist(page);
   await page.goto('/');
+  await expect(page.locator('#view-channels')).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#view-player')).toBeVisible();
   await page.waitForFunction(() =>
     typeof (window as unknown as { __dashjs?: { MediaPlayer?: unknown } })
       .__dashjs?.MediaPlayer === 'function');

@@ -137,6 +137,37 @@ test('Back walks Movies detail -> browse -> Live instead of ejecting', async ({ 
   await expect(page.locator('#view-channels')).toBeVisible();
 });
 
+test('Back from a movie detail restores the browse position and focused poster', async ({ page }) => {
+  await seedMovies(page);
+  await routeLiveManifest(page);
+  await page.goto('/');
+  await enterTab(page, 'movies');
+
+  await page.addStyleTag({ content: `
+    #view-movies .catalog-rails-body { padding-top: 1200px !important; }
+    #view-movies .catalog-rail-track { padding-right: 2000px !important; }
+  ` });
+  const tile = page.locator('.catalog-tile[data-item-id="10"]');
+  await tile.evaluate((element) =>
+    element.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true })));
+  await page.locator('#view-movies .catalog-rails').evaluate((element) => {
+    element.scrollTop = 640;
+  });
+  await page.locator('#view-movies .catalog-rail-track').first().evaluate((element) => {
+    element.scrollLeft = 180;
+  });
+
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#view-movies .movies-detail')).toBeVisible();
+  await page.evaluate(() =>
+    document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 461, bubbles: true })));
+
+  await expect(page.locator('#view-movies .catalog-rails')).toHaveJSProperty('scrollTop', 640);
+  await expect(page.locator('#view-movies .catalog-rail-track').first())
+    .toHaveJSProperty('scrollLeft', 180);
+  await expect(tile).toHaveClass(/focused/);
+});
+
 test('VOD playback suppresses the live channel sidebar and shows a VOD-only menu at the pointer edges', async ({ page }) => {
   await seedMovies(page);
   await routeLiveManifest(page);

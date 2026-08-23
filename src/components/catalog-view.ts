@@ -63,6 +63,9 @@ export abstract class CatalogView<C extends { id: string; name: string }, I> {
   protected readonly scrollGuard = new VirtualScrollGuard();
   private gridSnapTimer: ReturnType<typeof setTimeout> | null = null;
   private requestController: AbortController | null = null;
+  private browseScrollTop = 0;
+  private browseRailScrollLeft: number[] = [];
+  private browseFocusKey: string | null = null;
 
   constructor(protected container: HTMLElement, protected handlers: CatalogHandlers) {
     this.nav = new SpatialNav(container, (el) => this.onFocusChanged(el));
@@ -184,6 +187,9 @@ export abstract class CatalogView<C extends { id: string; name: string }, I> {
     this.gridCategory = null;
     this.categoryVirtualizer.setScrollOffset(0);
     this.gridVirtualizer.setScrollOffset(0);
+    this.browseScrollTop = 0;
+    this.browseRailScrollLeft = [];
+    this.browseFocusKey = null;
     this.resume = StorageService.getResumeList(account.id).filter((e) => e.kind === this.resumeKind);
     this.renderLoading();
     try {
@@ -269,10 +275,36 @@ export abstract class CatalogView<C extends { id: string; name: string }, I> {
       void this.openGrid(el.dataset.categoryId);
       return;
     }
+    if (this.mode === 'browse' || this.mode === 'grid') this.captureCatalogPosition();
     if (this.selectExtra(el)) return;
     if (el.dataset.itemId !== undefined) {
       const item = this.findItem(el.dataset.categoryId ?? '', el.dataset.itemId);
       if (item) void this.openDetail(item);
+    }
+  }
+
+  private captureCatalogPosition(): void {
+    if (this.mode === 'browse') {
+      const rails = this.container.querySelector<HTMLElement>('.catalog-rails');
+      this.browseScrollTop = rails?.scrollTop ?? 0;
+      this.browseRailScrollLeft = Array.from(
+        this.container.querySelectorAll<HTMLElement>('.catalog-rail-track'),
+      ).map(rail => rail.scrollLeft);
+      this.browseFocusKey = this.nav.focused?.getAttribute('data-key') ?? null;
+      return;
+    }
+    if (this.mode === 'grid') {
+      const view = this.container.querySelector<HTMLElement>('.catalog-grid');
+      const track = this.container.querySelector<HTMLElement>('.catalog-grid-track');
+      if (view) {
+        this.gridVirtualizer.setScrollOffset(
+          Math.max(0, view.scrollTop - this.gridTrackStart(view, track)),
+        );
+      }
+      const cell = this.nav.focused?.closest<HTMLElement>('[data-grid-index]');
+      if (cell?.dataset.gridIndex !== undefined) {
+        this.gridFocusIndex = parseInt(cell.dataset.gridIndex, 10);
+      }
     }
   }
 
@@ -452,8 +484,20 @@ export abstract class CatalogView<C extends { id: string; name: string }, I> {
         this.categoryVirtualizer.scrollOffset,
       );
     }
-    if (restoreFocus) this.nav.focusFirst();
-    else this.nav.clearDetachedFocus();
+    if (restoreFocus) {
+      const focused = this.browseFocusKey
+        ? Array.from(this.container.querySelectorAll<HTMLElement>('[data-key]'))
+          .find(element => element.getAttribute('data-key') === this.browseFocusKey) ?? null
+        : null;
+      if (focused) this.nav.focus(focused);
+      else this.nav.focusFirst();
+      // SpatialNav reveals a focused element with scrollIntoView. Restore the
+      // exact user offsets afterwards so returning from detail never jumps.
+      const rails = this.container.querySelector<HTMLElement>('.catalog-rails');
+      if (rails) rails.scrollTop = this.browseScrollTop;
+      this.container.querySelectorAll<HTMLElement>('.catalog-rail-track')
+        .forEach((rail, index) => { rail.scrollLeft = this.browseRailScrollLeft[index] ?? 0; });
+    } else this.nav.clearDetachedFocus();
   }
 
   protected renderGrid(restoreFocus = true): void {

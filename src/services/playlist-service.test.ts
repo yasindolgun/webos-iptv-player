@@ -376,10 +376,28 @@ http://host:8080/live/u1/p1/102.ts`;
     expect(channels.every(c => /\/live\/u1\/p1\/\d+\.ts$/.test(c.url))).toBe(true);
   });
 
-  it('does not request live categories when get.php returns channels', async () => {
+  it('does not request live categories when get.php returns live channels', async () => {
     await PlaylistService.refresh();
     expect(fetchTextMock.mock.calls.some(([url]) =>
       url.includes('action=get_live_categories'))).toBe(false);
+  });
+
+  it('uses Player API live channels instead of a non-live get.php feed', async () => {
+    fetchTextMock.mockImplementation((url: string) => {
+      if (url.includes('action=get_live_categories')) {
+        return Promise.resolve('[{"category_id":"1","category_name":"Live"}]');
+      }
+      if (url.includes('action=get_live_streams')) {
+        return Promise.resolve('[{"stream_id":201,"name":"Channel One","category_id":"1"}]');
+      }
+      if (url.includes('player_api.php')) return Promise.resolve('{}');
+      return Promise.resolve('#EXTM3U\n#EXTINF:-1 group-title="Movies",Movie One\nhttp://host/movie/u1/p1/10.mp4');
+    });
+
+    const channels = await PlaylistService.refresh();
+
+    expect(channels.map(channel => channel.name)).toEqual(['Channel One']);
+    expect(channels[0].url).toBe('http://host:8080/live/u1/p1/201.ts');
   });
 
   it.each([
@@ -635,16 +653,39 @@ describe('PlaylistService.load', () => {
     expect(fetchTextMock).not.toHaveBeenCalled();
   });
 
-  it('waits for an explicit refresh on a cache miss', async () => {
+  it('refreshes playlist sources on a cache miss', async () => {
     cacheMock.getCachedPlaylist.mockResolvedValue(null);
     storageMock.getPlaylists.mockReturnValue([
       { id: 'P2', name: 'P2', url: 'http://host2/p2.m3u' },
     ]);
     fetchTextMock.mockResolvedValue(P2);
     const result = await PlaylistService.load();
-    expect(result).toEqual([]);
+    expect(result.map(channel => channel.name)).toEqual(['Bravo Dup', 'Charlie']);
     expect(PlaylistService.playlistTabs).toEqual([{ id: 'P2', name: 'P2' }]);
-    expect(fetchTextMock).not.toHaveBeenCalled();
+    expect(fetchTextMock).toHaveBeenCalled();
+  });
+
+  it('recovers Xtream Live from the network on a cache miss', async () => {
+    cacheMock.getCachedPlaylist.mockResolvedValue(null);
+    storageMock.getPlaylists.mockReturnValue([{
+      id: 'x', name: 'Acct', url: 'http://host:8080', source: 'xtream',
+      xtream: { username: 'u1', password: 'p1' },
+    }]);
+    fetchTextMock.mockImplementation((url: string) => {
+      if (url.includes('action=get_live_streams')) return Promise.resolve('[]');
+      if (url.includes('player_api.php')) return Promise.resolve('{}');
+      return Promise.resolve(
+        '#EXTM3U\n#EXTINF:-1 group-title="News",Alpha\nhttp://host:8080/live/u1/p1/101.ts',
+      );
+    });
+
+    const result = await PlaylistService.load();
+
+    expect(result.map(channel => channel.name)).toEqual(['Alpha']);
+    expect(fetchTextMock).toHaveBeenCalledWith(
+      'http://host:8080/get.php?username=u1&password=p1&type=m3u_plus&output=ts',
+      expect.any(Number),
+    );
   });
 });
 

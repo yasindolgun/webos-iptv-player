@@ -1,6 +1,6 @@
 import {
   enterTab, test, expect, isChromium53, neuterVideo, routeLiveManifest, routePlaylist,
-  seedPlaylist, type Page, SAMPLE_M3U,
+  seedPlaylist, primePlaylistCache, type Page, SAMPLE_M3U,
 } from './helpers';
 import { POLYFILLED_APIS } from '../scripts/polyfilled-apis.mjs';
 import { seedXtream } from './fixtures/xtream';
@@ -186,7 +186,9 @@ test('no flex-gap container separates an element from loose text', async ({ page
   await page.route('**/epg.xml', (r) =>
     r.fulfill({ status: 200, contentType: 'application/xml', body: EPG }));
   await page.addInitScript(() => {
-    localStorage.setItem('iptv_playlists', JSON.stringify([{ name: 'P', url: 'http://host/playlist.m3u' }]));
+    if (!localStorage.getItem('iptv_playlists')) {
+      localStorage.setItem('iptv_playlists', JSON.stringify([{ name: 'P', url: 'http://host/playlist.m3u' }]));
+    }
     localStorage.setItem('iptv_epg_url', JSON.stringify('http://host/epg.xml'));
     // A populated Reminder Manager: its rows never render while it is empty.
     // The key is fnv1a of the stream URL, as in src/utils/channel.ts.
@@ -201,6 +203,7 @@ test('no flex-gap container separates an element from loose text', async ({ page
     localStorage.setItem('iptv_favorites',
       JSON.stringify([(h >>> 0).toString(16).padStart(8, '0')]));
   });
+  await primePlaylistCache(page);
   await page.goto('/');
   await expect(page.locator('#view-channels')).toBeVisible();
 

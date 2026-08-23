@@ -1,4 +1,12 @@
-import { test, expect, type Page, routePlaylist, routeLiveManifest, LIVE_MANIFEST } from './helpers';
+import {
+  test,
+  expect,
+  type Page,
+  routePlaylist,
+  routeLiveManifest,
+  primePlaylistCache,
+  LIVE_MANIFEST,
+} from './helpers';
 
 // Catch-up resume markers + resume prompt. A fixed clock and a UTC device zone
 // keep wall-clock == absolute time so the past/live/future split is unambiguous.
@@ -35,7 +43,9 @@ async function setup(page: Page, seed?: Seed): Promise<void> {
   await page.route('**/epg.xml', (r) => r.fulfill({ status: 200, contentType: 'application/xml', body: EPG }));
   await page.clock.setFixedTime(NOW);
   await page.addInitScript(({ url, s }) => {
-    localStorage.setItem('iptv_playlists', JSON.stringify([{ name: 'P', url: 'http://host/playlist.m3u' }]));
+    if (!localStorage.getItem('iptv_playlists')) {
+      localStorage.setItem('iptv_playlists', JSON.stringify([{ name: 'P', url: 'http://host/playlist.m3u' }]));
+    }
     localStorage.setItem('iptv_epg_url', JSON.stringify('http://host/epg.xml'));
     localStorage.setItem('iptv_tz_mode', JSON.stringify('device'));
     if (!s) return;
@@ -56,6 +66,7 @@ async function setup(page: Page, seed?: Seed): Promise<void> {
     };
     localStorage.setItem('iptv_catchup_progress', JSON.stringify(rec));
   }, { url: CH_URL, s: seed ?? null });
+  await primePlaylistCache(page);
 }
 
 async function openEpg(page: Page): Promise<void> {
