@@ -928,9 +928,10 @@ class App {
   // Show the guide and refresh its data in the background (shared by the EPG
   // tab and the red-key shortcut).
   private openEpg(): void {
-    // Always return to Home when leaving the EPG via Back/Escape to match
-    // historical UX expectations in the e2e suite.
-    this.epgOrigin = 'home';
+    // Record the origin view so Back/Escape returns to the caller (channels,
+    // home, etc.) — this follows the navigation contract and makes tests and
+    // UX deterministic across entry paths.
+    this.epgOrigin = this.viewStack[this.viewStack.length - 1] ?? 'home';
     this.epgGrid.focusChannel(this.player.getCurrentIndex());
     this.showView('epg');
     this.epgGrid.render();
