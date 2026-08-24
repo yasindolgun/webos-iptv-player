@@ -200,7 +200,7 @@ test('no playlist or account configured shows Live/Guide/Settings/Search only (n
   await expect(page.locator('.account-avatar')).toHaveCount(0);
 });
 
-test('leaving Settings (Cancel) moves the active tab back to Live', async ({ page }) => {
+test('leaving Settings (Cancel) returns to Home', async ({ page }) => {
   await seedXtream(page);
   await routeLiveManifest(page);
   await page.goto('/');
@@ -210,8 +210,7 @@ test('leaving Settings (Cancel) moves the active tab back to Live', async ({ pag
   await expect(page.locator('#view-settings')).toBeVisible();
   await expect(page.locator('.tab-bar-item.active')).toHaveText('Settings');
 
-  // Cancel returns to the channel list — and the active tab follows.
+  // Cancel returns to the dashboard instead of activating the focused channel.
   await page.locator('#cancel-settings').click();
-  await expect(page.locator('#view-channels')).toBeVisible();
-  await expect(page.locator('.tab-bar-item.active')).toHaveText('Live');
+  await expect(page.locator('#view-home')).toBeVisible();
 });

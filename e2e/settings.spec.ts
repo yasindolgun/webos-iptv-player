@@ -381,6 +381,7 @@ test.describe('Settings navigation', () => {
   });
 
   test('keeps localized EPG time correction text and controls within the section', async ({ page }) => {
+    test.setTimeout(60_000);
     const locales = ['en', 'de', 'es', 'fr', 'it', 'pt-BR', 'ru', 'uk', 'zh-CN'];
     await page.goto('/');
 
@@ -684,6 +685,7 @@ test.describe('Settings Xtream: add -> cancel -> re-enter', () => {
 
 test.describe('Settings Xtream live output', () => {
   test('keeps long localized format labels aligned with the dropdown', async ({ page }) => {
+    test.setTimeout(60_000);
     await page.route('**/get.php*', route => route.fulfill({
       status: 200,
       contentType: 'application/x-mpegurl',

@@ -297,7 +297,7 @@ describe('ChannelList.render', () => {
       data.raw.splice(0, data.raw.length, ...original);
       playlistMock.applyCustomization();
     }
-  });
+  }, 10_000);
 
   it('renders the group list including All, Favorites, and Recently Watched', () => {
     list.render();

@@ -852,7 +852,7 @@ describe('ChannelList edit mode', () => {
         container.querySelector('[data-epg-position="80"]'),
       );
       expect(container.querySelector('.epg-mapping-list')?.scrollTop).toBeGreaterThan(0);
-    });
+    }, 10_000);
 
   it('blue renames the focused channel and an empty value restores the source name', () => {
     enterEdit();

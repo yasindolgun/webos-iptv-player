@@ -153,7 +153,7 @@ test('Back closes EPG filters before leaving the guide', async ({ page }) => {
   await expect(page.locator('#view-epg')).toBeVisible();
 
   await page.keyboard.press('Escape');
-  await expect(page.locator('#view-home')).toBeVisible();
+  await expect(page.locator('#view-channels')).toBeVisible();
 });
 
 test('Blue leaves EPG search without stale keyboard focus', async ({ page }) => {

@@ -51,6 +51,7 @@ class App {
   private viewBeforeSearch: ViewName | null = null;
   private epgOrigin: ViewName = 'home';
   private settingsOrigin: ViewName = 'home';
+  private settingsReturnsToOrigin = false;
   private channelList!: ChannelList;
   private home!: Home;
   private player!: Player;
@@ -158,7 +159,10 @@ class App {
     this.settings = new Settings(
       this.views.settings,
       (action) => this.onSettingsSaved(action),
-      () => this.player.syncCurrentIndex(),
+      () => {
+        this.player.syncCurrentIndex();
+        this.settingsReturnsToOrigin = true;
+      },
       () => this.openReminderManager('settings'),
       (onProgress) => this.refreshDataFromSettings(onProgress),
     );
@@ -666,7 +670,8 @@ class App {
       this.tabBar.setAccounts(xtreamAccounts, this.activeXtreamAccount()?.id ?? '');
 
       this.channelList.render();
-      this.returnToView(destination ?? 'home');
+      const defaultView: ViewName = PlaylistService.channels.length > 0 ? 'channels' : 'home';
+      this.returnToView(destination ?? defaultView);
 
       showToast(tp('app.channelsLoaded', PlaylistService.channels.length));
 
@@ -886,7 +891,7 @@ class App {
       return;
     }
     if (section === 'settings') {
-      this.openSettings();
+      this.openSettings(false);
       return;
     }
     // Search: keep the current view; the results view only covers it once a
@@ -931,7 +936,8 @@ class App {
     // Record the origin view so Back/Escape returns to the caller (channels,
     // home, etc.) — this follows the navigation contract and makes tests and
     // UX deterministic across entry paths.
-    this.epgOrigin = this.viewStack[this.viewStack.length - 1] ?? 'home';
+    const current = this.viewStack[this.viewStack.length - 1] ?? 'home';
+    if (current !== 'epg') this.epgOrigin = current;
     this.epgGrid.focusChannel(this.player.getCurrentIndex());
     this.showView('epg');
     this.epgGrid.render();
@@ -1039,12 +1045,10 @@ class App {
     });
   }
 
-  private openSettings(): void {
-    // Always return to Home when leaving Settings via Cancel/Back to preserve
-    // the previous UX expected by existing e2e tests.
-    // eslint-disable-next-line no-console
-    console.log('[App] openSettings — viewStackTop=', this.viewStack[this.viewStack.length - 1], '=> settingsOrigin will be set to home');
-    this.settingsOrigin = 'home';
+  private openSettings(returnToOrigin: boolean): void {
+    const current = this.viewStack[this.viewStack.length - 1] ?? 'home';
+    if (current !== 'settings') this.settingsOrigin = current;
+    this.settingsReturnsToOrigin = returnToOrigin;
     this.settings.render();
     this.showView('settings');
   }
@@ -1244,7 +1248,7 @@ class App {
       this.sidebar.hide();
       this.menu.hide();
       this.player.stop();
-      this.openSettings();
+      this.openSettings(true);
       return;
     }
     if (action === 'green' && currentView === 'player' && (this.sidebar.visible || this.menu.visible)) {
@@ -1295,9 +1299,8 @@ class App {
       }
       if (currentView === 'settings') {
         if (this.settings.dismissDropdown()) return;
-        // Always go Home from Settings on Back/Escape to satisfy e2e navigation
-        // expectations (Settings closes to Home, not to the player).
-        this.goHome();
+        if (this.settingsReturnsToOrigin) this.returnToView(this.settingsOrigin);
+        else this.goHome();
         return;
       }
       if (currentView === 'reminders') {
@@ -1513,17 +1516,20 @@ class App {
       this.epgGrid.resetDay();
     }
     this.channelList.render();
-    // For a cancel, prefer a deterministic Home return to match the e2e
-    // expectations (Settings should close to Home, not to the previous view).
     if (action === 'cancel') {
       // Invalidate the most recent click token so any pending deferred select
       // for that click will be skipped by KeyHandler's token check.
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       delete (window as any).__lastClickToken;
       // eslint-disable-next-line no-console
       console.log('[App] __lastClickToken cleared (cancel) — preventing deferred select');
-      this.goHome();
+      if (this.settingsReturnsToOrigin) this.returnToView(this.settingsOrigin);
+      else this.goHome();
+      return;
+    }
+    if (action === 'apply') {
+      if (this.settingsReturnsToOrigin) this.returnToView(this.settingsOrigin);
+      else this.goHome();
       return;
     }
     this.returnToView(this.settingsOrigin);

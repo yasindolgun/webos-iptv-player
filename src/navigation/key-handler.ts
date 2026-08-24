@@ -218,7 +218,6 @@ export const KeyHandler = {
         // (e.g. App.onSettingsSaved) can invalidate it deterministically.
         const clickTokenLocal = 'click_' + Date.now() + '_' + Math.random().toString(36).substr(2,6);
         // Make this the most-recent click token
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
         (window as any).__lastClickToken = clickTokenLocal;
         // Small delay to let focus settle before firing select. Guard against
@@ -241,7 +240,6 @@ export const KeyHandler = {
             // on click; App can clear that token (e.g. on Cancel) to prevent a
             // delayed select from reopening the player. Compare the captured
             // token with the current one to ensure determinism.
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
             if ((window as any).__lastClickToken !== clickTokenLocal) return;
             activeHandler!('select');

@@ -155,6 +155,8 @@ test('uploaded-only startup keeps Settings open after background reconciliation'
   await releaseServiceStart(page);
 
   await expect(page.locator('#view-settings')).toBeVisible();
+  await page.locator('#cancel-settings').click();
+  await page.locator('[data-home-action="live"]').click();
   await expect(page.locator('.channel-item')).toHaveCount(2);
 });
 

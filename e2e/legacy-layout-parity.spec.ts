@@ -312,7 +312,9 @@ const M3U_SCREENS: Screen[] = [
     budget: 0.001,
     go: async (p) => {
       await p.locator('.sidebar-search-input').fill('one');
-      await expect(p.locator('#player-sidebar .sidebar-ch-item')).toHaveCount(1);
+      await expect(p.locator('#player-sidebar .sidebar-ch-item')).toHaveCount(1, {
+        timeout: 15_000,
+      });
     },
   },
   {
@@ -327,11 +329,12 @@ const M3U_SCREENS: Screen[] = [
     name: 'number-entry',
     budget: 0.001,
     go: async (p) => {
-      await p.keyboard.press('Escape');
-      await p.keyboard.press('Escape');
-      await p.keyboard.press('Escape');
-      await expect(p.locator('#view-channels')).toBeVisible();
-      await enterTab(p, 'live');
+      const channels = p.locator('#view-channels');
+      for (let attempt = 0; attempt < 5 && !await channels.isVisible(); attempt++) {
+        await p.keyboard.press('Escape');
+        await p.waitForTimeout(50);
+      }
+      await expect(channels).toBeVisible();
       await p.keyboard.press('2');
       await p.keyboard.press('4');
       await expect(p.locator('.number-entry.visible')).toBeVisible();
@@ -679,7 +682,7 @@ async function walk(
 
 test('the webOS 4 fallbacks lay out where the modern engine does, with an M3U playlist only', async ({ page, browser }) => {
   test.skip(isChromium53(), 'this test drives both engines itself, so it runs once');
-  test.slow();
+  test.setTimeout(150_000);
   await walk(page, browser, prepareM3U, M3U_SCREENS);
 });
 

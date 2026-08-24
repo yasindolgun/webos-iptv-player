@@ -5,6 +5,8 @@ test.beforeEach(async ({ page }) => {
   await seedPlaylist(page);
   await routePlaylist(page);
   await page.goto('/?home-test=1');
+  await expect(page.locator('#view-channels')).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.locator('#view-home')).toBeVisible();
 });
 
@@ -29,6 +31,8 @@ test('opens Live with OK', async ({ page }) => {
 test('opens and plays a movie from Home', async ({ page }) => {
   await seedXtream(page);
   await page.goto('/?home-test=1');
+  await expect(page.locator('#view-channels')).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.locator('#view-home')).toBeVisible();
 
   await page.locator('[data-home-action="movies"]').click();
@@ -44,6 +48,8 @@ test('opens and plays a movie from Home', async ({ page }) => {
 test('opens and plays a series episode from Home', async ({ page }) => {
   await seedXtream(page);
   await page.goto('/?home-test=1');
+  await expect(page.locator('#view-channels')).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.locator('#view-home')).toBeVisible();
 
   await page.locator('[data-home-action="series"]').click();
@@ -67,15 +73,28 @@ test('Back from Live returns to Home instead of exiting', async ({ page }) => {
 });
 
 test('opens and plays an M3U movie from Home', async ({ page }) => {
-  await routePlaylist(page, [
+  await page.evaluate(() => {
+    localStorage.setItem('iptv_playlists', JSON.stringify([{
+      name: 'Test',
+      url: 'http://host/movie-playlist.m3u',
+    }]));
+  });
+  await page.route('**/movie-playlist.m3u', route => route.fulfill({
+    status: 200,
+    contentType: 'application/x-mpegurl',
+    body: [
     '#EXTM3U',
     '#EXTINF:-1 group-title="Movies",Film One',
     'http://host/movie-one.mp4',
-  ].join('\n'));
+    ].join('\n'),
+  }));
   await page.route('**/movie-one.mp4', route =>
     route.fulfill({ status: 200, contentType: 'video/mp4', body: '' }));
   await neuterVideo(page);
   await page.goto('/?home-test=1');
+  await expect(page.locator('#view-channels')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#view-home')).toBeVisible();
 
   await page.locator('[data-home-action="movies"]').click();
   const movie = page.locator('#view-movies [data-m3u-item^="channel:"]').first();
