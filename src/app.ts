@@ -1469,7 +1469,7 @@ class App {
     // Debug log to help track navigation origin during e2e failures
     // eslint-disable-next-line no-console
     console.log('[App] onSettingsSaved action=', action, 'settingsOrigin=', this.settingsOrigin,
-      'viewStackTop=', this.viewStack[this.viewStack.length - 1], '__suppressNextSelect=', (window as any).__suppressNextSelect ? true : false);
+          'viewStackTop=', this.viewStack[this.viewStack.length - 1], '__lastClickToken=', !!(window as any).__lastClickToken);
     if (action === 'edit-channels') {
       this.tabBar.setActive('live');
       this.showView('channels');
@@ -1515,14 +1515,13 @@ class App {
     // For a cancel, prefer a deterministic Home return to match the e2e
     // expectations (Settings should close to Home, not to the previous view).
     if (action === 'cancel') {
-      // Suppress any deferred global 'select' that may fire after a UI action
-      // that navigates views (e.g. a Cancel click). Tests expect Cancel to
-      // deterministically return to Home; prevent a delayed select from
-      // reopening the player.
-      (window as any).__suppressNextSelect = true;
+      // Invalidate the most recent click token so any pending deferred select
+      // for that click will be skipped by KeyHandler's token check.
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      delete (window as any).__lastClickToken;
       // eslint-disable-next-line no-console
-      console.log('[App] __suppressNextSelect set (cancel) — preventing deferred select for 500ms');
-      setTimeout(() => { delete (window as any).__suppressNextSelect; /* eslint-disable-line no-unused-expressions */ }, 500);
+      console.log('[App] __lastClickToken cleared (cancel) — preventing deferred select');
       this.goHome();
       return;
     }

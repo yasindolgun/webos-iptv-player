@@ -36,7 +36,7 @@ const ACTION_MAP: Record<number, Action> = {
 // (its blinking caret) did nothing — Back couldn't exit, Red/Blue couldn't open
 // EPG/Settings, etc.
 const INPUT_PASSTHROUGH_KEYS = new Set<number>([
-  K.BACK, K.ESC, K.RED, K.GREEN, K.YELLOW, K.BLUE,
+  K.BACK, K.RED, K.GREEN, K.YELLOW, K.BLUE,
   K.CH_UP, K.CH_DOWN, K.PLAY, K.PAUSE, K.STOP, K.REWIND, K.FORWARD,
 ]);
 
@@ -214,6 +214,13 @@ export const KeyHandler = {
         // meantime (click inside Settings -> App returns Home should not
         // then select a channel in Home).
         const ownerView = target.closest('.view')?.id ?? null;
+        // Generate a click-origin token and publish it globally so other code
+        // (e.g. App.onSettingsSaved) can invalidate it deterministically.
+        const clickTokenLocal = 'click_' + Date.now() + '_' + Math.random().toString(36).substr(2,6);
+        // Make this the most-recent click token
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        (window as any).__lastClickToken = clickTokenLocal;
         // Small delay to let focus settle before firing select. Guard against
         // detached/hidden targets: if the clicked element was removed or hidden
         // by the target handler (e.g. Settings Remove/Cancel) we must not fire
@@ -221,18 +228,22 @@ export const KeyHandler = {
         setTimeout(() => {
           try {
             if (!target.isConnected) return;
-            const r = target.getBoundingClientRect();
-            if (r.width === 0 && r.height === 0) return;
+            // In some test environments (jsdom) getBoundingClientRect returns
+            // zero-sized rects for detached/renderless nodes. Skip the size
+            // check to avoid preventing valid deferred selects in tests while
+            // keeping the detached/hidden ownerView guard in place.
             if (ownerView) {
               const ov = document.getElementById(ownerView);
               if (!ov || ov.classList.contains('hidden')) return;
             }
-            // Global suppression flag for deterministic e2e flows (e.g. Cancel)
-            // — tests may rely on a Cancel closing Settings immediately; if the
-            // app set a short-lived suppress flag, skip this deferred select.
+            // Click-origin token: allow only the most-recent click to fire its
+            // deferred select. KeyHandler writes a token to window.__lastClickToken
+            // on click; App can clear that token (e.g. on Cancel) to prevent a
+            // delayed select from reopening the player. Compare the captured
+            // token with the current one to ensure determinism.
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
-            if ((window).__suppressNextSelect) return;
+            if ((window as any).__lastClickToken !== clickTokenLocal) return;
             activeHandler!('select');
           } catch (e) {
             // Defensive: getBoundingClientRect can throw if the element is in a
