@@ -12,8 +12,31 @@ const log = createLogger('Catalog');
 
 // Per-account cached catalog access. Categories are cheap and fetched up front;
 // streams are fetched per category on demand. Each result is cached in
-// IndexedDB (keyed `${accountId}|action[|param]`) and served while within TTL.
+// IndexedDB (keyed by account + credential hash + resource) and served within TTL.
 // On a failed/empty re-fetch we keep serving the stale copy rather than a blank.
+
+function sourceSignature(account: PlaylistEntry): string {
+  const identity = [
+    account.url,
+    account.xtream?.username ?? '',
+    account.xtream?.password ?? '',
+  ].join('\n');
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < identity.length; i++) {
+    hash ^= identity.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+export function xtreamCatalogCacheKey(
+  account: PlaylistEntry,
+  resource: string,
+  parameter?: string,
+): string {
+  const prefix = `${account.id}|${sourceSignature(account)}|${resource}`;
+  return parameter === undefined ? prefix : `${prefix}|${parameter}`;
+}
 
 function clientFor(a: PlaylistEntry) {
   return createXtreamClient(
@@ -27,7 +50,7 @@ function fresh(timestamp: number): boolean {
 }
 
 function resourceFor(key: string): string {
-  return key.split('|')[1] || 'unknown';
+  return key.split('|')[2] || 'unknown';
 }
 
 // Serve a fresh cache hit; otherwise re-fetch a list, caching a non-empty result
@@ -146,7 +169,7 @@ export function loadVodCategories(
   signal?: AbortSignal,
 ): Promise<VodCategory[]> {
   return cachedList(
-    `${account.id}|vod_categories`,
+    xtreamCatalogCacheKey(account, 'vod_categories'),
     signal,
     () => clientFor(account).getVodCategories(signal),
   );
@@ -158,7 +181,7 @@ export function loadVodStreams(
   signal?: AbortSignal,
 ): Promise<VodItem[]> {
   return cachedList(
-    `${account.id}|vod_streams|${categoryId}`,
+    xtreamCatalogCacheKey(account, 'vod_streams', categoryId),
     signal,
     () => clientFor(account).getVodStreams(categoryId, signal),
   );
@@ -170,7 +193,7 @@ export function loadVodInfo(
   signal?: AbortSignal,
 ): Promise<VodInfo | null> {
   return cachedItem(
-    `${account.id}|vod_info|${vodId}`,
+    xtreamCatalogCacheKey(account, 'vod_info', vodId),
     signal,
     () => clientFor(account).getVodInfo(vodId, signal),
   );
@@ -181,7 +204,7 @@ export function loadSeriesCategories(
   signal?: AbortSignal,
 ): Promise<SeriesCategory[]> {
   return cachedList(
-    `${account.id}|series_categories`,
+    xtreamCatalogCacheKey(account, 'series_categories'),
     signal,
     () => clientFor(account).getSeriesCategories(signal),
   );
@@ -193,7 +216,7 @@ export function loadSeries(
   signal?: AbortSignal,
 ): Promise<SeriesItem[]> {
   return cachedList(
-    `${account.id}|series|${categoryId}`,
+    xtreamCatalogCacheKey(account, 'series', categoryId),
     signal,
     () => clientFor(account).getSeries(categoryId, signal),
   );
@@ -205,7 +228,7 @@ export function loadSeriesInfo(
   signal?: AbortSignal,
 ): Promise<SeriesInfo | null> {
   return cachedItem(
-    `${account.id}|series_info|${seriesId}`,
+    xtreamCatalogCacheKey(account, 'series_info', seriesId),
     signal,
     () => clientFor(account).getSeriesInfo(seriesId, signal),
   );
@@ -216,7 +239,7 @@ export function loadAllVodStreams(
   signal?: AbortSignal,
 ): Promise<VodItem[]> {
   return cachedList(
-    `${account.id}|vod_all`,
+    xtreamCatalogCacheKey(account, 'vod_all'),
     signal,
     () => clientFor(account).getVodStreams(undefined, signal),
   );
@@ -227,7 +250,7 @@ export function loadAllSeries(
   signal?: AbortSignal,
 ): Promise<SeriesItem[]> {
   return cachedList(
-    `${account.id}|series_all`,
+    xtreamCatalogCacheKey(account, 'series_all'),
     signal,
     () => clientFor(account).getSeries(undefined, signal),
   );
