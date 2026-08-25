@@ -112,6 +112,11 @@ export async function enterTab(
   page: Page,
   section: 'live' | 'epg' | 'movies' | 'series' | 'settings' | 'search',
 ): Promise<void> {
+  const home = page.locator('#view-home');
+  if (await home.isVisible()) {
+    await home.locator('[data-home-action="live"]').click();
+    await expect(page.locator('#view-channels')).toBeVisible();
+  }
   const tab = page.locator(`.tab-bar-item[data-section="${section}"]`);
   await expect(tab).toBeVisible();
   const box = await tab.boundingBox();
@@ -158,10 +163,13 @@ export async function measureRowTextFit(
 // Computed once per worker: walking the compat data per test is wasteful.
 const POST_TARGET_APIS = postTargetApis();
 
-// Every spec imports `test` from here; it auto-stubs the service probe
-// before each test so no file has to repeat it.
-export const test = base.extend({
-  page: async ({ page }, use, testInfo) => {
+type AppStartView = 'home' | 'live';
+
+// Most feature specs exercise Live directly. Startup-focused specs override
+// this option with `home`, making the intended landing view explicit.
+export const test = base.extend<{ startView: AppStartView }>({
+  startView: ['live', { option: true }],
+  page: async ({ page, startView }, use, testInfo) => {
     const consoleMsgs: string[] = [];
     page.on('console', (msg) => {
       try {
@@ -180,10 +188,7 @@ export const test = base.extend({
       await page.addInitScript(removeApis, POST_TARGET_APIS);
     }
     await stubUploadService(page);
-    // The established suite predates the launch dashboard and exercises its
-    // target view directly. Preserve those entry assumptions in one place;
-    // home-specific tests opt out with ?home-test=1.
-    const enterLegacyStart = async (): Promise<void> => {
+    const enterStartView = async (): Promise<void> => {
       await page.waitForFunction(() => {
         const visible = (id: string) => {
           const el = document.getElementById(id);
@@ -193,7 +198,7 @@ export const test = base.extend({
           || visible('view-player') || visible('view-channels');
       });
       const home = page.locator('#view-home');
-      if (await home.isVisible()) {
+      if (startView === 'live' && await home.isVisible()) {
         if (await page.locator('.reminder-prompt:not(.hidden)').isVisible()) {
           await home.locator('[data-home-action="live"]')
             .evaluate((element: HTMLElement) => element.click());
@@ -205,13 +210,13 @@ export const test = base.extend({
     const originalGoto = page.goto.bind(page);
     page.goto = async (url, options) => {
       const response = await originalGoto(url, options);
-      if (!url.includes('home-test=1')) await enterLegacyStart();
+      await enterStartView();
       return response;
     };
     const originalReload = page.reload.bind(page);
     page.reload = async (options) => {
       const response = await originalReload(options);
-      if (!page.url().includes('home-test=1')) await enterLegacyStart();
+      await enterStartView();
       return response;
     };
     await use(page);

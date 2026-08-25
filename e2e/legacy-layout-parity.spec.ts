@@ -618,8 +618,7 @@ async function walk(
     const failures: string[] = [];
 
     for (const screen of screens) {
-      await screen.go(page);
-      await screen.go(legacy.page);
+      await Promise.all([screen.go(page), screen.go(legacy.page)]);
       // A toast from an earlier screen fades on a schedule the two pages do
       // not share.
       if (screen.name !== 'watchlist-toast') {
@@ -632,7 +631,15 @@ async function walk(
       await page.waitForTimeout(250);
       await legacy.page.waitForTimeout(250);
 
+      const normalizeFrame = async (): Promise<void> => {
+        if (screen.name !== 'reminder-prompt') return;
+        await Promise.all([page, legacy.page].map((p) =>
+          p.locator('.playing-indicator').evaluateAll((items) => {
+            items.forEach((item) => item.remove());
+          })));
+      };
       const shot = (p: Page) => p.screenshot({ animations: 'disabled', caret: 'hide' });
+      await normalizeFrame();
       let [modernPng, legacyPng] = await Promise.all([shot(page), shot(legacy.page)]);
       let diff = await pixelDiff(page, modernPng, legacyPng, { render: true });
       // A loaded suite can capture one page while its matching action is still
@@ -641,6 +648,7 @@ async function walk(
       if (diff.ratio > screen.budget) {
         await page.waitForTimeout(500);
         await legacy.page.waitForTimeout(500);
+        await normalizeFrame();
         [modernPng, legacyPng] = await Promise.all([shot(page), shot(legacy.page)]);
         diff = await pixelDiff(page, modernPng, legacyPng, { render: true });
       }

@@ -1,10 +1,12 @@
 import { test, expect, seedPlaylist, routePlaylist, neuterVideo } from './helpers';
 import { seedXtream } from './fixtures/xtream';
 
+test.use({ startView: 'home' });
+
 test.beforeEach(async ({ page }) => {
   await seedPlaylist(page);
   await routePlaylist(page);
-  await page.goto('/?home-test=1');
+  await page.goto('/');
   await expect(page.locator('#view-home')).toBeVisible();
 });
 
@@ -39,7 +41,7 @@ test('Settings Cancel and Save return to Home', async ({ page }) => {
 
 test('opens and plays a movie from Home', async ({ page }) => {
   await seedXtream(page);
-  await page.goto('/?home-test=1');
+  await page.goto('/');
   await expect(page.locator('#view-home')).toBeVisible();
 
   await page.locator('[data-home-action="movies"]').click();
@@ -54,7 +56,7 @@ test('opens and plays a movie from Home', async ({ page }) => {
 
 test('opens and plays a series episode from Home', async ({ page }) => {
   await seedXtream(page);
-  await page.goto('/?home-test=1');
+  await page.goto('/');
   await expect(page.locator('#view-home')).toBeVisible();
 
   await page.locator('[data-home-action="series"]').click();
@@ -96,7 +98,7 @@ test('opens and plays an M3U movie from Home', async ({ page }) => {
   await page.route('**/movie-one.mp4', route =>
     route.fulfill({ status: 200, contentType: 'video/mp4', body: '' }));
   await neuterVideo(page);
-  await page.goto('/?home-test=1');
+  await page.goto('/');
   await expect(page.locator('#view-home')).toBeVisible();
 
   await page.locator('[data-home-action="movies"]').click();
