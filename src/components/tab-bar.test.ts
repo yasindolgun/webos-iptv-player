@@ -174,6 +174,17 @@ describe('TabBar inline search', () => {
     expect(bar.focused).toBe(false);
   });
 
+  it('restores a search query after returning from a full-screen view', () => {
+    bar.setShown(false);
+    bar.setShown(true);
+
+    bar.restoreSearch('abc');
+
+    expect(expanded()).toBe(true);
+    expect(input()?.value).toBe('abc');
+    expect(bar.focused).toBe(false);
+  });
+
   it('Escape collapses the box and notifies close', () => {
     bar.setActive('search');
     bar.focus();

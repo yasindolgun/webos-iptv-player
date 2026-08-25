@@ -123,6 +123,20 @@ export class TabBar {
     if (this._shown) this.render();
   }
 
+  restoreSearch(query: string): void {
+    this.active = 'search';
+    this.focusIndex = Math.max(0, this.sections.findIndex((s) => s.id === 'search'));
+    this.searchExpanded = true;
+    this._focused = false;
+    if (!this._shown) return;
+    this.render();
+    const input = this.el?.querySelector<HTMLInputElement>('.tab-bar-search-input');
+    if (input) {
+      input.value = query;
+      this.setSearchWidth(input);
+    }
+  }
+
   // Collapse the inline box's DOM back to width 0 when search is left via a route
   // other than collapseSearch() (switching section, hiding the bar), so the next
   // expand animates from 0 again instead of popping open.

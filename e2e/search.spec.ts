@@ -136,6 +136,10 @@ test('unified search matches channels, movies, and series; a channel result play
     .evaluate((el) => el.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true })));
   await page.keyboard.press('Enter');
   await expect(page.locator('#view-player')).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#view-search')).toBeVisible();
+  await expect(page.locator('.tab-bar-search-input')).toHaveValue('one');
 });
 
 test('a wide virtual search rail keeps its full scrollable width', async ({ page }) => {

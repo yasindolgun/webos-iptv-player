@@ -1,6 +1,7 @@
 import './polyfills';
 import { CONFIG } from './config';
 import { KeyHandler } from './navigation/key-handler';
+import { ViewNavigator } from './navigation/view-navigator';
 import { PlaylistService } from './services/playlist-service';
 import { EpgService } from './services/epg-service';
 import { ChannelHealthService } from './services/channel-health';
@@ -46,7 +47,7 @@ type ViewName = 'home' | 'channels' | 'player' | 'epg' | 'settings' | 'reminders
 
 class App {
   private views!: Record<ViewName, HTMLElement>;
-  private viewStack: ViewName[] = ['home'];
+  private navigator = new ViewNavigator<ViewName>('home');
   private backPressTime = 0;
   private viewBeforeSearch: ViewName | null = null;
   private epgOrigin: ViewName = 'home';
@@ -96,20 +97,6 @@ class App {
       loading: $('#view-loading')!,
     };
 
-    // Global debug hook to capture Cancel clicks reliably in Playwright traces
-    // eslint-disable-next-line no-console
-    document.addEventListener('click', (e: MouseEvent) => {
-      try {
-        const t = e.target as HTMLElement | null;
-        if (t && t.id === 'cancel-settings') {
-          // eslint-disable-next-line no-console
-          console.log('[Global] cancel-settings click detected — viewStackTop=', this.viewStack[this.viewStack.length - 1], 'settingsOrigin=', this.settingsOrigin);
-        }
-      } catch (err) {
-        // swallow logging errors
-      }
-    });
-
     this.channelList = new ChannelList(
       this.views.channels,
       (idx, catchup) => this.playChannel(idx, catchup),
@@ -134,7 +121,7 @@ class App {
     });
     this.player = new Player(this.views.player, () => {
       this.channelList.render();
-      this.showView('channels');
+      this.goBack('channels');
     }, (idx, catchupStart) => this.channelList.setPlaying(idx, catchupStart),
     () => !this.sidebar.visible && !this.menu.visible,
     () => {
@@ -148,10 +135,10 @@ class App {
     );
     this.reminderManager = new ReminderManager(this.views.reminders, () => {
       if (this.reminderManagerOrigin === 'epg') {
-        this.showView('epg');
+        this.goBackTo('epg');
         this.epgGrid.focusReminderEntry();
       } else {
-        this.showView('settings');
+        this.goBackTo('settings');
         this.settings.focusReminderEntry();
       }
     });
@@ -187,11 +174,11 @@ class App {
       onRevealTabBar: () => this.tabBar.focus(),
       onBack: () => this.goHome(),
       onPlayVod: (req) => {
-        this.showView('player');
+        this.navigateTo('player');
         this.player.playVod({
           ...req,
           onBack: () => {
-            this.showView('movies');
+            this.goBack('movies');
             this.movies.refreshPlaybackState();
           },
         });
@@ -201,11 +188,11 @@ class App {
       onRevealTabBar: () => this.tabBar.focus(),
       onBack: () => this.goHome(),
       onPlayVod: (req) => {
-        this.showView('player');
+        this.navigateTo('player');
         this.player.playVod({
           ...req,
           onBack: () => {
-            this.showView('series');
+            this.goBack('series');
             this.series.refreshPlaybackState();
           },
         });
@@ -223,8 +210,8 @@ class App {
       onPlayChannel: (idx, catchup) => { this.tabBar.blur(); this.playChannel(idx, catchup); },
       onOpenMovie: (account, vod) => {
         this.tabBar.blur();
-        this.showView('movies');
-        this.movies.openItem(account, vod, () => this.showView('search'))
+        this.navigateTo('movies');
+        this.movies.openItem(account, vod, () => this.goBack('search'))
           .catch((err) => log.error(
             'Open movie failed',
             'event=xtream.view.open.failed',
@@ -234,8 +221,8 @@ class App {
       },
       onOpenSeries: (account, series) => {
         this.tabBar.blur();
-        this.showView('series');
-        this.series.openItem(account, series, () => this.showView('search'))
+        this.navigateTo('series');
+        this.series.openItem(account, series, () => this.goBack('search'))
           .catch((err) => log.error(
             'Open series failed',
             'event=xtream.view.open.failed',
@@ -468,7 +455,7 @@ class App {
     if (this.loadChannelsAfterUploadSync &&
         StorageService.getPlaylists().length > 0) {
       this.loadChannelsAfterUploadSync = false;
-      const current = this.viewStack[this.viewStack.length - 1];
+      const current = this.navigator.current;
       await this.loadData(false, current);
     }
   }
@@ -631,7 +618,7 @@ class App {
         this.tabBar.setSections(false);
         this.tabBar.setAccounts([], '');
         this.channelList.render();
-        this.showView('settings');
+        this.resetView('settings');
         this.settings.render();
         showToast(t('app.welcome'));
         return;
@@ -706,7 +693,7 @@ class App {
       }
     } catch (err) {
       log.error('loadData failed:', err);
-      this.showView('settings');
+      this.resetView('settings');
       this.settings.render();
       showToast(t('app.loadFailed'));
     } finally {
@@ -734,12 +721,6 @@ class App {
       else hide(el);
     }
 
-    if (name === 'player') {
-      this.viewStack.push(name);
-    } else if (name !== this.viewStack[this.viewStack.length - 1]) {
-      this.viewStack = [name];
-    }
-
     // The docked tab bar shows on the section views and hides on the full-screen
     // player / EPG (and the loading splash), which render edge-to-edge.
     const section = sectionForView(name);
@@ -754,6 +735,42 @@ class App {
     // Settings, EPG, the player, etc. updates the underline). Skipped while the
     // search box is open — it overlays other views but stays "Search".
     if (section && !this.tabBar.searchOpen) this.tabBar.setActive(section);
+    if (name === 'search' && this.lastSearchQuery) {
+      this.tabBar.restoreSearch(this.lastSearchQuery);
+    }
+  }
+
+  private navigateTo(name: ViewName): void {
+    this.navigator.navigateTo(name);
+    this.showView(name);
+  }
+
+  private replaceView(name: ViewName): void {
+    this.navigator.replaceView(name);
+    this.showView(name);
+  }
+
+  private resetView(name: ViewName): void {
+    this.navigator.resetTo(name);
+    this.showView(name);
+  }
+
+  private goBackTo(fallback: ViewName): void {
+    const history = this.navigator.history;
+    const previous = history.length > 1 ? history[history.length - 2] : null;
+    const target = previous === fallback
+      ? this.navigator.goBack(fallback)
+      : fallback;
+    if (previous !== fallback) {
+      this.replaceView(target);
+      return;
+    }
+    this.showView(target);
+  }
+
+  private goBack(fallback: ViewName): void {
+    const target = this.navigator.goBack(fallback);
+    this.showView(target);
   }
 
   private homeState(): HomeState {
@@ -784,14 +801,11 @@ class App {
     this.series.deactivate();
     this.search.deactivate();
     this.player.stop();
-    this.showView('home');
+    this.resetView('home');
     this.home.open(this.homeState());
   }
 
   private returnToView(view: ViewName): void {
-    // Debug logging to help triage e2e failures
-    // eslint-disable-next-line no-console
-    console.debug('[App] returnToView ->', view);
     if (view === 'home') {
       this.goHome();
       return;
@@ -800,7 +814,7 @@ class App {
       this.goLive();
       return;
     }
-    this.showView(view);
+    this.goBackTo(view);
   }
 
   private requestExit(): void {
@@ -849,10 +863,10 @@ class App {
     // player) must tear down playback, like Back / red / blue do.
     this.player.stop();
     this.m3uCatalogSection = null;
-    if (section === 'live') { this.showView('channels'); this.channelList.render(); return; }
+    if (section === 'live') { this.resetView('channels'); this.channelList.render(); return; }
     if (section === 'epg') { this.openEpg(); return; }
     if (section === 'movies') {
-      this.showView('movies');
+      this.resetView('movies');
       const account = this.activeXtreamAccount();
       if (account) {
         this.movies.open(account)
@@ -869,7 +883,7 @@ class App {
       return;
     }
     if (section === 'series') {
-      this.showView('series');
+      this.resetView('series');
       const seriesAccount = this.activeXtreamAccount();
       if (seriesAccount) {
         this.series.open(seriesAccount)
@@ -891,8 +905,8 @@ class App {
     }
     // Search: keep the current view; the results view only covers it once a
     // query is typed (handleSearchQuery). Remember where to return to.
-    if (this.viewStack[this.viewStack.length - 1] !== 'search') {
-      this.viewBeforeSearch = this.viewStack[this.viewStack.length - 1];
+    if (this.navigator.current !== 'search') {
+      this.viewBeforeSearch = this.navigator.current;
     }
     // Prep the results (loads the catalog once) into the still-hidden search view.
     this.search.open(this.activeXtreamAccount())
@@ -910,9 +924,9 @@ class App {
     this.lastSearchQuery = query;
     this.search.scheduleQuery(query);
     const hasQuery = query.trim().length > 0;
-    const onSearch = this.viewStack[this.viewStack.length - 1] === 'search';
-    if (hasQuery && !onSearch) this.showView('search');
-    else if (!hasQuery && onSearch) this.showView(this.viewBeforeSearch ?? 'channels');
+    const onSearch = this.navigator.current === 'search';
+    if (hasQuery && !onSearch) this.navigateTo('search');
+    else if (!hasQuery && onSearch) this.goBackTo(this.viewBeforeSearch ?? 'channels');
   }
 
   // The search box was closed: clear it and return to the view it opened from
@@ -922,7 +936,7 @@ class App {
     this.search.setQuery('');
     const rv = this.viewBeforeSearch ?? 'channels';
     this.viewBeforeSearch = null;
-    this.showView(rv);
+    this.goBackTo(rv);
   }
 
   // Show the guide and refresh its data in the background (shared by the EPG
@@ -931,10 +945,10 @@ class App {
     // Record the origin view so Back/Escape returns to the caller (channels,
     // home, etc.) — this follows the navigation contract and makes tests and
     // UX deterministic across entry paths.
-    const current = this.viewStack[this.viewStack.length - 1] ?? 'home';
+    const current = this.navigator.current ?? 'home';
     if (current !== 'epg') this.epgOrigin = current;
     this.epgGrid.focusChannel(this.player.getCurrentIndex());
-    this.showView('epg');
+    this.navigateTo('epg');
     this.epgGrid.render();
     EpgService.refresh().then(() => {
       this.applyDisplayTz();
@@ -946,7 +960,7 @@ class App {
 
   private openReminderManager(origin: 'settings' | 'epg'): void {
     this.reminderManagerOrigin = origin;
-    this.showView('reminders');
+    this.navigateTo('reminders');
     this.reminderManager.open();
   }
 
@@ -962,7 +976,7 @@ class App {
     this.search.deactivate();
     this.player.stop();
     this.tabBar.setActive('live');
-    this.showView('channels');
+    this.resetView('channels');
     this.channelList.render();
   }
 
@@ -1022,7 +1036,7 @@ class App {
     const itemId = m3uItemKey(channel);
     const saved = StorageService.getResume(accountId, kind, itemId);
     this.tabBar.blur();
-    this.showView('player');
+    this.navigateTo('player');
     this.player.playVod({
       url: channel.url,
       title: channel.name,
@@ -1033,7 +1047,7 @@ class App {
       resumeSecs: resume && saved ? saved.position : 0,
       subtitles: [],
       onBack: () => {
-        this.showView(origin);
+        this.goBack(origin);
         if (origin === 'movies') this.m3uMovies.refreshPlaybackState();
         else this.m3uSeries.refreshPlaybackState();
       },
@@ -1041,10 +1055,10 @@ class App {
   }
 
   private openSettings(): void {
-    const current = this.viewStack[this.viewStack.length - 1] ?? 'home';
+    const current = this.navigator.current ?? 'home';
     if (current !== 'settings') this.settingsOrigin = current;
     this.settings.render();
-    this.showView('settings');
+    this.navigateTo('settings');
   }
 
   private activeXtreamAccount(): PlaylistEntry | null {
@@ -1066,7 +1080,7 @@ class App {
         .filter((p) => p.source === 'xtream' && p.xtream && isSourceEnabled(p)),
       account.id,
     );
-    const current = this.viewStack[this.viewStack.length - 1];
+    const current = this.navigator.current;
     if (current === 'movies') {
       this.movies.open(account)
         .catch((err) => log.error(
@@ -1096,7 +1110,7 @@ class App {
   }
 
   private playChannel(index: number, catchup?: CatchupInfo): void {
-    this.showView('player');
+    this.navigateTo('player');
     this.player.play(index, catchup);
   }
 
@@ -1149,7 +1163,7 @@ class App {
       },
       onCancel: () => {
         ReminderService.remove(r.channelKey, r.startMs);
-        if (this.viewStack[this.viewStack.length - 1] === 'reminders') {
+        if (this.navigator.current === 'reminders') {
           this.reminderManager.open();
         }
         this.showNextReminder();
@@ -1170,7 +1184,7 @@ class App {
   }
 
   private handleKey(action: Action, event?: NumberEvent): void {
-    const currentView = this.viewStack[this.viewStack.length - 1];
+    const currentView = this.navigator.current;
 
     log.debug('Key routed', 'event=key.action', `action=${action}`,
       `view=${currentView}`, `consumer=${this.keyConsumer(currentView)}`,
@@ -1389,7 +1403,7 @@ class App {
 
   private initSidebarTrigger(): void {
     document.addEventListener('pointermove', (e: PointerEvent) => {
-      const currentView = this.viewStack[this.viewStack.length - 1];
+      const currentView = this.navigator.current;
       if (currentView !== 'player') return;
 
       const osd = $('#player-osd', this.views.player);
@@ -1463,13 +1477,9 @@ class App {
 
 
   private async onSettingsSaved(action: SaveAction): Promise<void> {
-    // Debug log to help track navigation origin during e2e failures
-    // eslint-disable-next-line no-console
-    console.log('[App] onSettingsSaved action=', action, 'settingsOrigin=', this.settingsOrigin,
-          'viewStackTop=', this.viewStack[this.viewStack.length - 1], '__lastClickToken=', !!(window as any).__lastClickToken);
     if (action === 'edit-channels') {
       this.tabBar.setActive('live');
-      this.showView('channels');
+      this.resetView('channels');
       this.channelList.render();
       this.channelList.enterEditMode('builtin:all');
       return;
@@ -1499,7 +1509,7 @@ class App {
       void SetupClient.publishState();
     }
     if (action === 'reload') {
-      this.showView('channels');
+      this.resetView('channels');
       await this.loadData(true, this.settingsOrigin);
       return;
     }
@@ -1512,10 +1522,7 @@ class App {
     if (action === 'cancel') {
       // Invalidate the most recent click token so any pending deferred select
       // for that click will be skipped by KeyHandler's token check.
-      // @ts-ignore
-      delete (window as any).__lastClickToken;
-      // eslint-disable-next-line no-console
-      console.log('[App] __lastClickToken cleared (cancel) — preventing deferred select');
+      delete (window as Window & { __lastClickToken?: unknown }).__lastClickToken;
       this.returnToView(this.settingsOrigin);
       return;
     }

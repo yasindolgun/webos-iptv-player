@@ -79,6 +79,27 @@ test('Back from Live returns to Home instead of exiting', async ({ page }) => {
   await expect(page.locator('#view-home')).toBeVisible();
 });
 
+test('Back on Home requires a second press to exit', async ({ page }) => {
+  await page.evaluate(() => {
+    const state = window as unknown as {
+      __exitCalls: number;
+      webOS?: { platformBack?: () => void };
+    };
+    state.__exitCalls = 0;
+    state.webOS = state.webOS ?? {};
+    state.webOS.platformBack = () => { state.__exitCalls++; };
+  });
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.toast.visible')).toContainText('Press back again');
+  expect(await page.evaluate(() =>
+    (window as unknown as { __exitCalls: number }).__exitCalls)).toBe(0);
+
+  await page.keyboard.press('Escape');
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { __exitCalls: number }).__exitCalls)).toBe(1);
+});
+
 test('opens and plays an M3U movie from Home', async ({ page }) => {
   await page.evaluate(() => {
     localStorage.setItem('iptv_playlists', JSON.stringify([{
