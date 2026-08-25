@@ -40,7 +40,7 @@ import {
 import { getCachedPlaylist, scheduleCachedPlaylist } from './idb-cache';
 import { isSourceEnabled } from '../utils/playlist';
 import { m3uContentKind, type M3uContentKind } from '../utils/m3u-content-kind';
-import { setCachedM3uCatalog } from './m3u-catalog-cache';
+import { getCachedM3uCatalog, setCachedM3uCatalog } from './m3u-catalog-cache';
 
 const log = createLogger('Playlist');
 
@@ -239,6 +239,7 @@ class PlaylistServiceImpl {
       }
     }
     const failedPlaylistIds = new Set<string>();
+    const catalogCacheRestoredIds = new Set<string>();
     let failedPlaylists = 0;
     let completedPlaylists = 0;
     onProgress?.({ completed: 0, total: playlists.length });
@@ -404,6 +405,25 @@ class PlaylistServiceImpl {
       } catch (err) {
         failedPlaylists++;
         failedPlaylistIds.add(plKey);
+        if (pl.source !== 'xtream' && !previousChannelsByPlaylist.has(plKey)) {
+          const cachedCatalogs = await Promise.all(
+            (['movie', 'series', 'other'] as const)
+              .map(kind => getCachedM3uCatalog(pl, kind)),
+          );
+          const cachedChannels = cachedCatalogs
+            .filter((catalog): catalog is Channel[] => catalog !== null)
+            .reduce((channels, catalog) => channels.concat(catalog), []);
+          if (cachedChannels.length) {
+            previousChannelsByPlaylist.set(plKey, cachedChannels);
+            catalogCacheRestoredIds.add(plKey);
+            log.warn(
+              'Restoring M3U catalog cache after refresh failure',
+              'event=m3u.catalog.cache.restored',
+              `source=${plKey}`,
+              `channels=${cachedChannels.length}`,
+            );
+          }
+        }
         if (pl.source === 'xtream') {
           log.error(
             `Failed to load Xtream playlist '${pl.name || pl.url}'`,
@@ -475,7 +495,8 @@ class PlaylistServiceImpl {
     this.epgSources = epgSources;
     // Cache the raw parse: customization is a view over it, so an edit re-sorts
     // memory instead of forcing a re-fetch.
-    if (!failedPlaylists || restoredPlaylists === failedPlaylists) {
+    if (!failedPlaylists
+        || (restoredPlaylists === failedPlaylists && !catalogCacheRestoredIds.size)) {
       scheduleCachedPlaylist(allChannels, epgSources);
     } else {
       log.warn('Skipping cache write because one or more playlists failed');

@@ -54,8 +54,10 @@ describe('m3u-catalog-cache', () => {
   });
 
   it('derives a stable signature from the source kind and URL', () => {
-    expect(m3uSourceSignature(source())).toBe('url\nhttp://host/list.m3u');
+    const urlSignature = m3uSourceSignature(source());
+    expect(urlSignature).toBe(m3uSourceSignature(source()));
+    expect(urlSignature).not.toContain(source().url);
     expect(m3uSourceSignature({ ...source(), source: 'upload' }))
-      .toBe('upload\nhttp://host/list.m3u');
+      .not.toBe(urlSignature);
   });
 });

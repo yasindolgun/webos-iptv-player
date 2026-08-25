@@ -3,7 +3,7 @@ import { CONFIG } from '../config';
 import { getCachedCatalog, setCachedCatalog } from './idb-cache';
 import { m3uContentKind, type M3uContentKind } from '../utils/m3u-content-kind';
 
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const KEY_PREFIX = 'm3u-catalog';
 
 interface StoredM3uCatalog {
@@ -14,7 +14,13 @@ interface StoredM3uCatalog {
 }
 
 export function m3uSourceSignature(source: PlaylistEntry): string {
-  return `${source.source ?? 'url'}\n${source.url}`;
+  const identity = `${source.source ?? 'url'}\n${source.url}`;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < identity.length; i++) {
+    hash ^= identity.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
 function cacheKey(sourceId: string, kind: M3uContentKind): string {

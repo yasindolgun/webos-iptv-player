@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Channel, ChannelCustomization } from '../types';
 import { UNCATEGORIZED_GROUP } from '../types';
 
-const { storageMock, cacheMock, fetchTextMock } = vi.hoisted(() => ({
+const { storageMock, cacheMock, m3uCacheMock, fetchTextMock } = vi.hoisted(() => ({
   storageMock: {
     getPlaylists: vi.fn(),
     getFavorites: vi.fn(() => [] as string[]),
@@ -17,11 +17,16 @@ const { storageMock, cacheMock, fetchTextMock } = vi.hoisted(() => ({
     scheduleCachedPlaylist: vi.fn(),
     setCachedCatalog: vi.fn(() => Promise.resolve()),
   },
+  m3uCacheMock: {
+    getCachedM3uCatalog: vi.fn(),
+    setCachedM3uCatalog: vi.fn(() => Promise.resolve()),
+  },
   fetchTextMock: vi.fn(),
 }));
 
 vi.mock('./storage-service', () => ({ StorageService: storageMock }));
 vi.mock('./idb-cache', () => cacheMock);
+vi.mock('./m3u-catalog-cache', () => m3uCacheMock);
 vi.mock('../utils/fetch-helper', async (importOriginal) => ({
   ...await importOriginal<typeof import('../utils/fetch-helper')>(),
   fetchPlaylistText: fetchTextMock,
@@ -60,6 +65,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   storageMock.getFavorites.mockReturnValue([]);
   cacheMock.getCachedPlaylist.mockResolvedValue(null);
+  m3uCacheMock.getCachedM3uCatalog.mockResolvedValue(null);
   PlaylistService.allChannels = [];
   PlaylistService.channels = [];
   PlaylistService.groups = [];
@@ -243,6 +249,33 @@ describe('PlaylistService.refresh', () => {
     );
     const channels = await PlaylistService.refresh();
     expect(channels.map(c => c.name)).toEqual(['Bravo Dup', 'Charlie']);
+    expect(cacheMock.scheduleCachedPlaylist).not.toHaveBeenCalled();
+  });
+
+  it('restores a failed M3U source from its persisted catalog cache', async () => {
+    fetchTextMock.mockImplementation((url: string) =>
+      url.includes('p1') ? Promise.reject(new Error('boom')) : Promise.resolve(P2),
+    );
+    m3uCacheMock.getCachedM3uCatalog.mockImplementation(
+      async (source: { id: string }, kind: string) => {
+        if (source.id !== 'a' || kind !== 'movie') return null;
+        return [channel({
+          id: 'film',
+          name: 'Cached Film',
+          group: 'Films',
+          url: 'http://stream/film',
+          playlistIds: ['a'],
+          contentKind: 'movie',
+        })];
+      },
+    );
+
+    const report = await PlaylistService.refreshWithReport();
+
+    expect(m3uCacheMock.getCachedM3uCatalog).toHaveBeenCalledTimes(3);
+    expect(report.restoredSourceIds).toEqual(['a']);
+    expect(report.channels.map(item => item.name))
+      .toEqual(expect.arrayContaining(['Cached Film', 'Bravo Dup', 'Charlie']));
     expect(cacheMock.scheduleCachedPlaylist).not.toHaveBeenCalled();
   });
 
