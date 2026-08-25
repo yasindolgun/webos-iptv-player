@@ -192,8 +192,7 @@ export const KeyHandler = {
 
     document.addEventListener('click', (e: MouseEvent) => {
       // DEBUG: log clicks hitting the global handler for e2e triage
-      // eslint-disable-next-line no-console
-      console.log('[KeyHandler] document.click target:', (e.target as HTMLElement).id || (e.target as HTMLElement).className);
+      log.debug('document.click target:', (e.target as HTMLElement).id || (e.target as HTMLElement).className);
       // Components that self-activate on click (their own click handler is the
       // "OK" action) mark their root subtree with `data-self-activate` so this
       // global handler skips them — otherwise the deferred select below fires a

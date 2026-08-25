@@ -441,8 +441,7 @@ export class Settings {
       btn.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        // eslint-disable-next-line no-console
-        console.log('[Settings] cancel-click handler executing — calling onSave(cancel)');
+        log.debug('cancel-click handler executing — calling onSave(cancel)');
         // Call through the configured onSave callback to preserve the same
         // lifecycle as the delegated activate path.
         void this.onSave('cancel');
