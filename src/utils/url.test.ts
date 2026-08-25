@@ -33,6 +33,13 @@ describe('streamRouteKey', () => {
     expect(streamRouteKey('http://host/play/token-a')).not.toContain('token-a');
   });
 
+  it('keeps Xtream resources stable when path credentials rotate', () => {
+    expect(streamRouteKey('http://host/live/user/pass/42.ts'))
+      .toBe(streamRouteKey('http://host/live/other/secret/42.ts'));
+    expect(streamRouteKey('http://host/live/user/pass/42.ts'))
+      .not.toBe(streamRouteKey('http://host/live/user/pass/43.ts'));
+  });
+
   it('separates stream resources and requested formats', () => {
     expect(streamRouteKey('http://host/play?id=42&token=a'))
       .toBe(streamRouteKey('http://host/play?id=42&token=b'));

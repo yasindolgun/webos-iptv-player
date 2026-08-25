@@ -5,8 +5,6 @@ test.beforeEach(async ({ page }) => {
   await seedPlaylist(page);
   await routePlaylist(page);
   await page.goto('/?home-test=1');
-  await expect(page.locator('#view-channels')).toBeVisible();
-  await page.keyboard.press('Escape');
   await expect(page.locator('#view-home')).toBeVisible();
 });
 
@@ -28,11 +26,20 @@ test('opens Live with OK', async ({ page }) => {
   await expect(page.locator('#view-channels')).toBeVisible();
 });
 
+test('Settings Cancel and Save return to Home', async ({ page }) => {
+  const settings = page.locator('[data-home-action="settings"]');
+  await settings.click();
+  await page.locator('#cancel-settings').click();
+  await expect(page.locator('#view-home')).toBeVisible();
+
+  await settings.click();
+  await page.locator('#save-settings').click();
+  await expect(page.locator('#view-home')).toBeVisible();
+});
+
 test('opens and plays a movie from Home', async ({ page }) => {
   await seedXtream(page);
   await page.goto('/?home-test=1');
-  await expect(page.locator('#view-channels')).toBeVisible();
-  await page.keyboard.press('Escape');
   await expect(page.locator('#view-home')).toBeVisible();
 
   await page.locator('[data-home-action="movies"]').click();
@@ -48,8 +55,6 @@ test('opens and plays a movie from Home', async ({ page }) => {
 test('opens and plays a series episode from Home', async ({ page }) => {
   await seedXtream(page);
   await page.goto('/?home-test=1');
-  await expect(page.locator('#view-channels')).toBeVisible();
-  await page.keyboard.press('Escape');
   await expect(page.locator('#view-home')).toBeVisible();
 
   await page.locator('[data-home-action="series"]').click();
@@ -92,8 +97,6 @@ test('opens and plays an M3U movie from Home', async ({ page }) => {
     route.fulfill({ status: 200, contentType: 'video/mp4', body: '' }));
   await neuterVideo(page);
   await page.goto('/?home-test=1');
-  await expect(page.locator('#view-channels')).toBeVisible();
-  await page.keyboard.press('Escape');
   await expect(page.locator('#view-home')).toBeVisible();
 
   await page.locator('[data-home-action="movies"]').click();

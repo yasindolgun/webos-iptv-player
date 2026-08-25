@@ -408,12 +408,40 @@ describe('EpgService cache and refresh', () => {
     const second = EpgService.load([source('http://a', ['a'])]);
     const refresh = EpgService.refresh();
     expect(getCachedEpg).toHaveBeenCalledTimes(1);
+    expect(EpgService.loadState).toBe('loading');
 
     releaseCache?.();
     await Promise.all([first, second, refresh]);
 
     expect(fetchMaybeGzipText).toHaveBeenCalledTimes(1);
     expect(EpgService.loaded).toBe(true);
+    expect(EpgService.loadState).toBe('ready');
+  });
+
+  it('makes refresh wait for a newer load that supersedes the first', async () => {
+    type Cached = Awaited<ReturnType<typeof getCachedEpg>>;
+    let releaseA: ((value: Cached) => void) | undefined;
+    let releaseB: ((value: Cached) => void) | undefined;
+    vi.mocked(getCachedEpg).mockImplementation((url) => new Promise(resolve => {
+      if (url === 'http://a') releaseA = resolve;
+      else releaseB = resolve;
+    }));
+
+    const first = EpgService.load([source('http://a', ['a'])]);
+    let refreshed = false;
+    const refresh = EpgService.refresh().then(() => { refreshed = true; });
+    const second = EpgService.load([source('http://b', ['b'])]);
+
+    releaseA?.({ url: 'http://a', timestamp: NOON, data: parsed('a', 'Alpha', 'Old') });
+    await first;
+    await Promise.resolve();
+    expect(refreshed).toBe(false);
+
+    releaseB?.({ url: 'http://b', timestamp: NOON, data: parsed('b', 'Bravo', 'New') });
+    await Promise.all([second, refresh]);
+    expect(EpgService.findChannelId(channel({
+      id: 'b', name: 'Bravo', playlistIds: ['b'],
+    }))).not.toBeNull();
   });
 
   it('loads every feed from its independent URL cache', async () => {
@@ -479,6 +507,20 @@ describe('EpgService cache and refresh', () => {
 
     const id = EpgService.findChannelId(channel({ id: 'a', name: 'Alpha', playlistIds: ['a'] }));
     expect(EpgService.getNowPlaying(id!)?.title).toBe('Available');
+    expect(EpgService.loadState).toBe('ready');
+  });
+
+  it('distinguishes a failed cold load from an empty successful feed', async () => {
+    vi.mocked(fetchMaybeGzipText).mockRejectedValueOnce(new Error('down'));
+    await EpgService.load([source('http://a', ['a'])]);
+    expect(EpgService.loadState).toBe('failed');
+
+    EpgService.reset();
+    parseXMLTVMock.mockReturnValue({
+      channels: {}, programmes: {}, tzOffsetMinutes: null,
+    });
+    await EpgService.load([source('http://a', ['a'])]);
+    expect(EpgService.loadState).toBe('ready');
   });
 });
 
@@ -492,6 +534,7 @@ describe('EpgService.reset', () => {
     expect(EpgService.channels).toEqual({});
     expect(EpgService.programmes).toEqual({});
     expect(EpgService.loaded).toBe(false);
+    expect(EpgService.loadState).toBe('idle');
   });
 
   it('ignores an in-flight load that completes after reset', async () => {

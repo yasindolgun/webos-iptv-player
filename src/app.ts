@@ -51,7 +51,6 @@ class App {
   private viewBeforeSearch: ViewName | null = null;
   private epgOrigin: ViewName = 'home';
   private settingsOrigin: ViewName = 'home';
-  private settingsReturnsToOrigin = false;
   private channelList!: ChannelList;
   private home!: Home;
   private player!: Player;
@@ -159,10 +158,7 @@ class App {
     this.settings = new Settings(
       this.views.settings,
       (action) => this.onSettingsSaved(action),
-      () => {
-        this.player.syncCurrentIndex();
-        this.settingsReturnsToOrigin = true;
-      },
+      () => this.player.syncCurrentIndex(),
       () => this.openReminderManager('settings'),
       (onProgress) => this.refreshDataFromSettings(onProgress),
     );
@@ -670,8 +666,7 @@ class App {
       this.tabBar.setAccounts(xtreamAccounts, this.activeXtreamAccount()?.id ?? '');
 
       this.channelList.render();
-      const defaultView: ViewName = PlaylistService.channels.length > 0 ? 'channels' : 'home';
-      this.returnToView(destination ?? defaultView);
+      this.returnToView(destination ?? 'home');
 
       showToast(tp('app.channelsLoaded', PlaylistService.channels.length));
 
@@ -891,7 +886,7 @@ class App {
       return;
     }
     if (section === 'settings') {
-      this.openSettings(false);
+      this.openSettings();
       return;
     }
     // Search: keep the current view; the results view only covers it once a
@@ -1045,10 +1040,9 @@ class App {
     });
   }
 
-  private openSettings(returnToOrigin: boolean): void {
+  private openSettings(): void {
     const current = this.viewStack[this.viewStack.length - 1] ?? 'home';
     if (current !== 'settings') this.settingsOrigin = current;
-    this.settingsReturnsToOrigin = returnToOrigin;
     this.settings.render();
     this.showView('settings');
   }
@@ -1248,7 +1242,7 @@ class App {
       this.sidebar.hide();
       this.menu.hide();
       this.player.stop();
-      this.openSettings(true);
+      this.openSettings();
       return;
     }
     if (action === 'green' && currentView === 'player' && (this.sidebar.visible || this.menu.visible)) {
@@ -1299,8 +1293,7 @@ class App {
       }
       if (currentView === 'settings') {
         if (this.settings.dismissDropdown()) return;
-        if (this.settingsReturnsToOrigin) this.returnToView(this.settingsOrigin);
-        else this.goHome();
+        this.returnToView(this.settingsOrigin);
         return;
       }
       if (currentView === 'reminders') {
@@ -1523,13 +1516,11 @@ class App {
       delete (window as any).__lastClickToken;
       // eslint-disable-next-line no-console
       console.log('[App] __lastClickToken cleared (cancel) — preventing deferred select');
-      if (this.settingsReturnsToOrigin) this.returnToView(this.settingsOrigin);
-      else this.goHome();
+      this.returnToView(this.settingsOrigin);
       return;
     }
     if (action === 'apply') {
-      if (this.settingsReturnsToOrigin) this.returnToView(this.settingsOrigin);
-      else this.goHome();
+      this.returnToView(this.settingsOrigin);
       return;
     }
     this.returnToView(this.settingsOrigin);

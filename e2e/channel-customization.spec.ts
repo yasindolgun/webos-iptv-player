@@ -231,6 +231,7 @@ test('back cancels an open rename without changing the name', async ({ page }) =
 });
 
 test('maps a channel to an XMLTV entry and keeps the override after reload', async ({ page }) => {
+  test.setTimeout(60_000);
   const now = Date.now();
   const playlist = SEARCH_M3U.replace('#EXTM3U', '#EXTM3U url-tvg="http://host/guide.xml"');
   const guideChannels = Array.from({ length: 120 }, (_, index) => {

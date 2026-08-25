@@ -42,6 +42,8 @@ export interface EpgMappingSearchEntry extends EpgMappingCandidate {
   sourceIndex: number;
 }
 
+export type EpgLoadState = 'idle' | 'loading' | 'ready' | 'failed';
+
 export interface EpgSourceStatus {
   url: string;
   kind: EpgSource['kind'];
@@ -80,9 +82,14 @@ class EpgServiceImpl {
   private loadPromise: Promise<void> | null = null;
   private loadSignature = '';
   private refreshPromise: Promise<void> | null = null;
+  private loadStateValue: EpgLoadState = 'idle';
 
   get mappingRevision(): number {
     return this.mappingRevisionValue;
+  }
+
+  get loadState(): EpgLoadState {
+    return this.loadStateValue;
   }
 
   /**
@@ -108,6 +115,7 @@ class EpgServiceImpl {
     this.loadPromise = null;
     this.loadSignature = '';
     this.refreshPromise = null;
+    this.loadStateValue = 'idle';
   }
 
   load(sources: EpgSource[], channels?: Channel[]): Promise<void> {
@@ -133,6 +141,7 @@ class EpgServiceImpl {
 
   private async performLoad(sources: EpgSource[], channels?: Channel[]): Promise<void> {
     const revision = ++this.revision;
+    this.loadStateValue = sources.length ? 'loading' : 'idle';
     this.playlistChannels = channels ?? null;
     this.mappedChannelIds = ChannelCustomizationService.epgChannelIds();
     this.setSources(sources);
@@ -140,11 +149,18 @@ class EpgServiceImpl {
     if (revision !== this.revision) return;
     this.rebuildIndexes();
     this.loaded = this.sources.length > 0;
+    this.loadStateValue = !this.sources.length
+      ? 'idle'
+      : this.sources.some(source => this.states.has(source.url)) ? 'ready' : 'failed';
     this.mappingRevisionValue++;
   }
 
   async refresh(): Promise<void> {
-    if (this.loadPromise) await this.loadPromise;
+    while (this.loadPromise) {
+      const loading = this.loadPromise;
+      await loading;
+      if (this.loadPromise === loading) break;
+    }
     if (this.refreshPromise) return this.refreshPromise;
     const promise = this.performRefresh();
     this.refreshPromise = promise;

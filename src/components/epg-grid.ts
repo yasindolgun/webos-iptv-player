@@ -597,7 +597,9 @@ export class EpgGrid {
             </div>
             <div class="epg-programmes-pane ${this.focusCol === 'programmes' ? 'pane-focused' : ''}" id="epg-programmes">
               ${programmes.length === 0
-                ? html`<div class="epg-no-data">${t('epg.noData')}</div>`
+                ? html`<div class="epg-no-data">${t(
+                    EpgService.loadState === 'loading' ? 'common.loading' : 'epg.noData',
+                  )}</div>`
                 : html`
                   <div class="epg-virtual-spacer"
                        style="height:${this.programmeVirtualizer.getTotalSize(programmes.length)}px">

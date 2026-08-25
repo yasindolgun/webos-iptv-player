@@ -22,11 +22,7 @@ test('switching through every language refreshes cached Recently Watched labels'
     ['en', 'Recently Watched'],
   ];
   for (const [locale, label] of locales) {
-    if (await page.locator('#view-home').isVisible()) {
-      await page.locator('[data-home-action="settings"]').click();
-    } else {
-      await enterTab(page, 'settings');
-    }
+    await enterTab(page, 'settings');
     await page.locator('#app-language .dropdown-trigger').click();
     await page.locator(`#app-language [data-dropdown-value="${locale}"]`).click();
     await page.locator('#save-settings').click();

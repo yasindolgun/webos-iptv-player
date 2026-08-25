@@ -27,6 +27,12 @@ export function containerMime(url: string): string {
 export function streamRouteKey(url: string): string {
   try {
     const parsed = new URL(url);
+    const parts = parsed.pathname.split('/');
+    const route = parts[1]?.toLowerCase();
+    const path = route === 'live' || route === 'movie' || route === 'series' ||
+      route === 'timeshift'
+      ? `/${route}/${parts.slice(4).join('/')}`
+      : parsed.pathname;
     const stream = parsed.searchParams.get('stream_id') ||
       parsed.searchParams.get('stream') || parsed.searchParams.get('id') || '';
     const format = parsed.searchParams.get('output_format') ||
@@ -35,7 +41,7 @@ export function streamRouteKey(url: string): string {
       stream ? `stream=${encodeURIComponent(stream)}` : '',
       format ? `output=${encodeURIComponent(format)}` : '',
     ].filter(Boolean);
-    const identity = `${parsed.pathname}${params.length ? `?${params.join('&')}` : ''}`;
+    const identity = `${path}${params.length ? `?${params.join('&')}` : ''}`;
     let hash = 0x811c9dc5;
     for (let i = 0; i < identity.length; i++) {
       hash ^= identity.charCodeAt(i);

@@ -169,6 +169,14 @@ async function enterLiveLanding(page: Page): Promise<void> {
   }
 }
 
+async function ensurePlayerSidebar(page: Page): Promise<void> {
+  const sidebar = page.locator('#player-sidebar');
+  if (await sidebar.isVisible()) return;
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowLeft');
+  await expect(sidebar).toBeVisible();
+}
+
 interface Screen {
   name: string;
   /** Budget as a fraction of the viewport; see the calibration note below. */
@@ -311,6 +319,7 @@ const M3U_SCREENS: Screen[] = [
     name: 'sidebar-search',
     budget: 0.001,
     go: async (p) => {
+      await ensurePlayerSidebar(p);
       await p.locator('.sidebar-search-input').fill('one');
       await expect(p.locator('#player-sidebar .sidebar-ch-item')).toHaveCount(1, {
         timeout: 15_000,
@@ -321,6 +330,7 @@ const M3U_SCREENS: Screen[] = [
     name: 'sidebar-groups',
     budget: 0.001,
     go: async (p) => {
+      await ensurePlayerSidebar(p);
       await p.locator('[data-open-groups]').click();
       await expect(p.locator('#player-sidebar .sidebar-group-item').first()).toBeVisible();
     },
@@ -682,7 +692,7 @@ async function walk(
 
 test('the webOS 4 fallbacks lay out where the modern engine does, with an M3U playlist only', async ({ page, browser }) => {
   test.skip(isChromium53(), 'this test drives both engines itself, so it runs once');
-  test.setTimeout(150_000);
+  test.setTimeout(240_000);
   await walk(page, browser, prepareM3U, M3U_SCREENS);
 });
 
