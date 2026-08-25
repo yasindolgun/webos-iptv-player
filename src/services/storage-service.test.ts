@@ -315,6 +315,26 @@ describe('selected Xtream account id', () => {
   });
 });
 
+describe('selected catalog sources', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('stores Movies and Series selections independently', () => {
+    StorageService.setSelectedCatalogSource('movies', {
+      kind: 'xtream', playlistId: 'x1',
+    });
+    StorageService.setSelectedCatalogSource('series', {
+      kind: 'm3u', playlistId: 'p1',
+    });
+
+    expect(StorageService.getSelectedCatalogSource('movies')).toEqual({
+      kind: 'xtream', playlistId: 'x1',
+    });
+    expect(StorageService.getSelectedCatalogSource('series')).toEqual({
+      kind: 'm3u', playlistId: 'p1',
+    });
+  });
+});
+
 const watchlist = (over: Partial<WatchlistEntry> = {}): WatchlistEntry => ({
   accountId: 'x1',
   kind: 'vod',

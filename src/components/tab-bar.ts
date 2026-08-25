@@ -1,9 +1,9 @@
-import type { Action, PlaylistEntry } from '../types';
+import type { Action } from '../types';
 import { html } from '../utils/dom';
 import { morph } from '../utils/morph';
 import { CONFIG } from '../config';
 import { SEARCH_ICON } from './icons';
-import { AccountSwitcher } from './account-switcher';
+import { AccountSwitcher, type AccountSwitcherOption } from './account-switcher';
 import { t } from '../i18n';
 
 // Cap for the expanded inline search box.
@@ -65,7 +65,7 @@ export class TabBar {
   private searchExpanded = false;
   private searchBound = false;
   private switcher: AccountSwitcher | null = null;
-  private accounts: PlaylistEntry[] = [];
+  private accounts: AccountSwitcherOption[] = [];
   private selectedAccountId = '';
 
   constructor(handlers: TabBarHandlers) {
@@ -93,7 +93,7 @@ export class TabBar {
     if (this._shown) this.render();
   }
 
-  setAccounts(accounts: PlaylistEntry[], selectedId: string): void {
+  setAccounts(accounts: AccountSwitcherOption[], selectedId: string): void {
     this.accounts = accounts;
     this.selectedAccountId = selectedId;
     // If the avatar just disappeared while focused on it, park focus on the active tab.

@@ -1,4 +1,4 @@
-import type { Action, PlaylistEntry } from '../types';
+import type { Action } from '../types';
 import { html, raw } from '../utils/dom';
 import { morph } from '../utils/morph';
 import { avatarColor, firstLetter } from '../utils/avatar';
@@ -9,6 +9,11 @@ interface AccountSwitcherHandlers {
   onSelect: (accountId: string) => void;
 }
 
+export interface AccountSwitcherOption {
+  id: string;
+  name: string;
+}
+
 // The circular account avatar + dropdown, mounted in a tab-bar slot. Owns its
 // own DOM (preserved across the tab bar's morph via data-morph-preserve) and its
 // pointer hit-testing. The tab bar drives focus/keys; selection flows back out
@@ -16,7 +21,7 @@ interface AccountSwitcherHandlers {
 export class AccountSwitcher {
   private slot: HTMLElement;
   private handlers: AccountSwitcherHandlers;
-  private accounts: PlaylistEntry[] = [];
+  private accounts: AccountSwitcherOption[] = [];
   private selectedId = '';
   private focused = false;
   private open = false;
@@ -30,7 +35,7 @@ export class AccountSwitcher {
   get shown(): boolean { return this.accounts.length > 0; }
   get menuOpen(): boolean { return this.open; }
 
-  setAccounts(accounts: PlaylistEntry[], selectedId: string): void {
+  setAccounts(accounts: AccountSwitcherOption[], selectedId: string): void {
     this.accounts = accounts;
     this.selectedId = selectedId;
     if (!this.shown) this.open = false;

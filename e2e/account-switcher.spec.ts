@@ -119,7 +119,7 @@ test('switching account in the dropdown reloads Movies and updates the avatar', 
 
   // Switch to Bravo from the avatar dropdown; Movies reloads for Bravo.
   await openAccountMenu(page);
-  await pickAccount(page, 'a2');
+  await pickAccount(page, 'xtream:a2');
   await expect(page.locator('#view-movies .catalog-rail-title')).toContainText('Cat Bravo');
   await expect(page.locator('.catalog-tile[data-item-id="20"]')).toContainText('Bravo Movie');
   await expect(page.locator('.catalog-tile[data-item-id="10"]')).toHaveCount(0);

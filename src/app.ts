@@ -34,6 +34,14 @@ import { initTheme, applyTheme, applyOverlayStyle, applyTextSize } from './servi
 import { channelKey } from './utils/channel';
 import { m3uAccountId, m3uItemKey } from './utils/m3u-item';
 import { isSourceEnabled } from './utils/playlist';
+import {
+  availableCatalogSources,
+  catalogSourceKey,
+  parseCatalogSource,
+  resolveCatalogSource,
+  type CatalogSection,
+  type CatalogSource,
+} from './utils/catalog-source';
 import { truncate } from './utils/text';
 import { $, show, hide } from './utils/dom';
 import { createLogger, installGlobalErrorHandlers, logEnvironment } from './utils/logger';
@@ -867,36 +875,12 @@ class App {
     if (section === 'epg') { this.openEpg(); return; }
     if (section === 'movies') {
       this.resetView('movies');
-      const account = this.activeXtreamAccount();
-      if (account) {
-        this.movies.open(account)
-          .catch((err) => log.error(
-            'Movies open failed',
-            'event=xtream.view.open.failed',
-            'operation=movies',
-            err,
-          ));
-      } else {
-        this.m3uCatalogSection = 'movies';
-        this.m3uMovies.open(PlaylistService.getByContentKind('movie'), 'movie');
-      }
+      this.openCatalog('movies');
       return;
     }
     if (section === 'series') {
       this.resetView('series');
-      const seriesAccount = this.activeXtreamAccount();
-      if (seriesAccount) {
-        this.series.open(seriesAccount)
-          .catch((err) => log.error(
-            'Series open failed',
-            'event=xtream.view.open.failed',
-            'operation=series',
-            err,
-          ));
-      } else {
-        this.m3uCatalogSection = 'series';
-        this.m3uSeries.open(PlaylistService.getByContentKind('series'), 'series');
-      }
+      this.openCatalog('series');
       return;
     }
     if (section === 'settings') {
@@ -1061,6 +1045,61 @@ class App {
     this.navigateTo('settings');
   }
 
+  private catalogSources(section: CatalogSection): CatalogSource[] {
+    return availableCatalogSources(
+      StorageService.getPlaylists(),
+      section,
+      (kind, playlistId) => PlaylistService.getContentKindCount(kind, playlistId),
+    );
+  }
+
+  private activeCatalogSource(section: CatalogSection): CatalogSource | null {
+    const selected = StorageService.getSelectedCatalogSource(section);
+    const resolved = resolveCatalogSource(
+      this.catalogSources(section),
+      selected,
+      StorageService.getSelectedXtreamAccountId(),
+    );
+    if (resolved && (!selected || catalogSourceKey(resolved) !== catalogSourceKey(selected))) {
+      StorageService.setSelectedCatalogSource(section, resolved);
+    }
+    return resolved;
+  }
+
+  private setCatalogSwitcher(section: CatalogSection, selected: CatalogSource): void {
+    const names = new Map(StorageService.getPlaylists().map(source => [source.id, source.name]));
+    this.tabBar.setAccounts(this.catalogSources(section).map(source => ({
+      id: catalogSourceKey(source),
+      name: names.get(source.playlistId) ?? source.playlistId,
+    })), catalogSourceKey(selected));
+  }
+
+  private openCatalog(section: CatalogSection): void {
+    const source = this.activeCatalogSource(section);
+    if (!source) return;
+    this.setCatalogSwitcher(section, source);
+    this.m3uCatalogSection = null;
+    if (source.kind === 'xtream') {
+      StorageService.setSelectedXtreamAccountId(source.playlistId);
+      const account = StorageService.getPlaylists().find(entry =>
+        entry.id === source.playlistId && entry.source === 'xtream' && entry.xtream);
+      if (!account) return;
+      const view = section === 'movies' ? this.movies : this.series;
+      view.open(account).catch((err) => log.error(
+        `${section === 'movies' ? 'Movies' : 'Series'} open failed`,
+        'event=xtream.view.open.failed',
+        `operation=${section}`,
+        err,
+      ));
+      return;
+    }
+    this.m3uCatalogSection = section;
+    const kind = section === 'movies' ? 'movie' : 'series';
+    const channels = PlaylistService.getByContentKind(kind, source.playlistId);
+    if (section === 'movies') this.m3uMovies.open(channels, kind);
+    else this.m3uSeries.open(channels, kind);
+  }
+
   private activeXtreamAccount(): PlaylistEntry | null {
     const accounts = StorageService.getPlaylists()
       .filter((p) => p.source === 'xtream' && p.xtream && isSourceEnabled(p));
@@ -1071,6 +1110,16 @@ class App {
   // A different Xtream account was picked in the avatar dropdown: persist it and
   // reload whichever account-scoped section is showing. Live/Settings just store.
   private selectXtreamAccount(id: string): void {
+    const catalogSource = parseCatalogSource(id);
+    const current = this.navigator.current;
+    if (catalogSource && (current === 'movies' || current === 'series')) {
+      const section: CatalogSection = current;
+      const available = this.catalogSources(section);
+      if (!available.some(source => catalogSourceKey(source) === id)) return;
+      StorageService.setSelectedCatalogSource(section, catalogSource);
+      this.openCatalog(section);
+      return;
+    }
     StorageService.setSelectedXtreamAccountId(id);
     const account = this.activeXtreamAccount();
     if (!account) return;
@@ -1080,7 +1129,6 @@ class App {
         .filter((p) => p.source === 'xtream' && p.xtream && isSourceEnabled(p)),
       account.id,
     );
-    const current = this.navigator.current;
     if (current === 'movies') {
       this.movies.open(account)
         .catch((err) => log.error(

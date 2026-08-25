@@ -4,6 +4,12 @@ import type { AudioPref, CatchupProgressEntry, Channel, ChannelCustomization, Pl
 import type { OnlineSubtitleConfig, PickedOnlineSub } from './subtitle-search/types';
 import { channelKey, legacyChannelKey } from '../utils/channel';
 import { genPlaylistId } from '../utils/playlist';
+import {
+  catalogSourceKey,
+  parseCatalogSource,
+  type CatalogSection,
+  type CatalogSource,
+} from '../utils/catalog-source';
 import { createLogger } from '../utils/logger';
 import { isLocalePreference, type LocalePreference } from '../i18n';
 import {
@@ -930,6 +936,13 @@ export const StorageService = {
   },
   setSelectedXtreamAccountId(id: string): void {
     set('selectedXtream', id);
+  },
+
+  getSelectedCatalogSource(section: CatalogSection): CatalogSource | null {
+    return parseCatalogSource(get<string | null>(`catalogSource_${section}`, null));
+  },
+  setSelectedCatalogSource(section: CatalogSection, source: CatalogSource): void {
+    set(`catalogSource_${section}`, catalogSourceKey(source));
   },
 
   getWatchlist(accountId: string, kind: WatchlistKind): WatchlistEntry[] {
