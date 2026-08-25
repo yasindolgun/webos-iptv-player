@@ -85,6 +85,8 @@
 **Development**
 
 - **Desktop preview** — browser-based playback via HLS.js, mpegts.js, and dash.js
+- **Roadmap** — planned large-source, scale, and product work is tracked in
+  [`ROADMAP.md`](ROADMAP.md)
 
 ## Supported webOS versions
 
