@@ -14,6 +14,7 @@ export const PT_BR_MESSAGES = {
   'common.continue': 'Continuar',
   'common.pause': 'Pausar',
   'common.watchlist': 'Minha lista',
+  'common.refresh': 'Atualizar',
   'common.channels': 'Canais',
   'common.groups': 'Grupos',
   'common.movies': 'Filmes',

@@ -118,7 +118,14 @@ class EpgServiceImpl {
     this.loadStateValue = 'idle';
   }
 
-  load(sources: EpgSource[], channels?: Channel[]): Promise<void> {
+  load(
+    sources: EpgSource[],
+    channels?: Channel[],
+    playlistIds?: readonly string[],
+  ): Promise<void> {
+    const selectedPlaylistIds = playlistIds
+      ? Array.from(new Set(playlistIds)).sort()
+      : undefined;
     const signature = JSON.stringify([
       sources.map(source => [
         source.url,
@@ -127,9 +134,10 @@ class EpgServiceImpl {
         source.offsetMinutes ?? 0,
       ]),
       (channels ?? []).map(channel => [channelKey(channel), channel.playlistIds]),
+      selectedPlaylistIds,
     ]);
     if (this.loadPromise && signature === this.loadSignature) return this.loadPromise;
-    const promise = this.performLoad(sources, channels);
+    const promise = this.performLoad(sources, channels, selectedPlaylistIds);
     this.loadSignature = signature;
     this.loadPromise = promise;
     const clear = () => {
@@ -139,13 +147,22 @@ class EpgServiceImpl {
     return promise;
   }
 
-  private async performLoad(sources: EpgSource[], channels?: Channel[]): Promise<void> {
+  private async performLoad(
+    sources: EpgSource[],
+    channels?: Channel[],
+    playlistIds?: readonly string[],
+  ): Promise<void> {
     const revision = ++this.revision;
     this.loadStateValue = sources.length ? 'loading' : 'idle';
     this.playlistChannels = channels ?? null;
     this.mappedChannelIds = ChannelCustomizationService.epgChannelIds();
     this.setSources(sources);
-    await Promise.all(this.sources.map((source) => this.loadSource(source, revision)));
+    const selected = playlistIds ? new Set(playlistIds) : null;
+    const sourcesToLoad = selected
+      ? this.sources.filter(source => source.kind === 'manual'
+        || source.playlistIds.some(id => selected.has(id)))
+      : this.sources;
+    await Promise.all(sourcesToLoad.map((source) => this.loadSource(source, revision)));
     if (revision !== this.revision) return;
     this.rebuildIndexes();
     this.loaded = this.sources.length > 0;

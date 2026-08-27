@@ -397,6 +397,34 @@ describe('EpgService multi-source matching', () => {
 });
 
 describe('EpgService cache and refresh', () => {
+  it('reloads only EPG feeds affected by a targeted playlist refresh', async () => {
+    parseXMLTVMock.mockImplementation((text) => {
+      if (text === 'http://a') return parsed('a', 'Alpha', 'From A');
+      if (text === 'http://b') return parsed('b', 'Bravo', 'From B');
+      return parsed('manual', 'Charlie', 'From Manual');
+    });
+    const sources = [
+      source('http://a', ['a']),
+      source('http://b', ['b']),
+      source('http://manual', [], 'manual'),
+    ];
+    const channels = [
+      channel({ id: 'a', name: 'Alpha', playlistIds: ['a'] }),
+      channel({ id: 'b', name: 'Bravo', playlistIds: ['b'] }),
+      channel({ id: 'manual', name: 'Charlie', playlistIds: ['a'] }),
+    ];
+    await EpgService.load(sources, channels);
+    vi.mocked(fetchMaybeGzipText).mockClear();
+
+    await EpgService.load(sources, channels, ['a']);
+
+    expect(fetchMaybeGzipText).toHaveBeenCalledWith('http://a', 120000);
+    expect(fetchMaybeGzipText).toHaveBeenCalledWith('http://manual', 120000);
+    expect(fetchMaybeGzipText).not.toHaveBeenCalledWith('http://b', 120000);
+    const bravoId = EpgService.findChannelId(channels[1]);
+    expect(EpgService.getNowPlaying(bravoId!)?.title).toBe('From B');
+  });
+
   it('shares an in-flight load and makes refresh wait for it', async () => {
     let releaseCache: (() => void) | undefined;
     vi.mocked(getCachedEpg).mockImplementation(() => new Promise(resolve => {

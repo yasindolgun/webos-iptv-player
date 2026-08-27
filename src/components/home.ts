@@ -3,6 +3,7 @@ import { SpatialNav } from '../navigation/spatial-nav';
 import { html, raw } from '../utils/dom';
 import { morph } from '../utils/morph';
 import { t } from '../i18n';
+import { formatLocalTime } from '../utils/time';
 
 export type HomeAction = 'live' | 'movies' | 'series' | 'continue' | 'epg' | 'refresh' | 'settings';
 
@@ -110,10 +111,7 @@ export class Home {
 
   private lastRefreshText(): string {
     if (!this.state.lastRefreshAt) return t('home.neverRefreshed');
-    const formatted = new Intl.DateTimeFormat(undefined, {
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(this.state.lastRefreshAt);
+    const formatted = formatLocalTime(new Date(this.state.lastRefreshAt));
     return t('home.lastRefreshed', { time: formatted });
   }
 

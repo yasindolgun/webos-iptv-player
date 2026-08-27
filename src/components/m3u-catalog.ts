@@ -69,6 +69,7 @@ export class M3uCatalog {
   private preparedKind: M3uContentKind | null = null;
   private preparationGeneration = 0;
   private preparing = false;
+  private refreshing = false;
   private current: Channel | null = null;
   private currentSeries: M3uSeries | null = null;
   private selectedSeason = 0;
@@ -86,6 +87,7 @@ export class M3uCatalog {
   constructor(
     private container: HTMLElement,
     private onPlay: (channel: Channel, resume: boolean) => void,
+    private onRefresh?: () => Promise<void>,
   ) {
     this.nav = new SpatialNav(container, (element) => this.onFocusChanged(element));
     this.itemSearch = new WorkerListSearch(
@@ -124,6 +126,10 @@ export class M3uCatalog {
         this.toggleWatchlistFilter();
         return;
       }
+      if (element.closest<HTMLElement>('[data-m3u-refresh]')) {
+        this.refreshSource();
+        return;
+      }
       const category = element.closest<HTMLElement>('[data-m3u-category]');
       if (category) {
         this.selectCategory(category.dataset.m3uCategory ?? '');
@@ -154,6 +160,7 @@ export class M3uCatalog {
   }
 
   open(channels: Channel[], kind: M3uContentKind): void {
+    this.container.setAttribute('data-self-activate', '');
     const generation = ++this.preparationGeneration;
     this.itemSearch.release();
     this.current = null;
@@ -192,6 +199,7 @@ export class M3uCatalog {
   }
 
   deactivate(): void {
+    this.container.removeAttribute('data-self-activate');
     this.queryGeneration++;
     this.queryPending = false;
     this.itemSearch.release();
@@ -243,6 +251,10 @@ export class M3uCatalog {
         this.toggleWatchlistFilter();
         return;
       }
+      if (this.nav.focused?.dataset.m3uRefresh !== undefined) {
+        this.refreshSource();
+        return;
+      }
       const item = this.nav.focused?.dataset.m3uItem;
       const selected = item ? this.items.find(entry => entry.id === item) : null;
       if (selected) this.openItem(selected);
@@ -259,6 +271,17 @@ export class M3uCatalog {
     else if (this.current) this.renderDetail();
     else if (this.currentSeries) this.renderSeriesDetail();
     else this.render();
+  }
+
+  private refreshSource(): void {
+    if (!this.onRefresh || this.refreshing) return;
+    this.refreshing = true;
+    this.render();
+    const complete = () => {
+      this.refreshing = false;
+      this.render();
+    };
+    void this.onRefresh().then(complete, complete);
   }
 
   private selectCategory(category: string): void {
@@ -510,6 +533,12 @@ export class M3uCatalog {
             <button data-focusable data-m3u-watchlist class="${this.watchlistOnly ? 'active' : ''}">
               ${t('common.watchlist')}
             </button>
+            ${this.onRefresh ? html`
+              <button data-focusable data-m3u-refresh
+                      aria-disabled="${this.refreshing ? 'true' : 'false'}">
+                ${this.refreshing ? t('home.refreshing') : t('common.refresh')}
+              </button>
+            ` : ''}
           </div>
         </div>
         <div class="m3u-catalog-scroll">

@@ -3,6 +3,8 @@ import {
   parseXmltvDate,
   parseXmltvOffsetMinutes,
   formatTime,
+  formatLocalTime,
+  formatLocalDateTime,
   formatDayLabel,
   displayDayKey,
   startOfDisplayDay,
@@ -104,6 +106,25 @@ describe('formatTime', () => {
   it('renders midnight as 00:xx, never 24:xx', () => {
     expect(formatTime(new Date(2024, 0, 2, 0, 0))).toBe('00:00');
     expect(formatTime(new Date(2024, 0, 2, 0, 30))).toBe('00:30');
+  });
+});
+
+describe('local wall-clock formatting', () => {
+  it('always renders local clock values in 24-hour form', () => {
+    const morning = new Date(2024, 0, 2, 9, 5, 7);
+    const evening = new Date(2024, 0, 2, 21, 45, 9);
+
+    expect(formatLocalTime(morning)).toBe('09:05');
+    expect(formatLocalTime(evening)).toBe('21:45');
+    expect(formatLocalDateTime(morning)).toMatch(/09:05:07$/);
+    expect(formatLocalDateTime(evening)).toMatch(/21:45:09$/);
+    expect(formatLocalDateTime(evening)).not.toMatch(/AM|PM/i);
+  });
+
+  it('renders midnight as 00 rather than 24', () => {
+    const midnight = new Date(2024, 0, 2, 0, 30, 0);
+    expect(formatLocalTime(midnight)).toBe('00:30');
+    expect(formatLocalDateTime(midnight)).toMatch(/00:30:00$/);
   });
 });
 

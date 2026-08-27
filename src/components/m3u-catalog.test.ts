@@ -76,9 +76,11 @@ describe('M3uCatalog', () => {
   it('releases the M3U worker index when its view is left', () => {
     const catalog = new M3uCatalog(container, onPlay);
     catalog.open([movie()], 'movie');
+    expect(container.hasAttribute('data-self-activate')).toBe(true);
     catalog.deactivate();
 
     expect(catalogSearchMock.release).toHaveBeenCalled();
+    expect(container.hasAttribute('data-self-activate')).toBe(false);
   });
 
   it('offers saved progress and passes the selected start mode to playback', () => {
@@ -273,5 +275,33 @@ describe('M3uCatalog', () => {
     catalog.open(movies, 'movie');
     expect(container.querySelector('.catalog-loading')).toBeNull();
     expect(container.querySelector('[data-m3u-item-index="0"]')).not.toBeNull();
+  });
+
+  it('shows source refresh only when configured and prevents duplicate requests', async () => {
+    const withoutRefresh = new M3uCatalog(container, onPlay);
+    withoutRefresh.open([movie()], 'movie');
+    expect(container.querySelector('[data-m3u-refresh]')).toBeNull();
+
+    let finishRefresh: (() => void) | null = null;
+    const onRefresh = vi.fn(() => new Promise<void>(resolve => {
+      finishRefresh = resolve;
+    }));
+    const catalog = new M3uCatalog(container, onPlay, onRefresh);
+    catalog.open([movie()], 'movie');
+
+    (container.querySelector('[data-m3u-refresh]') as HTMLElement).click();
+    expect(onRefresh).toHaveBeenCalledOnce();
+    expect(container.querySelector('[data-m3u-refresh]')?.getAttribute('aria-disabled')).toBe('true');
+
+    const button = container.querySelector<HTMLElement>('[data-m3u-refresh]')!;
+    button.click();
+    button.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));
+    catalog.handleAction('select');
+    expect(onRefresh).toHaveBeenCalledOnce();
+
+    finishRefresh?.();
+    await vi.waitFor(() => expect(
+      container.querySelector('[data-m3u-refresh]')?.getAttribute('aria-disabled'),
+    ).toBe('false'));
   });
 });

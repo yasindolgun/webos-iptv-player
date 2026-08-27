@@ -55,3 +55,54 @@ test('M3U catalog search filters virtual movie results', async ({ page }) => {
   await expect(tiles).toHaveCount(1);
   await expect(tiles).toContainText('Film Two');
 });
+
+test('M3U catalog refresh fetches only once and reopens with fresh items', async ({ page }) => {
+  let requests = 0;
+  const refreshed = M3U.replace('Film Two', 'Film Three');
+  await page.route('**/playlist.m3u', (route) => {
+    requests++;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/x-mpegurl',
+      body: requests === 1 ? M3U : refreshed,
+    });
+  });
+  await seedPlaylist(page);
+  await page.goto('/');
+  await expect(page.locator('#view-channels')).toBeVisible();
+  await enterTab(page, 'movies');
+
+  await expect(page.locator('#view-movies')).toContainText('Film Two');
+  await page.locator('#view-movies [data-m3u-refresh]').click();
+
+  await expect(page.locator('#view-movies')).toContainText('Film Three');
+  await expect(page.locator('#view-movies')).not.toContainText('Film Two');
+  expect(requests).toBe(2);
+  expect(await page.evaluate(() => localStorage.getItem('iptv_playlist_last_refresh_at'))).toBeNull();
+});
+
+test('Settings refreshes only a saved unchanged M3U source', async ({ page }) => {
+  let requests = 0;
+  await page.route('**/playlist.m3u', (route) => {
+    requests++;
+    return route.fulfill({ status: 200, contentType: 'application/x-mpegurl', body: M3U });
+  });
+  await seedPlaylist(page);
+  await page.goto('/');
+  await expect(page.locator('#view-channels')).toBeVisible();
+  await enterTab(page, 'settings');
+
+  const row = page.locator('#playlist-entries [data-source-entry]').first();
+  const name = row.locator('.playlist-name');
+  const refresh = row.locator('.refresh-playlist');
+  await expect(refresh).toBeEnabled();
+
+  await name.fill('Changed');
+  await expect(refresh).toBeDisabled();
+  await name.fill('Test');
+  await expect(refresh).toBeEnabled();
+  await refresh.click();
+
+  await expect.poll(() => requests).toBe(2);
+  expect(await page.evaluate(() => localStorage.getItem('iptv_playlist_last_refresh_at'))).toBeNull();
+});

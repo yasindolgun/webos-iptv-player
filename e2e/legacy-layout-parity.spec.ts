@@ -634,7 +634,7 @@ async function walk(
       const normalizeFrame = async (): Promise<void> => {
         if (screen.name !== 'reminder-prompt') return;
         await Promise.all([page, legacy.page].map((p) =>
-          p.locator('.playing-indicator').evaluateAll((items) => {
+          p.locator('.playing-indicator, .channel-health-dot').evaluateAll((items) => {
             items.forEach((item) => item.remove());
           })));
       };

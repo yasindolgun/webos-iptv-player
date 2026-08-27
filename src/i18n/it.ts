@@ -14,6 +14,7 @@ export const IT_MESSAGES = {
   'common.continue': 'Continua',
   'common.pause': 'Pausa',
   'common.watchlist': 'La mia lista',
+  'common.refresh': 'Aggiorna',
   'common.channels': 'Canali',
   'common.groups': 'Gruppi',
   'common.movies': 'Film',

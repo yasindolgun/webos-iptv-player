@@ -83,6 +83,7 @@ class App {
   private bundledServiceStarting = false;
   private deviceSetupSync = Promise.resolve();
   private epgRefreshTimer: ReturnType<typeof setInterval> | null = null;
+  private dataRefreshPromise: Promise<import('./components/settings').SettingsRefreshResult> | null = null;
 
   async init(): Promise<void> {
     const done = log.time('init');
@@ -127,14 +128,18 @@ class App {
       onAction: (action) => this.handleHomeAction(action),
       onBack: () => this.requestExit(),
     });
-    this.player = new Player(this.views.player, () => {
-      this.channelList.render();
-      this.goBack('channels');
-    }, (idx, catchupStart) => this.channelList.setPlaying(idx, catchupStart),
-    () => !this.sidebar.visible && !this.menu.visible,
-    () => {
-      this.sidebar.refresh();
-    });
+    this.player = new Player(
+      this.views.player,
+      () => {
+        this.channelList.render();
+        this.goBack('channels');
+      },
+      (idx, catchupStart) => this.channelList.setPlaying(idx, catchupStart),
+      () => !this.sidebar.visible && !this.menu.visible,
+      () => {
+        this.sidebar.refresh();
+      },
+    );
     this.epgGrid = new EpgGrid(
       this.views.epg,
       (idx, catchup) => this.playChannel(idx, catchup),
@@ -155,7 +160,7 @@ class App {
       (action) => this.onSettingsSaved(action),
       () => this.player.syncCurrentIndex(),
       () => this.openReminderManager('settings'),
-      (onProgress) => this.refreshDataFromSettings(onProgress),
+      (onProgress, sourceIds) => this.refreshDataFromSettings(onProgress, sourceIds),
     );
 
     this.player.init($('#video-player') as HTMLVideoElement);
@@ -208,10 +213,10 @@ class App {
     });
     this.m3uMovies = new M3uCatalog(this.views.movies, (channel, resume) => {
       this.playM3uVod(channel, resume, 'movies');
-    });
+    }, () => this.refreshCatalogSource('movies'));
     this.m3uSeries = new M3uCatalog(this.views.series, (channel, resume) => {
       this.playM3uVod(channel, resume, 'series');
-    });
+    }, () => this.refreshCatalogSource('series'));
     this.search = new Search(this.views.search, {
       onRevealTabBar: () => this.tabBar.focus(),
       onBack: () => this.goLive(),
@@ -853,6 +858,9 @@ class App {
     this.home.setRefreshing(true);
     try {
       await this.refreshDataFromSettings(() => undefined);
+    } catch (err) {
+      log.error('Home data refresh failed', err);
+      showToast(t('settings.refreshFailed'));
     } finally {
       this.home.setRefreshing(false);
       this.home.update(this.homeState());
@@ -964,17 +972,36 @@ class App {
     this.channelList.render();
   }
 
-  private async refreshDataFromSettings(
+  private refreshDataFromSettings(
     onProgress: (progress: import('./services/playlist-service').PlaylistRefreshProgress) => void,
+    sourceIds?: readonly string[],
+  ): Promise<import('./components/settings').SettingsRefreshResult> {
+    if (this.dataRefreshPromise) {
+      return Promise.reject(new Error('Data refresh already in progress'));
+    }
+    const promise = this.performDataRefresh(onProgress, sourceIds);
+    this.dataRefreshPromise = promise;
+    const clear = () => {
+      if (this.dataRefreshPromise === promise) this.dataRefreshPromise = null;
+    };
+    void promise.then(clear, clear);
+    return promise;
+  }
+
+  private async performDataRefresh(
+    onProgress: (progress: import('./services/playlist-service').PlaylistRefreshProgress) => void,
+    sourceIds?: readonly string[],
   ): Promise<import('./components/settings').SettingsRefreshResult> {
     const done = log.time('refreshDataFromSettings');
     this.stopEpgRefresh();
     try {
-      const report = await PlaylistService.refreshWithReport(onProgress);
+      const report = sourceIds
+        ? await PlaylistService.refreshSources(sourceIds, onProgress)
+        : await PlaylistService.refreshWithReport(onProgress);
       await ChannelHealthService.initialize();
       const epgSources = this.epgSources();
       if (epgSources.length) {
-        await EpgService.load(epgSources, PlaylistService.allChannels);
+        await EpgService.load(epgSources, PlaylistService.allChannels, sourceIds);
         this.applyDisplayTz();
         void this.search.refreshPrograms();
       } else {
@@ -1005,7 +1032,7 @@ class App {
       }
 
       const completedAt = Date.now();
-      if (!report.failedSourceIds.length && report.sourceCount) {
+      if (!sourceIds && !report.failedSourceIds.length && report.sourceCount) {
         StorageService.setLastPlaylistRefreshAt(completedAt);
       }
       return { report, completedAt };
@@ -1080,6 +1107,8 @@ class App {
     this.setCatalogSwitcher(section, source);
     this.m3uCatalogSection = null;
     if (source.kind === 'xtream') {
+      if (section === 'movies') this.m3uMovies.deactivate();
+      else this.m3uSeries.deactivate();
       StorageService.setSelectedXtreamAccountId(source.playlistId);
       const account = StorageService.getPlaylists().find(entry =>
         entry.id === source.playlistId && entry.source === 'xtream' && entry.xtream);
@@ -1098,6 +1127,26 @@ class App {
     const channels = PlaylistService.getByContentKind(kind, source.playlistId);
     if (section === 'movies') this.m3uMovies.open(channels, kind);
     else this.m3uSeries.open(channels, kind);
+  }
+
+  private async refreshCatalogSource(section: CatalogSection): Promise<void> {
+    const source = this.activeCatalogSource(section);
+    if (!source || source.kind !== 'm3u') return;
+    try {
+      await this.refreshDataFromSettings(() => undefined, [source.playlistId]);
+      this.openCatalog(section);
+      showToast(t('settings.refreshComplete'));
+    } catch (err) {
+      log.error(
+        'Catalog source refresh failed',
+        'event=m3u.catalog.refresh.failed',
+        `operation=${section}`,
+        `source=${source.playlistId}`,
+        err,
+      );
+      showToast(t('settings.refreshFailed'));
+      throw err;
+    }
   }
 
   private activeXtreamAccount(): PlaylistEntry | null {

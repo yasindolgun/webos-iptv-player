@@ -85,6 +85,19 @@ export function formatTime(date: Date): string {
   return `${pad2(p.hours)}:${pad2(p.minutes)}`;
 }
 
+export function formatLocalTime(date: Date): string {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+export function formatLocalDateTime(date: Date): string {
+  const day = new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).format(date);
+  return `${day} ${formatLocalTime(date)}:${pad2(date.getSeconds())}`;
+}
+
 // Weekday + MM/DD label for a day, in the active display timezone.
 export function formatDayLabel(date: Date): { weekday: string; date: string } {
   const p = displayParts(date);

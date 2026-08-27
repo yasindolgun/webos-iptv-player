@@ -317,6 +317,68 @@ describe('PlaylistService.refresh', () => {
     );
   });
 
+  it('refreshes requested sources and preserves every skipped source', async () => {
+    await PlaylistService.refresh();
+    fetchTextMock.mockClear();
+
+    const report = await PlaylistService.refreshSources(['a']);
+
+    expect(report.sourceCount).toBe(1);
+    expect(fetchTextMock).toHaveBeenCalledOnce();
+    expect(fetchTextMock).toHaveBeenCalledWith('http://host1/p1.m3u', 60000);
+    expect(report.channels.map(channel => channel.name)).toEqual([
+      'Alpha', 'Bravo', 'Charlie',
+    ]);
+    expect(PlaylistService.epgSources).toEqual([
+      { url: 'http://host1:8080/epg.xml', playlistIds: ['a'], kind: 'm3u' },
+    ]);
+  });
+
+  it('keeps earlier-source metadata when refreshing a duplicate in a later source', async () => {
+    await PlaylistService.refresh();
+    fetchTextMock.mockImplementation((url: string) => Promise.resolve(url.includes('p2')
+      ? P2.replace('Bravo Dup', 'Changed Duplicate')
+      : P1));
+
+    await PlaylistService.refreshSources(['b']);
+
+    const duplicate = PlaylistService.channels.find(channel => channel.url === 'http://stream/u2');
+    expect(duplicate?.name).toBe('Bravo');
+    expect(duplicate?.playlistIds).toEqual(['a', 'b']);
+  });
+
+  it('rejects unavailable or disabled source ids without mutating loaded data', async () => {
+    await PlaylistService.refresh();
+    const channels = PlaylistService.allChannels;
+    const epgSources = PlaylistService.epgSources;
+    fetchTextMock.mockClear();
+    storageMock.getPlaylists.mockReturnValue([
+      { id: 'a', name: 'P1', url: 'http://host1/p1.m3u', enabled: false },
+      { id: 'b', name: 'P2', url: 'http://host2/p2.m3u' },
+    ]);
+
+    await expect(PlaylistService.refreshSources(['a']))
+      .rejects.toThrow('Playlist sources unavailable: a');
+    await expect(PlaylistService.refreshSources(['missing']))
+      .rejects.toThrow('Playlist sources unavailable: missing');
+
+    expect(PlaylistService.allChannels).toBe(channels);
+    expect(PlaylistService.epgSources).toBe(epgSources);
+    expect(fetchTextMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty source selection without resetting loaded data', async () => {
+    await PlaylistService.refresh();
+    const channels = PlaylistService.allChannels;
+    fetchTextMock.mockClear();
+
+    await expect(PlaylistService.refreshSources([]))
+      .rejects.toThrow('No playlist sources requested');
+
+    expect(PlaylistService.allChannels).toBe(channels);
+    expect(fetchTextMock).not.toHaveBeenCalled();
+  });
+
   it('logs the loaded catalog size for a diagnostics report', async () => {
     const info = vi.spyOn(console, 'log').mockImplementation(() => {});
     await PlaylistService.refresh();

@@ -14,6 +14,7 @@ export const UK_MESSAGES = {
   'common.continue': 'Продовжити',
   'common.pause': 'Пауза',
   'common.watchlist': 'Переглянути пізніше',
+  'common.refresh': 'Оновити',
   'common.channels': 'Канали',
   'common.groups': 'Групи',
   'common.movies': 'Фільми',

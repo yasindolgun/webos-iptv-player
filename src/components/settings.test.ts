@@ -161,6 +161,7 @@ import { Settings } from './settings';
 import { setLocale } from '../i18n';
 import { PlaylistService } from '../services/playlist-service';
 import { EpgService } from '../services/epg-service';
+import { ReminderService } from '../services/reminder-service';
 import { channelKey, legacyChannelKey } from '../utils/channel';
 
 let container: HTMLElement;
@@ -1072,6 +1073,18 @@ describe('Settings.save', () => {
     expect(storageMock.setEpgUrl).toHaveBeenCalledWith('http://epg');
     expect(storageMock.setAutoPlay).toHaveBeenCalledWith(true);
     expect(onSave).toHaveBeenCalledWith('reload'); // playlist + EPG changed
+  });
+
+  it('backfills legacy reminder source ids before replacing playlists', () => {
+    state.playlists = [{ id: 'p1', name: 'P', url: 'http://host/a' }];
+    settings.render();
+    container.querySelector<HTMLInputElement>('.playlist-url')!.value = 'http://host/b';
+
+    click('#save-settings');
+
+    expect(ReminderService.backfillSourceIds).toHaveBeenCalledOnce();
+    expect(vi.mocked(ReminderService.backfillSourceIds).mock.invocationCallOrder[0])
+      .toBeLessThan(storageMock.setPlaylists.mock.invocationCallOrder[0]);
   });
 
   it("reloads when a playlist is re-id'd (same name+url, new id)", () => {

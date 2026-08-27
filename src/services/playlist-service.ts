@@ -4,6 +4,7 @@ import {
   type ChannelGroupId,
   type EpgSource,
   type ParsedPlaylist,
+  type PlaylistEntry,
   type PlaylistTab,
 } from '../types';
 import { parseM3U } from '../parsers/m3u-parser';
@@ -208,8 +209,37 @@ class PlaylistServiceImpl {
   async refreshWithReport(
     onProgress?: (progress: PlaylistRefreshProgress) => void,
   ): Promise<PlaylistRefreshReport> {
+    return this.refreshConfiguredSources(undefined, onProgress);
+  }
+
+  async refreshSources(
+    sourceIds: readonly string[],
+    onProgress?: (progress: PlaylistRefreshProgress) => void,
+  ): Promise<PlaylistRefreshReport> {
+    return this.refreshConfiguredSources(sourceIds, onProgress);
+  }
+
+  private async refreshConfiguredSources(
+    sourceIds: readonly string[] | undefined,
+    onProgress?: (progress: PlaylistRefreshProgress) => void,
+  ): Promise<PlaylistRefreshReport> {
     const done = log.time('refresh');
-    const playlists = StorageService.getPlaylists().filter(isSourceEnabled);
+    const allConfigured = StorageService.getPlaylists().filter(isSourceEnabled);
+    let playlists = allConfigured;
+    let skippedPlaylists: PlaylistEntry[] = [];
+    if (sourceIds) {
+      const requestedIds = Array.from(new Set(sourceIds));
+      const configuredById = new Map(allConfigured.map(source => [source.id, source]));
+      const unavailableIds = requestedIds.filter(id => !configuredById.has(id));
+      if (!requestedIds.length || unavailableIds.length) {
+        throw new Error(!requestedIds.length
+          ? 'No playlist sources requested'
+          : `Playlist sources unavailable: ${unavailableIds.join(', ')}`);
+      }
+      playlists = requestedIds.map(id => configuredById.get(id)!);
+      const requestedSet = new Set(requestedIds);
+      skippedPlaylists = allConfigured.filter(source => !requestedSet.has(source.id));
+    }
     if (!playlists.length) {
       log.info('No playlist sources enabled');
       this.reset();
@@ -439,13 +469,12 @@ class PlaylistServiceImpl {
       onProgress?.({ completed: completedPlaylists, total: playlists.length });
     }
 
-    const playlistRanks = new Map(playlists.map((playlist, index) => [playlist.id, index]));
+    const playlistRanks = new Map(allConfigured.map((playlist, index) => [playlist.id, index]));
     let restoredPlaylists = 0;
-    for (const playlistId of failedPlaylistIds) {
+    const restoreSource = (playlistId: string): boolean => {
       const previousChannels = previousChannelsByPlaylist.get(playlistId) ?? [];
       const previousSources = previousEpgSourcesByPlaylist.get(playlistId) ?? [];
-      if (!previousChannels.length && !previousSources.length) continue;
-      restoredPlaylists++;
+      if (!previousChannels.length && !previousSources.length) return false;
       for (const previous of previousChannels) {
         const existing = byUrl.get(previous.url);
         if (existing) {
@@ -470,6 +499,13 @@ class PlaylistServiceImpl {
       for (const previous of previousSources) {
         addEpgSource(previous.url, playlistId, previous.kind);
       }
+      return true;
+    };
+    for (const skipped of skippedPlaylists) restoreSource(skipped.id);
+    for (const playlistId of failedPlaylistIds) {
+      if (!restoreSource(playlistId)) continue;
+      restoredPlaylists++;
+      const previousChannels = previousChannelsByPlaylist.get(playlistId) ?? [];
       log.warn(
         'Using last successful playlist data after refresh failure',
         'event=playlist.refresh.stale_used',

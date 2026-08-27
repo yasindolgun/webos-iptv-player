@@ -14,6 +14,7 @@ export const ZH_CN_MESSAGES = {
   'common.continue': '继续',
   'common.pause': '暂停',
   'common.watchlist': '稍后观看',
+  'common.refresh': '刷新',
   'common.channels': '频道',
   'common.groups': '分组',
   'common.movies': '电影',

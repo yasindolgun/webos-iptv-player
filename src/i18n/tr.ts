@@ -5,7 +5,7 @@ export const TR_MESSAGES = {
   'common.back': 'Geri', 'common.off': 'Kapalı', 'common.clear': 'Temizle',
   'common.reset': 'Sıfırla', 'common.loading': 'Yükleniyor…',
   'common.resume': 'Devam et', 'common.continue': 'Devam', 'common.pause': 'Duraklat',
-  'common.watchlist': 'İzleme Listesi', 'common.channels': 'Kanallar',
+  'common.watchlist': 'İzleme Listesi', 'common.refresh': 'Yenile', 'common.channels': 'Kanallar',
   'common.groups': 'Gruplar', 'common.movies': 'Filmler', 'common.series': 'Diziler',
   'common.settings': 'Ayarlar', 'common.search': 'Ara',
   'nav.live': 'Canlı', 'nav.epg': 'Rehber', 'nav.movies': 'Filmler',

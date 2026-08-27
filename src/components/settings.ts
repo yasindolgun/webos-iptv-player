@@ -31,6 +31,7 @@ import { ConfirmationPrompt } from './confirmation-prompt';
 import qrcode from 'qrcode-generator';
 import { createLogger } from '../utils/logger';
 import { localeOptions, t, tp, type LocalePreference, type TextMessageKey } from '../i18n';
+import { formatLocalDateTime } from '../utils/time';
 import {
   APPEARANCE_ICON,
   CAPTIONS_ICON,
@@ -386,8 +387,11 @@ export class Settings {
   private healthProgress: ChannelHealthProgress | null = null;
   private healthPaused = false;
   private healthResume: (() => void) | null = null;
-  private onRefreshData: (onProgress: (progress: PlaylistRefreshProgress) => void)
-    => Promise<SettingsRefreshResult>;
+  private onRefreshData: (
+    onProgress: (progress: PlaylistRefreshProgress) => void,
+    sourceIds?: readonly string[],
+  ) => Promise<SettingsRefreshResult>;
+  private refreshWasTargeted = false;
   private refreshState: RefreshState = {
     running: false,
     progress: null,
@@ -400,8 +404,10 @@ export class Settings {
     onSave: (action: SaveAction) => void | Promise<void>,
     onChannelsChanged: () => void = () => {},
     onManageReminders: () => void = () => {},
-    onRefreshData: (onProgress: (progress: PlaylistRefreshProgress) => void)
-      => Promise<SettingsRefreshResult> = async () => ({
+    onRefreshData: (
+      onProgress: (progress: PlaylistRefreshProgress) => void,
+      sourceIds?: readonly string[],
+    ) => Promise<SettingsRefreshResult> = async () => ({
         report: await PlaylistService.refreshWithReport(),
         completedAt: Date.now(),
       }),
@@ -454,7 +460,6 @@ export class Settings {
     const origRender = this.render.bind(this);
     this.render = () => { origRender(); attachCancelListener(); };
 
-
     // Enter on input: commit and move to next focusable element in DOM order.
     // Attached once on the persistent container (render() replaces innerHTML).
     this.container.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -466,6 +471,13 @@ export class Settings {
         const next = all[idx + 1];
         if (next) this.nav.focus(next);
       }
+    });
+
+    this.container.addEventListener('input', (e: Event) => {
+      const input = e.target as HTMLElement;
+      if (!input.classList.contains('playlist-name')
+          && !input.classList.contains('playlist-url')) return;
+      this.updatePlaylistRefreshAvailability(input.closest<HTMLElement>('[data-source-entry]'));
     });
 
     this.container.addEventListener('input', (e: Event) => {
@@ -606,6 +618,13 @@ export class Settings {
                                  data-focusable value="${pl.url || ''}">
                         </div>
                         ${sourceToggle(isSourceEnabled(pl))}
+                        ${isSourceEnabled(pl) ? html`
+                          <button class="btn btn-secondary refresh-playlist"
+                                  data-focusable>${t('common.refresh')}</button>
+                        ` : html`
+                          <button class="btn btn-secondary refresh-playlist"
+                                  disabled>${t('common.refresh')}</button>
+                        `}
                         <button class="btn btn-danger remove-playlist" data-focusable>${t('common.remove')}</button>
                       </div>
                     `)}`
@@ -923,7 +942,7 @@ export class Settings {
         const details = source.lastUpdatedAt === null
           ? t('settings.epgSourceNoData')
           : t('settings.epgSourceUpdated', {
-              time: new Date(source.lastUpdatedAt).toLocaleString(),
+              time: formatLocalDateTime(new Date(source.lastUpdatedAt)),
             });
         return html`<div class="epg-source-diagnostic" data-key="${source.url}">
           <div class="epg-source-diagnostic-name">${name}</div>
@@ -1086,7 +1105,7 @@ export class Settings {
     }
 
     const result = this.refreshState.result;
-    const lastRefreshAt = result && !result.report.failedSourceIds.length
+    const lastRefreshAt = result && !this.refreshWasTargeted && !result.report.failedSourceIds.length
       ? result.completedAt
       : StorageService.getLastPlaylistRefreshAt();
     const failedSourceIds = result?.report.failedSourceIds ?? [];
@@ -1094,7 +1113,7 @@ export class Settings {
     const failedNames = failedSourceIds.map(id => names.get(id) || t('settings.refreshSource'));
     return html`
       <div class="refresh-status-title">${lastRefreshAt
-    ? t('settings.lastUpdated', { time: new Date(lastRefreshAt).toLocaleString() })
+    ? t('settings.lastUpdated', { time: formatLocalDateTime(new Date(lastRefreshAt)) })
     : t('settings.notRefreshedYet')}</div>
       ${failedNames.length ? html`
         <div class="refresh-status-error">${tp('settings.refreshSourcesFailed', failedNames.length)}</div>
@@ -1114,17 +1133,23 @@ export class Settings {
     button.textContent = this.refreshState.running
       ? t('settings.refreshingData')
       : t('settings.refreshAll');
+    this.container.querySelectorAll<HTMLElement>('.refresh-playlist').forEach(sourceButton => {
+      this.updatePlaylistRefreshAvailability(
+        sourceButton.closest<HTMLElement>('[data-source-entry]'),
+      );
+    });
   }
 
-  private async refreshData(): Promise<void> {
+  private async refreshData(sourceIds?: readonly string[]): Promise<void> {
     if (this.refreshState.running) return;
+    this.refreshWasTargeted = Boolean(sourceIds);
     this.refreshState = { running: true, progress: null, result: null, error: false };
     this.updateRefreshStatus();
     try {
       const result = await this.onRefreshData((progress) => {
         this.refreshState.progress = progress;
         this.updateRefreshStatus();
-      });
+      }, sourceIds);
       this.refreshState = { running: false, progress: null, result, error: false };
       this.updateEpgSourceDiagnostics();
       showToast(t('settings.refreshComplete'));
@@ -1143,6 +1168,8 @@ export class Settings {
       this.addPlaylistEntry();
     } else if (el.classList.contains('remove-playlist')) {
       this.removePlaylistEntry(el);
+    } else if (el.classList.contains('refresh-playlist')) {
+      this.refreshSource(el);
     } else if (el.id === 'add-xtream') {
       this.addXtreamEntry();
     } else if (el.classList.contains('remove-xtream')) {
@@ -1785,6 +1812,36 @@ export class Settings {
     if (label) label.textContent = t(enabled ? 'settings.on' : 'settings.off');
     button.closest<HTMLElement>('[data-source-entry]')
       ?.classList.toggle('source-disabled', !enabled);
+    this.updatePlaylistRefreshAvailability(
+      button.closest<HTMLElement>('[data-source-entry]'),
+    );
+  }
+
+  private refreshSource(button: HTMLElement): void {
+    if ((button as HTMLButtonElement).disabled) return;
+    const sourceId = button.closest<HTMLElement>('[data-source-entry]')?.dataset.id;
+    if (!sourceId) return;
+    void this.refreshData([sourceId]);
+  }
+
+  private updatePlaylistRefreshAvailability(row: HTMLElement | null): void {
+    if (!row) return;
+    const button = row.querySelector<HTMLButtonElement>('.refresh-playlist');
+    if (!button) return;
+    const stored = StorageService.getPlaylists().find(source =>
+      source.id === row.dataset.id && source.source !== 'xtream' && source.source !== 'upload');
+    const enabled = row.querySelector<HTMLElement>('.source-toggle')?.dataset.enabled === 'true';
+    const name = row.querySelector<HTMLInputElement>('.playlist-name')?.value.trim() ?? '';
+    const url = row.querySelector<HTMLInputElement>('.playlist-url')?.value.trim() ?? '';
+    const available = !this.refreshState.running
+      && stored !== undefined
+      && enabled
+      && isSourceEnabled(stored)
+      && name === (stored.name || '')
+      && url === stored.url;
+    button.disabled = !available;
+    if (available) button.setAttribute('data-focusable', '');
+    else button.removeAttribute('data-focusable');
   }
 
   /**
