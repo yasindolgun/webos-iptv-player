@@ -17,8 +17,9 @@ types**, how each maps to a render path, and the device-verified behavior behind
 - HLS can carry **three in-manifest subtitle types** — **WebVTT renditions**, **CEA-608/708**, and
   **TTML/IMSC** (§1). They take **two render paths** on webOS: WebVTT is **self-rendered** by the app
   and drawn by Blink; 608/708 and TTML/IMSC ride the **native caption compositor**, driven over Luna.
-- Subtitles are **off by default** (unless a rendition is `FORCED=YES`); the choice — including an
-  explicit *off* — is **remembered per channel** (§2). Real names come from the master `EXT-X-MEDIA`.
+- Subtitles follow the global default (**forced only**, **off**, or a preferred language); the choice —
+  including an explicit *off* — is **remembered per channel** and takes priority (§2). Real names come
+  from the master `EXT-X-MEDIA`.
 - **Status:** WebVTT self-render (§3) and CEA-608/708 (§5) are **implemented and ✅ verified on device**;
   TTML/IMSC is **✅ verified to draw** but its player wiring is **deferred** (§6).
 
@@ -76,23 +77,25 @@ runs the **same on-device and in the preview** and gives `::cue` styling — it'
 
 Cross-cutting across types; helpers in `src/utils/subtitle-tracks.ts`; mirrors the audio-track feature.
 
-- **Off unless forced** — `chooseSubtitleIndex(options, pref)`:
+- **Remembered pick, then global default** — `chooseSubtitleIndex(options, pref, defaultMode,
+  preferredLanguage)`:
 
-  | Saved pref | Result |
+  | Saved/global preference | Result |
   |---|---|
-  | none | the `FORCED=YES` track if any, else **off** |
-  | explicit *off* | **off** (even if a forced track exists) |
-  | a track (by name → language) | that track; else fall back to forced / off |
+  | saved explicit *off* | **off**, regardless of the global default |
+  | saved track (by name → language) | that track; if unavailable, use the global default |
+  | global **off** | **off** |
+  | global preferred language | matching track; else forced, provider default, or **off** |
+  | global **forced only** | the `FORCED=YES` track if any, else **off** |
 
-  `DEFAULT=YES` does **not** auto-enable subtitles; only `FORCED=YES` turns them on without a user choice.
-  (Per spec `DEFAULT` marks the rendition to prefer *once subtitles are on*, but the app doesn't auto-prefer
-  it — a subtitle is only ever enabled by a `FORCED` rendition or an explicit per-track pick, so `isDefault`
-  is parsed but unused in subtitle selection.)
+  `DEFAULT=YES` does **not** auto-enable subtitles under the default forced-only policy. It is only a
+  safe fallback when the user explicitly selected a preferred subtitle language that is unavailable.
+  Explicit off is sticky.
 - **Switch:** on webOS the WebVTT path **self-renders** the chosen rendition — a pick starts
   `HlsSubtitles` on it (matched by name → language), *off* calls `stop`; the preview uses
   `hls.subtitleTrack = i` (`-1` = off) with `hls.subtitleDisplay`. Pipeline captions (608) toggle via Luna
   `setSubtitleEnable` (§4–5). On tune-in the remembered pick — or the `FORCED` track, else off — is
-  re-applied through `chooseSubtitleIndex` (`applySelfRenderSelection`).
+  re-applied through `chooseSubtitleIndex` (`applySelfRenderSelection`) before the global default.
 - **Per-channel memory:** a `SubtitlePref` `{ off, name, lang, cc? }` keyed by `channelKey`, re-applied on
   tune-in. It records one choice: an explicit *off* (`off: true`) — which lets "I turned subtitles off
   here" survive a re-tune; a WebVTT rendition (`off: false` + `name`/`lang`); or the closed-caption toggle

@@ -9,7 +9,7 @@ downloaded data that can be recreated.
 | Data | Examples | Where it is kept | Removed by Clear Cache? |
 | --- | --- | --- | --- |
 | Setup and preferences | Playlist and EPG sources, Xtream account details, theme, language, text size, time zone, active account and channel | Small app-private browser storage | No |
-| Personal data | Favorites, reminders, channel order and names, hidden channels, Watchlist, Recently Watched, playback progress, audio and subtitle choices | App-private database on the TV | No |
+| Personal data | Favorites, reminders, channel order and names, hidden channels, Watchlist, Recently Watched, playback progress, episode completion, audio and subtitle choices | App-private database on the TV | No |
 | Downloaded cache | Parsed playlists, program guides, movie and series catalogs, media metadata, downloaded subtitles, channel health results | App-private database on the TV | Yes |
 | LAN-uploaded playlists | Original M3U files uploaded from another device | Private storage owned by the bundled upload service | No |
 
@@ -73,7 +73,8 @@ flowchart LR
   requests, and transaction completion.
 - `bundled-service/src/lan/` runs in the separate Node service because the
   webOS browser sandbox cannot listen on the LAN. `setup/` owns phone setup;
-  `upload/` owns persisted M3U files.
+  `upload/` owns persisted M3U files; `backup/` holds only the short-lived
+  credential-free archive and pending restore requests.
 
 ### localStorage
 
@@ -88,9 +89,11 @@ This is the complete active key inventory:
 | `iptv_last_channel` | `number` | Last played channel's array index | Navigation state |
 | `iptv_last_channel_key` | `string` | Stable key of the last played channel; survives source reordering | Navigation state |
 | `iptv_selectedXtream` | `string \| null` | Account id used by Movies, Series, and Search | Navigation state |
+| `iptv_xtream_account_status` | `Record<string, XtreamAccountStatusSnapshot>` | Credential-free state, expiry, connection counts, and checked time keyed by account id | Small derived state |
 | `iptv_show_hidden_channels` | `boolean` | Whether normal lists reveal hidden channels in a dimmed state | Preference |
 | `iptv_auto_play` | `boolean` | Whether startup automatically plays the selected channel | Preference |
 | `iptv_locale` | `string` | Explicit interface locale or `system` | Preference |
+| `iptv_playback_track_preferences` | `PlaybackTrackPreferences` | Global preferred audio language and subtitle off/forced/language fallback | Preference |
 | `iptv_theme` | `string` | Selected application theme id | Preference |
 | `iptv_text_size` | `string` | Selected text-scale id | Preference |
 | `iptv_overlay_style` | `dark \| frosted` | Player OSD/sidebar/menu glass style | Preference |
@@ -129,6 +132,7 @@ origin, so object-store names do not repeat the `iptv_` prefix.
 | `channel-state` | `offset:<channel-key>` | None | Subtitle timing adjustment in seconds |
 | `watchlist` | `watch:<account-id>\|<vod-or-series>\|<item-id>` | `scope` | Name, poster, rating, category, extension, and added time; scope is account and content kind |
 | `playback-progress` | `resume:<account-id>\|<vod-or-episode>\|<item-id>` | `expiresAt`, `updatedAt` | Position, duration, title/poster/extension snapshot, optional autoplay queue and Watchlist owner |
+| `playback-progress` | `completed:<account-id>\|<episode-id>` | `updatedAt` | Account and series ids, episode id, and completion time; completing an episode deletes its resume record in the same transaction |
 | `playback-progress` | `catchup:<channel-key>\|<program-start>` | `expiresAt`, `updatedAt` | EPG source URL, program start/stop, title/description/icon snapshot, position, completion, update time, and computed expiry |
 | `recently-watched` | `live:<channel-key>` | `updatedAt` | Channel key and last-confirmed watch time; capped to 30 live entries |
 | `online-sub-picks` | `pick:<account-id>\|<vod-or-episode>\|<item-id>` | None | Provider id, provider result id, display name, language, and subtitle format |
@@ -222,8 +226,19 @@ invalidates a structurally valid but now unrelated parsed playlist.
 Reads update `lastAccessedAt` in a best-effort follow-up transaction. Failure to
 write this bookkeeping does not turn a valid cache hit into a miss.
 
-The app does not provide account-based cloud sync or a remote backup of this
-data. Playlist providers and subtitle services still receive the requests
+The app does not provide account-based cloud sync. While the app is
+foregrounded, the paired LAN setup page can download and restore a versioned
+JSON archive of selected favorites, channel customization and EPG mappings,
+EPG offsets, Watchlist, appearance/playback preferences, Recently Watched,
+resume history, and episode completion history. Merge is idempotent by stable
+record key; Replace affects only the selected groups. Unsupported schema
+versions and malformed records are rejected before mutation.
+
+The archive deliberately excludes playlists, Xtream accounts and passwords,
+credential-bearing URLs, online-subtitle keys and tokens, downloaded
+subtitles, caches, reminders, uploaded M3U files, poster/icon URLs, and
+transient playback queues. It exists in service memory only for the active LAN
+session. Playlist providers and subtitle services still receive the requests
 needed to download their content.
 
 Xtream credentials and source URLs are stored in the app's private webOS

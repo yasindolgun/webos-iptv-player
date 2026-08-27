@@ -95,6 +95,9 @@ describe('GET /setup', () => {
     expect(body).toContain('data-message="setupSources"');
     expect(body).toContain('setupSources: "设置节目源"');
     expect(body).toContain('uploadM3uFiles: "上传 M3U 文件"');
+    expect(body).toContain('data-message="backupRestore"');
+    expect(body).toContain('id="backup-download"');
+    expect(body).toContain('id="backup-import"');
     expect(body).toContain('success: "Successfully uploaded"');
     expect(body).toContain('navigator.languages');
     expect(body).toContain('navigator.language');
@@ -460,6 +463,72 @@ describe('unknown routes', () => {
     const res = await fetch(`${baseUrl}/no-such-path`);
     expect(res.status).toBe(404);
     expect(await res.text()).toContain('Not found');
+  });
+});
+
+describe('LAN backup routes', () => {
+  const archive = {
+    schema: 'webos-iptv-player-backup',
+    version: 1,
+    appVersion: '1.0.0',
+    exportedAt: 100,
+    data: {
+      favorites: [{ key: 'favorite:ch1', value: 'ch1' }],
+      preferences: { theme: 'midnight' },
+    },
+  };
+
+  it('publishes, filters, imports, and acknowledges an archive', async () => {
+    expect((await fetch(`${baseUrl}/backup?token=${setupToken}&groups=favorites`)).status)
+      .toBe(409);
+    const publish = await fetch(`${baseUrl}/backup`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(archive),
+    });
+    expect(publish.status).toBe(200);
+    expect((await fetch(`${baseUrl}/backup?groups=favorites`)).status).toBe(403);
+    const downloaded = await fetch(
+      `${baseUrl}/backup?token=${setupToken}&groups=favorites`,
+    );
+    expect(await downloaded.json()).toEqual({
+      ...archive,
+      data: { favorites: archive.data.favorites },
+    });
+
+    const queued = await fetch(`${baseUrl}/backup-import?token=${setupToken}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archive, groups: ['favorites'], mode: 'merge' }),
+    });
+    expect(queued.status).toBe(202);
+    const queuedBody = await queued.json() as { id: number };
+    const pending = await (await fetch(`${baseUrl}/backup-import`)).json() as
+      Array<{ id: number }>;
+    expect(pending.map(item => item.id)).toContain(queuedBody.id);
+
+    const complete = await fetch(`${baseUrl}/backup-import/${queuedBody.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(complete.status).toBe(200);
+    expect(await (await fetch(
+      `${baseUrl}/backup-import/${queuedBody.id}?token=${setupToken}`,
+    )).json()).toEqual({ id: queuedBody.id, status: 'applied' });
+  });
+
+  it('rejects unauthenticated and unsupported import requests', async () => {
+    expect((await fetch(`${baseUrl}/backup-import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archive, groups: ['favorites'], mode: 'merge' }),
+    })).status).toBe(403);
+    expect((await fetch(`${baseUrl}/backup-import?token=${setupToken}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archive: { ...archive, version: 2 }, groups: ['favorites'], mode: 'merge' }),
+    })).status).toBe(400);
   });
 });
 

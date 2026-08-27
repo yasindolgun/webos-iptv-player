@@ -514,10 +514,18 @@ export class Player {
       position: this.pendingSeekTarget ?? (el.currentTime || 0),
       duration: dur,
       updatedAt: Date.now(),
+      seriesId: v.seriesId,
       episodeQueue: v.episodeQueue,
       watchlistOwner: v.watchlistOwner,
     };
-    StorageService.setResume(entry);
+    const finished = dur > 0
+      && entry.position >= dur - CONFIG.XTREAM.RESUME_FINISH_PAD;
+    const seriesId = v.seriesId ?? v.watchlistOwner?.itemId ?? '';
+    if (v.kind === 'episode' && finished && seriesId) {
+      StorageService.setEpisodeCompleted(v.accountId, seriesId, v.itemId, true, entry.updatedAt);
+    } else {
+      StorageService.setResume(entry);
+    }
     StorageService.setWatchHistory(entry);
   }
 
@@ -640,7 +648,12 @@ export class Player {
     if (this.vod) {
       const v = this.vod;
       this.vod = null; // before stop(), so it doesn't re-save a resume point for a finished movie
-      StorageService.clearResume(v.accountId, v.kind, v.itemId);
+      const seriesId = v.seriesId ?? v.watchlistOwner?.itemId ?? '';
+      if (v.kind === 'episode' && seriesId) {
+        StorageService.setEpisodeCompleted(v.accountId, seriesId, v.itemId, true);
+      } else {
+        StorageService.clearResume(v.accountId, v.kind, v.itemId);
+      }
       if (v.kind === 'vod') {
         StorageService.removeWatchlist(v.accountId, 'vod', v.itemId);
       } else if ((v.episodeQueue?.length ?? 0) === 0 && v.watchlistOwner) {

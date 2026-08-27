@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { TzMode } from '../types';
+import type { PlaybackTrackPreferences, TzMode } from '../types';
 import type { XtreamAccountInfo } from '../services/xtream-client';
 
 const {
@@ -35,6 +35,11 @@ const {
     epgOffsets: {} as Record<string, number>,
     locale: 'system' as const,
     lastPlaylistRefreshAt: null as number | null,
+    trackPreferences: {
+      audioLanguage: '',
+      subtitleMode: 'forced',
+      subtitleLanguage: '',
+    } as PlaybackTrackPreferences,
     onlineSubtitles: {
       preferredLanguage: '',
       subdl: { apiKey: '' },
@@ -74,7 +79,9 @@ const {
       getLocalePreference: vi.fn(() => state.locale),
       getLastPlaylistRefreshAt: vi.fn(() => state.lastPlaylistRefreshAt),
       getOnlineSubtitleConfig: vi.fn(() => state.onlineSubtitles),
+      getPlaybackTrackPreferences: vi.fn(() => state.trackPreferences),
       getSelectedXtreamAccountId: vi.fn(() => null),
+      getXtreamAccountStatus: vi.fn(() => null),
       getShowHiddenChannels: vi.fn(() => state.showHidden),
       setShowHiddenChannels: vi.fn((v: boolean) => { state.showHidden = v; }),
       getChannelCustomization: vi.fn(() => null),
@@ -93,7 +100,11 @@ const {
       migrateCatchupEpgOffsets: vi.fn(),
       setLocalePreference: vi.fn(),
       setLastPlaylistRefreshAt: vi.fn((value: number) => { state.lastPlaylistRefreshAt = value; }),
+      setXtreamAccountStatus: vi.fn(),
       setOnlineSubtitleConfig: vi.fn((cfg: any) => { state.onlineSubtitles = cfg; }),
+      setPlaybackTrackPreferences: vi.fn((value: typeof state.trackPreferences) => {
+        state.trackPreferences = value;
+      }),
       remove: vi.fn(),
       clearRecentlyWatched: vi.fn(),
       clearWatchlist: vi.fn(),
@@ -178,6 +189,11 @@ beforeEach(() => {
   state.overlayStyle = 'dark';
   state.textSize = '100';
   state.epgOffsets = {};
+  state.trackPreferences = {
+    audioLanguage: '',
+    subtitleMode: 'forced',
+    subtitleLanguage: '',
+  };
   PlaylistService.epgSources = [];
   PlaylistService.allChannels = [];
   PlaylistService.channels = [];
@@ -671,8 +687,24 @@ describe('Settings theme picker', () => {
     settings.render();
     const item = container.querySelector('#os-pref-lang')?.closest('.settings-item');
     expect(item?.querySelector('.settings-item-title')?.textContent)
-      .toBe('Preferred subtitle language');
+      .toBe('Online subtitle search language');
     expect(item?.closest('.settings-row')).toBeNull();
+  });
+
+  it('renders playback-language defaults separately from online subtitle search', () => {
+    state.trackPreferences = {
+      audioLanguage: '',
+      subtitleMode: 'forced',
+      subtitleLanguage: '',
+    };
+    settings.render();
+
+    expect(container.querySelector('#preferred-audio-language .dropdown-current')?.textContent)
+      .toBe('Provider default');
+    expect(container.querySelector('#preferred-subtitle-mode .dropdown-current')?.textContent)
+      .toBe('Forced only');
+    expect(container.querySelector('#os-pref-lang')?.closest('.settings-category')?.id)
+      .toBe('settings-subtitles');
   });
 
   it('persists the overlay style on Save & Apply', () => {
@@ -1114,6 +1146,23 @@ describe('Settings.save', () => {
     click('#app-language [data-dropdown-value="zh-CN"]');
     click('#save-settings');
     expect(storageMock.setLocalePreference).toHaveBeenCalledWith('zh-CN');
+    expect(onSave).toHaveBeenCalledWith('apply');
+  });
+
+  it('persists global audio and subtitle language fallbacks without reloading data', () => {
+    state.playlists = [{ id: 'p1', name: 'P', url: 'http://p' }];
+    settings.render();
+    click('#preferred-audio-language [data-dropdown-trigger]');
+    click('#preferred-audio-language [data-dropdown-value="tr"]');
+    click('#preferred-subtitle-mode [data-dropdown-trigger]');
+    click('#preferred-subtitle-mode [data-dropdown-value="language:tr"]');
+    click('#save-settings');
+
+    expect(storageMock.setPlaybackTrackPreferences).toHaveBeenCalledWith({
+      audioLanguage: 'tr',
+      subtitleMode: 'language',
+      subtitleLanguage: 'tr',
+    });
     expect(onSave).toHaveBeenCalledWith('apply');
   });
 

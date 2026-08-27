@@ -19,7 +19,7 @@ overlay.
   a pick sets `textTracks[i].mode` (`'showing'` / `'disabled'`; `-1` = all off).
 - ASS/SSA sidecars can't be a native `<track>`; they join the **same picker** as synthetic
   options at `ASS_SUBTITLE_BASE + i` and are drawn by `assjs` into an `#ass-overlay`.
-- **Off by default** unless a saved pick applies. The choice is **remembered per item** under a
+- The global subtitle default applies unless a saved pick exists. The choice is **remembered per item** under a
   `vod:<account>:<kind>:<itemId>` key — the same key the VOD audio memory uses.
 - Blink draws the native-track cues (like the HLS self-render path), so `::cue` styling applies
   on-device; `assjs` draws ASS cues as HTML/CSS in the overlay.

@@ -28,6 +28,11 @@ vi.mock('../services/storage-service', () => ({
     setAudioPref: vi.fn(),
     getSubtitlePref: vi.fn(() => null),
     setSubtitlePref: vi.fn(),
+    getPlaybackTrackPreferences: vi.fn(() => ({
+      audioLanguage: '',
+      subtitleMode: 'forced',
+      subtitleLanguage: '',
+    })),
     getSubtitleOffset: vi.fn(() => 0),
     setSubtitleOffset: vi.fn(),
     getPickedOnlineSub: vi.fn(() => null),
@@ -120,6 +125,11 @@ describe('PlayerTracks', () => {
     subtitleSearchServiceMock.setAvailable(false);
     vi.mocked(StorageService.getAudioPref).mockReturnValue(null);
     vi.mocked(StorageService.getSubtitlePref).mockReturnValue(null);
+    vi.mocked(StorageService.getPlaybackTrackPreferences).mockReturnValue({
+      audioLanguage: '',
+      subtitleMode: 'forced',
+      subtitleLanguage: '',
+    });
     vi.mocked(StorageService.getSubtitleOffset).mockReturnValue(0);
     vi.mocked(StorageService.getPickedOnlineSub).mockReturnValue(null);
     channel = CHANNEL;
@@ -177,6 +187,61 @@ describe('PlayerTracks', () => {
       channelKey(CHANNEL),
       legacyChannelKey(CHANNEL),
     );
+  });
+
+  it('uses manifest language metadata for a collapsed native audio list', () => {
+    const audio = [
+      audioTrack(true, '', ''),
+      audioTrack(false, '', ''),
+    ];
+    video = { audioTracks: audio } as unknown as HTMLVideoElement;
+    (tracks as unknown as { manifestAudio: unknown[] }).manifestAudio = [
+      { name: 'Track 1', lang: 'deu', isDefault: true },
+      { name: 'Track 2', lang: 'eng', isDefault: false },
+      { name: 'Track 3', lang: 'deu', isDefault: false },
+    ];
+    vi.mocked(StorageService.getPlaybackTrackPreferences).mockReturnValue({
+      audioLanguage: 'en',
+      subtitleMode: 'forced',
+      subtitleLanguage: '',
+    });
+
+    tracks.applyNativeAudioSelection();
+
+    expect(audio.map(item => item.enabled)).toEqual([false, true]);
+  });
+
+  it('applies global language fallbacks through the MSE audio and subtitle adapters', () => {
+    const setAudio = vi.fn(() => true);
+    const setSubtitle = vi.fn(() => true);
+    tracks = new PlayerTracks(pipeline({
+      isMseActive: () => true,
+      mseAudioOptions: () => [
+        { index: 0, name: 'Track 1', lang: 'de', isDefault: true, active: true },
+        { index: 1, name: 'Track 2', lang: 'eng', isDefault: false, active: false },
+      ],
+      setMseAudioTrack: setAudio,
+      mseSubtitleOptions: () => [
+        { index: 0, name: 'Track 1', lang: 'de', isDefault: true, isForced: false, active: false },
+        { index: 1, name: 'Track 2', lang: 'eng', isDefault: false, isForced: false, active: false },
+      ],
+      setMseSubtitleTrack: setSubtitle,
+    }), {
+      getVideoElement: () => video,
+      getChannel: () => channel,
+      getVod: () => vod,
+    });
+    vi.mocked(StorageService.getPlaybackTrackPreferences).mockReturnValue({
+      audioLanguage: 'en-US',
+      subtitleMode: 'language',
+      subtitleLanguage: 'en',
+    });
+
+    tracks.applyHlsAudioSelection();
+    tracks.applyHlsSubtitleSelection();
+
+    expect(setAudio).toHaveBeenCalledWith(1);
+    expect(setSubtitle).toHaveBeenCalledWith(1);
   });
 
   it('self-renders a forced live subtitle from the manifest', () => {
@@ -643,6 +708,23 @@ describe('PlayerTracks', () => {
       setup({ text });
       tracks.applyNativeSubtitleSelection();
       expect(text.map((item) => item.mode)).toEqual(['disabled']);
+    });
+
+    it('uses the global subtitle language for native VOD tracks', () => {
+      const text = [
+        nativeTextTrack('showing', { label: 'Track 1', language: 'deu' }),
+        nativeTextTrack('disabled', { label: 'Track 2', language: 'eng' }),
+      ];
+      setup({ text });
+      vi.mocked(StorageService.getPlaybackTrackPreferences).mockReturnValue({
+        audioLanguage: '',
+        subtitleMode: 'language',
+        subtitleLanguage: 'en',
+      });
+
+      tracks.applyNativeSubtitleSelection();
+
+      expect(text.map((item) => item.mode)).toEqual(['disabled', 'showing']);
     });
 
     it('remembers the audio pick under the VOD key and switches the native track', () => {

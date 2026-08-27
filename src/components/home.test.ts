@@ -38,6 +38,8 @@ function open(over: Partial<Parameters<Home['open']>[0]> = {}): void {
     hasSeries: true,
     resume: null,
     lastRefreshAt: null,
+    accountName: '',
+    accountStatus: null,
     ...over,
   });
 }
@@ -102,5 +104,25 @@ describe('Home', () => {
     expect(refresh.textContent).toContain('Refreshing…');
     refresh.click();
     expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it('shows a credential-free account status with its checked time', () => {
+    open({
+      accountName: 'Alpha',
+      accountStatus: {
+        state: 'active',
+        expiresAt: null,
+        maxConnections: 2,
+        activeConnections: 1,
+        checkedAt: new Date(2026, 0, 2, 3, 4, 5).getTime(),
+      },
+    });
+
+    const status = container.querySelector('.home-account-status');
+    expect(status?.textContent).toContain('Alpha');
+    expect(status?.textContent).toContain('Active');
+    expect(status?.textContent).toContain('never expires');
+    expect(status?.textContent).toContain('1/2 connections');
+    expect(status?.textContent).toContain('Checked');
   });
 });

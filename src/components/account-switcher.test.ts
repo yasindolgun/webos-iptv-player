@@ -48,6 +48,25 @@ describe('AccountSwitcher', () => {
     expect(slot.querySelector('.account-menu-item.current .account-menu-name')?.textContent).toBe('Bravo');
   });
 
+  it('shows persisted status without rendering credentials', () => {
+    sw.setAccounts([{
+      id: 'a1',
+      name: 'Alpha',
+      status: {
+        state: 'unreachable',
+        expiresAt: null,
+        maxConnections: 0,
+        activeConnections: 0,
+        checkedAt: new Date(2026, 0, 2, 3, 4, 5).getTime(),
+      },
+    }], 'a1');
+    sw.openMenu();
+
+    expect(slot.querySelector('.account-menu-status')?.textContent).toBe('Unreachable');
+    expect(slot.querySelector('.account-menu-checked')?.textContent).toContain('Checked');
+    expect(slot.innerHTML).not.toContain('password');
+  });
+
   it('down/up move the highlighted row; select fires onSelect and closes', () => {
     sw.setAccounts(A, 'a1'); // highlight starts on the current row (index 0)
     sw.openMenu();

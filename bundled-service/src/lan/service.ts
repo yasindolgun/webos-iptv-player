@@ -9,6 +9,7 @@
 import * as http from 'http';
 import { SetupActionStore } from '../setup/actions';
 import { SetupStateStore } from '../setup/state';
+import { BackupStore } from '../backup/store';
 import { startServer, type ServiceChangeEvent } from './server';
 
 // Minimal shape of the webos-service Service object this module uses.
@@ -52,6 +53,7 @@ export function registerLanService(service: LunaService, dataDir: string): void 
   const subscribers: LunaMsg[] = [];
   const setupActions = new SetupActionStore();
   const setupState = new SetupStateStore();
+  const backups = new BackupStore();
   // The HTTP server is bound eagerly at wire-up AND lazily on `start` after a
   // `stop`, since the service process stays alive across the cycle (webos-service
   // holds the Luna bus connection, keeping Node's event loop running even after
@@ -78,7 +80,7 @@ export function registerLanService(service: LunaService, dataDir: string): void 
     if (server || bindInProgress) return;
     bindInProgress = true;
     console.log('[lan] (re)binding HTTP server');
-    startServer(0, dataDir, broadcastChange, setupActions, setupState).then((r) => {
+    startServer(0, dataDir, broadcastChange, setupActions, setupState, backups).then((r) => {
       bindInProgress = false;
       server = r.server;
       actualPort = r.port;

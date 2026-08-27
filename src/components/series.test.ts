@@ -2,14 +2,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { PlaylistEntry, WatchlistEntry, WatchlistKind } from '../types';
 
-const { catalogMock, storageMock, watchlistState, toastMock } = vi.hoisted(() => {
+const { catalogMock, storageMock, watchlistState, completionState, toastMock } = vi.hoisted(() => {
   const watchlistState = { entries: [] as WatchlistEntry[] };
+  const completionState = { entries: [] as Array<{
+    accountId: string; seriesId: string; itemId: string; completedAt: number;
+  }> };
   return {
     catalogMock: {
       loadAllSeries: vi.fn(), loadSeriesCategories: vi.fn(),
       loadSeries: vi.fn(), loadSeriesInfo: vi.fn(),
     },
     watchlistState,
+    completionState,
     storageMock: {
       getResumeList: vi.fn(() => [] as unknown[]),
       getResume: vi.fn(() => null),
@@ -24,6 +28,28 @@ const { catalogMock, storageMock, watchlistState, toastMock } = vi.hoisted(() =>
         }
         watchlistState.entries.unshift(entry);
         return true;
+      }),
+      getEpisodeCompletions: vi.fn((accountId: string, seriesId: string) =>
+        completionState.entries.filter(entry =>
+          entry.accountId === accountId && entry.seriesId === seriesId)),
+      getEpisodeCompletion: vi.fn((accountId: string, itemId: string) =>
+        completionState.entries.find(entry =>
+          entry.accountId === accountId && entry.itemId === itemId) ?? null),
+      setEpisodeCompleted: vi.fn((
+        accountId: string,
+        seriesId: string,
+        itemId: string,
+        completed: boolean,
+      ) => {
+        completionState.entries = completionState.entries.filter(entry =>
+          entry.accountId !== accountId || entry.itemId !== itemId);
+        if (completed) completionState.entries.push({
+          accountId, seriesId, itemId, completedAt: 1,
+        });
+      }),
+      clearSeriesEpisodeHistory: vi.fn((accountId: string, seriesId: string) => {
+        completionState.entries = completionState.entries.filter(entry =>
+          entry.accountId !== accountId || entry.seriesId !== seriesId);
       }),
     },
     toastMock: { showToast: vi.fn() },
@@ -51,6 +77,7 @@ beforeEach(() => {
   storageMock.getResumeList.mockReturnValue([]);
   storageMock.getResume.mockReturnValue(null);
   watchlistState.entries = [];
+  completionState.entries = [];
   container = document.createElement('div');
   document.body.appendChild(container);
 });
@@ -284,12 +311,14 @@ describe('Series detail', () => {
     view.handleAction('select');
     expect(handlers.onPlayVod).toHaveBeenCalledWith(expect.objectContaining({
       itemId: 'e1', accountId: 'x1', kind: 'episode', resumeSecs: 0,
+      seriesId: 's1',
       url: 'http://host:8080/series/u/p/e1.mp4',
       title: expect.stringContaining('S1E1'),
       watchlistOwner: { kind: 'series', itemId: 's1' },
       episodeQueue: [
         expect.objectContaining({
           itemId: 'e2',
+          seriesId: 's1',
           url: 'http://host:8080/series/u/p/e2.mkv',
           title: expect.stringContaining('S2E1'),
           watchlistOwner: { kind: 'series', itemId: 's1' },
@@ -325,10 +354,82 @@ describe('Series detail', () => {
     await openDetail(view);
 
     expect(container.querySelector('.episode-row[data-episode-id="e1"] .episode-resume')).not.toBeNull();
+    expect(container.querySelector('.episode-row[data-episode-id="e1"]')?.textContent)
+      .toContain('In Progress');
     const row = container.querySelector('.episode-row[data-episode-id="e1"]') as HTMLElement;
     row.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));
     view.handleAction('select');
     expect(handlers.onPlayVod).toHaveBeenCalledWith(expect.objectContaining({ itemId: 'e1', resumeSecs: 450 }));
+  });
+
+  it('opens on and highlights the first unwatched episode', async () => {
+    completionState.entries = [{
+      accountId: 'x1', seriesId: 's1', itemId: 'e1', completedAt: 1,
+    }];
+    catalogMock.loadSeriesInfo.mockResolvedValue(SERIES_INFO);
+    const { view } = await openWith();
+    await openDetail(view);
+
+    expect(container.querySelector('.series-season-btn.active')?.getAttribute('data-season'))
+      .toBe('2');
+    const next = container.querySelector('.episode-row[data-episode-id="e2"]');
+    expect(next?.classList.contains('next-unwatched')).toBe(true);
+    expect(next?.textContent).toContain('Next episode');
+  });
+
+  it('toggles Watched with Blue without starting playback', async () => {
+    catalogMock.loadSeriesInfo.mockResolvedValue(SERIES_INFO);
+    const { view, handlers } = await openWith();
+    await openDetail(view);
+    const row = container.querySelector('.episode-row[data-episode-id="e1"]') as HTMLElement;
+    row.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));
+
+    view.handleAction('blue');
+    expect(storageMock.setEpisodeCompleted).toHaveBeenLastCalledWith(
+      'x1', 's1', 'e1', true,
+    );
+    expect(container.querySelector('.episode-row[data-episode-id="e1"]')?.textContent)
+      .toContain('Watched');
+    expect(handlers.onPlayVod).not.toHaveBeenCalled();
+
+    view.handleAction('blue');
+    expect(storageMock.setEpisodeCompleted).toHaveBeenLastCalledWith(
+      'x1', 's1', 'e1', false,
+    );
+  });
+
+  it('toggles Watched from the pointer control without starting playback', async () => {
+    catalogMock.loadSeriesInfo.mockResolvedValue(SERIES_INFO);
+    const { view, handlers } = await openWith();
+    await openDetail(view);
+
+    container.querySelector<HTMLElement>(
+      '.episode-row[data-episode-id="e1"] [data-toggle-episode-watched]',
+    )?.click();
+
+    expect(storageMock.setEpisodeCompleted).toHaveBeenCalledWith(
+      'x1', 's1', 'e1', true,
+    );
+    expect(handlers.onPlayVod).not.toHaveBeenCalled();
+  });
+
+  it('clears the selected series episode history', async () => {
+    completionState.entries = [{
+      accountId: 'x1', seriesId: 's1', itemId: 'e1', completedAt: 1,
+    }];
+    catalogMock.loadSeriesInfo.mockResolvedValue(SERIES_INFO);
+    const { view } = await openWith();
+    await openDetail(view);
+    const button = container.querySelector<HTMLElement>(
+      '[data-action="clear-episode-history"]',
+    )!;
+    button.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));
+
+    view.handleAction('select');
+
+    expect(storageMock.clearSeriesEpisodeHistory).toHaveBeenCalledWith('x1', 's1');
+    expect(completionState.entries).toEqual([]);
+    expect(toastMock.showToast).toHaveBeenLastCalledWith('Episode history cleared');
   });
 
   it('restores the remaining episode queue from Continue Watching', async () => {

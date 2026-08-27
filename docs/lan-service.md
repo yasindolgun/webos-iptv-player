@@ -1,8 +1,9 @@
 # LAN Setup Service
 
 A bundled webOS JS service that lets a phone or computer on the same LAN
-configure Playlist URLs, Xtream accounts, and an EPG URL, or upload an `.m3u`
-playlist to the TV. The TV-side app consumes these changes through Luna.
+configure Playlist URLs, Xtream accounts, and an EPG URL, upload an `.m3u`
+playlist, or transfer a credential-free user-data backup. The TV-side app
+consumes these changes through Luna.
 
 The service targets webOS TV 4.x's Node.js 0.12.2 runtime. TypeScript emits
 ES5/CommonJS, and `scripts/service-compat-gate.mjs` scans the final JavaScript
@@ -35,7 +36,7 @@ Luna (called by the app's LAN/reminder clients and by Activity Manager):
 | `start` | no | Bind the HTTP server; returns the bound port. Idempotent. |
 | `stop` | no | Close the HTTP server and release the keepAlive activity. |
 | `heartbeat` | no | Liveness probe; returns `{running, port}`. |
-| `serviceEvents` | **yes** | Push channel for `uploads-changed` and `setup-changed` events. |
+| `serviceEvents` | **yes** | Push channel for upload, setup, and backup changes. |
 | `getDevMode` | no | Report whether Developer Mode is available for interactive reminder alerts. |
 | `fireReminderAlert` | no | Raise the Developer Mode reminder alert requested by Activity Manager. |
 
@@ -57,10 +58,16 @@ HTTP (called by phones, and by the app for reconcile):
 | `/uploads?name=foo.m3u&token=…` | POST | Save a playlist; fires `serviceEvents`. |
 | `/uploads/:id[.m3u]` | GET | Serve a stored playlist. |
 | `/uploads/:id?token=…` | DELETE | Remove an upload; loopback callers do not need the token. |
+| `/backup` | PUT | Loopback-only publication of the current credential-free archive. |
+| `/backup?token=…&groups=…` | GET | Download only the selected archive groups. |
+| `/backup-import?token=…` | POST | Queue a Merge or Replace import. |
+| `/backup-import` | GET | Loopback-only pending imports consumed by the TV app. |
+| `/backup-import/:id` | PUT | Loopback-only success/error acknowledgement. |
+| `/backup-import/:id?token=…` | GET | Phone-facing import status. |
 
 ## Event-driven updates
 
-When a phone uploads, deletes, or submits a source change, the TV updates
+When a phone uploads, deletes, submits a source change, or queues a backup, the TV updates
 within milliseconds. There is **no background polling**.
 
 A successful POST or DELETE on the HTTP side calls an `onChange` hook,
@@ -74,12 +81,23 @@ same queue, so deleting a Playlist or Xtream account remains idempotent.
 Source-enable actions also use this queue for URL, Xtream, and uploaded
 playlists; missing `enabled` fields remain backward-compatible and mean enabled.
 
+`BackupClient` publishes a fresh archive when the service starts, Settings
+opens, or Settings saves. A phone download selects groups without expanding the
+archive's allowlist. An import remains queued until the app validates every
+selected group, updates the IndexedDB user stores in one transaction, applies
+the small preference values, and reports success or an actionable error. Merge
+is keyed and idempotent; Replace clears only the selected logical groups. The
+app reloads after a successful restore.
+
 The TV also publishes state after service startup and local Settings changes.
 The setup page refreshes the snapshot periodically. Xtream snapshots contain
 the account id, display name, server URL, and username, but never the password.
 Online-subtitle snapshots contain only the preferred language and configured
 flags for each provider, plus the OpenSubtitles username. API keys, passwords,
-and login tokens never leave the TV. The phone shows configured secrets as a
+and login tokens never leave the TV. Backup archives also exclude source and
+account configuration, provider credentials, stream URLs, subtitle downloads,
+caches, and uploaded M3U files. Poster/icon URLs and transient playback queues
+are removed from exported viewing records. The phone shows configured secrets as a
 fixed `********` mask that does not reveal their length. An unchanged mask
 preserves the value, one delete clears the field, and replacement text updates
 only that field.
@@ -100,7 +118,8 @@ the short root URL manually. The public page exchanges that code for the full
 token; five failures from one client lock pairing for one minute.
 
 The token is required to submit source changes, query their status, upload M3U
-files, read the sanitized setup state, or remotely delete uploads. Publishing
+files, download or import a backup, read the sanitized setup state, or remotely
+delete uploads. Publishing
 state and reading or acknowledging queued actions is loopback-only, which
 prevents another LAN client from injecting state or reading Xtream
 credentials. Upload identifiers are validated before file access so requests

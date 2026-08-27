@@ -175,6 +175,17 @@ export interface PlaylistEntry {
   count?: number;
 }
 
+export type XtreamAccountState = 'active' | 'expired' | 'disabled' | 'unreachable';
+
+/** Minimal, credential-free account state retained after a portal check. */
+export interface XtreamAccountStatusSnapshot {
+  state: XtreamAccountState;
+  expiresAt: number | null;
+  maxConnections: number;
+  activeConnections: number;
+  checkedAt: number;
+}
+
 /** A per-channel display customization, keyed by `channelKey(ch)`. */
 export interface ChannelOverride {
   /** Display name replacing the source name. Absent = use the source name. */
@@ -328,6 +339,15 @@ export interface SubtitlePref {
   cc?: boolean;
 }
 
+export type DefaultSubtitleMode = 'off' | 'forced' | 'language';
+
+/** Global fallbacks used only when an item/channel has no matching remembered pick. */
+export interface PlaybackTrackPreferences {
+  audioLanguage: string;
+  subtitleMode: DefaultSubtitleMode;
+  subtitleLanguage: string;
+}
+
 export interface DashSubtitleSegment {
   url: string;
   start: number;
@@ -466,8 +486,16 @@ export interface ResumeEntry {
   position: number;   // seconds into the stream
   duration: number;   // total seconds, or 0 if unknown
   updatedAt: number;  // epoch ms, for recency ordering
+  seriesId?: string;
   episodeQueue?: VodQueueItem[];
   watchlistOwner?: WatchlistOwner;
+}
+
+export interface EpisodeCompletion {
+  accountId: string;
+  seriesId: string;
+  itemId: string;
+  completedAt: number;
 }
 
 // Structured metadata for online subtitle search (passed from Xtream catalog to player).
@@ -508,6 +536,7 @@ export interface VodQueueItem {
   accountId: string;
   itemId: string;
   kind: ResumeKind;
+  seriesId?: string;
   subtitles: SidecarSubtitle[];
   searchMeta?: SearchMeta;
   watchlistOwner?: WatchlistOwner;

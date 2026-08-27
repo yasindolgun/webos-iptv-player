@@ -1,4 +1,4 @@
-import type { Action, EpgSource, NavDirection, PlaylistEntry, TzMode } from '../types';
+import type { Action, DefaultSubtitleMode, EpgSource, NavDirection, PlaylistEntry, TzMode } from '../types';
 import { $, $$, html, raw, type Safe } from '../utils/dom';
 import { morph } from '../utils/morph';
 import { SpatialNav } from '../navigation/spatial-nav';
@@ -18,7 +18,7 @@ import {
   ChannelHealthService,
   type ChannelHealthProgress,
 } from '../services/channel-health';
-import { createXtreamClient } from '../services/xtream-client';
+import { refreshXtreamAccountStatus } from '../services/xtream-account-status';
 import { normalizeXtreamBaseUrl, normalizeXtreamLiveOutputPreference } from '../utils/xtream-url';
 import { genPlaylistId, isSourceEnabled } from '../utils/playlist';
 import { channelKey, legacyChannelKey } from '../utils/channel';
@@ -141,11 +141,9 @@ function toggleGroup(id: string, options: { value: string; label: string }[], ac
     </div>`;
 }
 
-/** Preferred-subtitle-language options for the online-subtitle search ranking.
- *  '' = no preference. Endonyms render on the TV's fonts (Latin/Cyrillic/CJK/Hangul). */
-function subtitleLanguages(): { value: string; label: string }[] {
+/** Common playback/search languages. Endonyms render in the TV's system fonts. */
+function trackLanguages(): { value: string; label: string }[] {
   return [
-    { value: '', label: t('settings.any') },
     { value: 'en', label: 'English' },
     { value: 'zh-CN', label: '简体中文' },
     { value: 'zh-TW', label: '繁體中文' },
@@ -156,6 +154,31 @@ function subtitleLanguages(): { value: string; label: string }[] {
     { value: 'ru', label: 'Русский' },
     { value: 'ja', label: '日本語' },
     { value: 'ko', label: '한국어' },
+    { value: 'tr', label: 'Türkçe' },
+    { value: 'it', label: 'Italiano' },
+    { value: 'ar', label: 'العربية' },
+    { value: 'nl', label: 'Nederlands' },
+    { value: 'pl', label: 'Polski' },
+    { value: 'uk', label: 'Українська' },
+  ];
+}
+
+function subtitleLanguages(): { value: string; label: string }[] {
+  return [{ value: '', label: t('settings.any') }, ...trackLanguages()];
+}
+
+function preferredAudioLanguages(): { value: string; label: string }[] {
+  return [{ value: '', label: t('settings.providerDefault') }, ...trackLanguages()];
+}
+
+function preferredSubtitleOptions(): { value: string; label: string }[] {
+  return [
+    { value: 'forced', label: t('settings.forcedOnly') },
+    { value: 'off', label: t('common.off') },
+    ...trackLanguages().map(option => ({
+      value: `language:${option.value}`,
+      label: option.label,
+    })),
   ];
 }
 
@@ -532,6 +555,10 @@ export class Settings {
     const overlayStyle = StorageService.getOverlayStyle();
     const textSize = StorageService.getTextSize();
     const localePreference = StorageService.getLocalePreference();
+    const trackPreferences = StorageService.getPlaybackTrackPreferences();
+    const preferredSubtitle = trackPreferences.subtitleMode === 'language'
+      ? `language:${trackPreferences.subtitleLanguage}`
+      : trackPreferences.subtitleMode;
     const overlayStyles = OVERLAY_STYLES.map(option => ({
       value: option.value,
       label: t(option.value === 'dark' ? 'settings.overlayDark' : 'settings.overlayFrosted'),
@@ -735,6 +762,15 @@ export class Settings {
                   <div class="settings-item-title">${t('settings.autoPlay')}</div>
                   ${toggleGroup('auto-play', [{ value: 'on', label: t('settings.on') }, { value: 'off', label: t('settings.off') }], autoPlay ? 'on' : 'off')}
                 </div>
+                <div class="settings-item">
+                  <div class="settings-item-title">${t('settings.preferredAudioLanguage')}</div>
+                  ${dropdown('preferred-audio-language', preferredAudioLanguages(), trackPreferences.audioLanguage)}
+                </div>
+                <div class="settings-item">
+                  <div class="settings-item-title">${t('settings.preferredSubtitleMode')}</div>
+                  ${dropdown('preferred-subtitle-mode', preferredSubtitleOptions(), preferredSubtitle)}
+                  <div class="settings-item-hint">${t('settings.preferredTracksHint')}</div>
+                </div>
               </div>
             </div>
 
@@ -742,7 +778,7 @@ export class Settings {
               <div class="settings-section">
                 <h3 class="settings-section-title">${t('settings.onlineSubtitles')}</h3>
                 <div class="settings-item">
-                  <div class="settings-item-title">${t('settings.preferredSubtitle')}</div>
+                  <div class="settings-item-title">${t('settings.onlineSubtitleLanguage')}</div>
                   ${dropdown('os-pref-lang', subtitleLanguages(), os.preferredLanguage)}
                 </div>
                 <div class="settings-row">
@@ -1863,7 +1899,13 @@ export class Settings {
     }
 
     this.setXtreamStatus(id, html`${t('settings.checking')}`, '');
-    const info = await createXtreamClient({ baseUrl: url, username, password }).getAccountInfo();
+    const info = await refreshXtreamAccountStatus({
+      id,
+      name: card.querySelector<HTMLInputElement>('.xtream-name')?.value.trim() || id,
+      url,
+      source: 'xtream',
+      xtream: { username, password },
+    });
     if (!info) {
       log.warn(
         'Xtream verify failed — server unreachable or non-JSON',
@@ -2022,6 +2064,19 @@ export class Settings {
 
     const locale = ($('#app-language', this.container) as HTMLElement | null)?.dataset.value as LocalePreference | undefined;
     if (locale) StorageService.setLocalePreference(locale);
+
+    const audioLanguage = ($('#preferred-audio-language', this.container) as HTMLElement | null)
+      ?.dataset.value ?? '';
+    const subtitleValue = ($('#preferred-subtitle-mode', this.container) as HTMLElement | null)
+      ?.dataset.value ?? 'forced';
+    const subtitleMode: DefaultSubtitleMode = subtitleValue.indexOf('language:') === 0
+      ? 'language'
+      : subtitleValue === 'off' ? 'off' : 'forced';
+    StorageService.setPlaybackTrackPreferences({
+      audioLanguage,
+      subtitleMode,
+      subtitleLanguage: subtitleMode === 'language' ? subtitleValue.slice(9) : '',
+    });
 
     const prevOs = StorageService.getOnlineSubtitleConfig();
     const osVal = (id: string) => ($(`#${id}`, this.container) as HTMLInputElement | null)?.value.trim() ?? '';

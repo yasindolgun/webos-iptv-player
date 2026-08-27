@@ -1,9 +1,10 @@
-import type { Action, ResumeEntry } from '../types';
+import type { Action, ResumeEntry, XtreamAccountStatusSnapshot } from '../types';
 import { SpatialNav } from '../navigation/spatial-nav';
 import { html, raw } from '../utils/dom';
 import { morph } from '../utils/morph';
 import { t } from '../i18n';
 import { formatLocalTime } from '../utils/time';
+import { accountStatusDisplay } from './account-status';
 
 export type HomeAction = 'live' | 'movies' | 'series' | 'continue' | 'epg' | 'refresh' | 'settings';
 
@@ -12,6 +13,8 @@ export interface HomeState {
   hasSeries: boolean;
   resume: ResumeEntry | null;
   lastRefreshAt: number | null;
+  accountName: string;
+  accountStatus: XtreamAccountStatusSnapshot | null;
 }
 
 interface HomeHandlers {
@@ -36,6 +39,8 @@ export class Home {
     hasSeries: false,
     resume: null,
     lastRefreshAt: null,
+    accountName: '',
+    accountStatus: null,
   };
   private refreshing = false;
 
@@ -117,6 +122,9 @@ export class Home {
 
   private render(): void {
     const resume = this.state.resume;
+    const accountStatus = this.state.accountStatus
+      ? accountStatusDisplay(this.state.accountStatus)
+      : null;
     const template = html`
       <div class="home-shell">
         <header class="home-header">
@@ -124,7 +132,16 @@ export class Home {
             <div class="home-kicker">IPTV</div>
             <h1>${t('home.title')}</h1>
           </div>
-          <div class="home-version">${t('home.version', { version: __APP_VERSION__ })}</div>
+          <div class="home-header-meta">
+            ${this.state.accountName && accountStatus ? html`
+              <div class="home-account-status ${accountStatus.tone}">
+                <strong>${this.state.accountName}</strong>
+                <span>${accountStatus.summary}</span>
+                <small>${accountStatus.checked}</small>
+              </div>
+            ` : ''}
+            <div class="home-version">${t('home.version', { version: __APP_VERSION__ })}</div>
+          </div>
         </header>
         <main class="home-grid" data-nav-container>
           ${this.card('live', t('nav.live'), t('home.liveHint'), 'home-card-primary')}

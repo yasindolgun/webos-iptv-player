@@ -47,6 +47,50 @@ describe('StorageService', () => {
     expect(StorageService.getPlaylists()[0].id).toBe(got[0].id);
   });
 
+  it('persists credential-free Xtream status and prunes removed accounts', () => {
+    const account = {
+      id: 'x1',
+      name: 'Alpha',
+      url: 'http://host',
+      source: 'xtream' as const,
+      xtream: { username: 'u', password: 'secret' },
+    };
+    StorageService.setPlaylists([account]);
+    StorageService.setXtreamAccountStatus('x1', {
+      state: 'active',
+      expiresAt: null,
+      maxConnections: 2,
+      activeConnections: 1,
+      checkedAt: 123,
+    });
+
+    expect(StorageService.getXtreamAccountStatus('x1')).toEqual({
+      state: 'active',
+      expiresAt: null,
+      maxConnections: 2,
+      activeConnections: 1,
+      checkedAt: 123,
+    });
+    expect(localStorage.getItem('iptv_xtream_account_status')).not.toContain('secret');
+
+    StorageService.setPlaylists([]);
+    expect(StorageService.getXtreamAccountStatus('x1')).toBeNull();
+  });
+
+  it('rejects persisted Xtream status timestamps that Date cannot format', () => {
+    StorageService.set('xtream_account_status', {
+      x1: {
+        state: 'active',
+        expiresAt: Number.MAX_VALUE,
+        maxConnections: 1,
+        activeConnections: 0,
+        checkedAt: 123,
+      },
+    });
+
+    expect(StorageService.getXtreamAccountStatus('x1')).toBeNull();
+  });
+
   it('invalidates the channel cache and probed stream MIMEs when playlist configuration changes', async () => {
     StorageService.set('cached_playlist', { legacy: true });
     await setCachedStreamMime('http://host/live', 'video/mp2t');
@@ -89,6 +133,36 @@ describe('StorageService', () => {
     expect(StorageService.getTheme()).toBe('midnight');
     StorageService.setTheme('arctic');
     expect(StorageService.getTheme()).toBe('arctic');
+  });
+
+  it('defaults and sanitizes global playback track preferences', () => {
+    expect(StorageService.getPlaybackTrackPreferences()).toEqual({
+      audioLanguage: '',
+      subtitleMode: 'forced',
+      subtitleLanguage: '',
+    });
+
+    StorageService.setPlaybackTrackPreferences({
+      audioLanguage: 'eng',
+      subtitleMode: 'language',
+      subtitleLanguage: 'en-US',
+    });
+    expect(StorageService.getPlaybackTrackPreferences()).toEqual({
+      audioLanguage: 'eng',
+      subtitleMode: 'language',
+      subtitleLanguage: 'en-US',
+    });
+
+    StorageService.set('playback_track_preferences', {
+      audioLanguage: 1,
+      subtitleMode: 'bad',
+      subtitleLanguage: 'en',
+    });
+    expect(StorageService.getPlaybackTrackPreferences()).toEqual({
+      audioLanguage: '',
+      subtitleMode: 'forced',
+      subtitleLanguage: '',
+    });
   });
 
   it('defaults the overlay style to dark and round-trips a selection', () => {

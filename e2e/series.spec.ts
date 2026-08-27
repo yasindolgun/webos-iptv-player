@@ -1,4 +1,12 @@
-import { test, expect, routeLiveManifest, neuterVideo, SAMPLE_M3U, enterTab } from './helpers';
+import {
+  test,
+  expect,
+  routeLiveManifest,
+  neuterVideo,
+  SAMPLE_M3U,
+  enterTab,
+  readUserDataStore,
+} from './helpers';
 
 // Seed one Xtream account (enables the tab bar) and stub the player_api.php
 // series calls + the get.php/xmltv.php the live path uses.
@@ -101,6 +109,34 @@ test('Back walks Series detail -> browse -> Home instead of ejecting', async ({ 
   // Second Back from the browse top level returns to Home.
   await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 461, bubbles: true })));
   await expect(page.locator('#view-home')).toBeVisible();
+});
+
+test('toggles an account-scoped episode Watched state', async ({ page }) => {
+  await seedSeries(page);
+  await routeLiveManifest(page);
+  await page.goto('/');
+  await expect(page.locator('#view-channels')).toBeVisible();
+
+  await enterTab(page, 'series');
+  await page.locator('.catalog-tile[data-item-id="1"]')
+    .evaluate((el) => el.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true })));
+  await page.keyboard.press('Enter');
+
+  const episode = page.locator('#view-series .episode-row[data-episode-id="10"]');
+  await expect(episode).toContainText('Next episode');
+  await episode.locator('[data-toggle-episode-watched]').click();
+  await expect(episode).toContainText('Watched');
+  await expect.poll(async () => {
+    const records = await readUserDataStore(page, 'playback-progress');
+    return records.map(record => record.key);
+  }).toContain('completed:x1|10');
+
+  await episode.locator('[data-toggle-episode-watched]').click();
+  await expect(episode).not.toContainText('Watched');
+  await expect.poll(async () => {
+    const records = await readUserDataStore(page, 'playback-progress');
+    return records.map(record => record.key);
+  }).not.toContain('completed:x1|10');
 });
 
 test('episode playback suppresses the live channel sidebar and shows a VOD-only menu at the pointer edges', async ({ page }) => {

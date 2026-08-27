@@ -38,6 +38,44 @@
   font-size: calc(20px * var(--font-scale));
 }
 
+.home-header-meta,
+.home-account-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.home-account-status {
+  max-width: 760px;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+
+.home-account-status strong {
+  color: var(--text-primary);
+  font-size: 22px;
+}
+
+.home-account-status span {
+  margin-top: 3px;
+  font-size: 17px;
+}
+
+.home-account-status.ok span {
+  color: var(--success);
+}
+
+.home-account-status.warn span,
+.home-account-status.err span {
+  color: var(--warning);
+}
+
+.home-account-status small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
 .home-grid {
   flex: 1;
   min-height: 0;

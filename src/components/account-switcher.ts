@@ -1,9 +1,10 @@
-import type { Action } from '../types';
+import type { Action, XtreamAccountStatusSnapshot } from '../types';
 import { html, raw } from '../utils/dom';
 import { morph } from '../utils/morph';
 import { avatarColor, firstLetter } from '../utils/avatar';
 import { t } from '../i18n';
 import { CHECK_ICON } from './icons';
+import { accountStatusDisplay } from './account-status';
 
 interface AccountSwitcherHandlers {
   onSelect: (accountId: string) => void;
@@ -12,6 +13,7 @@ interface AccountSwitcherHandlers {
 export interface AccountSwitcherOption {
   id: string;
   name: string;
+  status?: XtreamAccountStatusSnapshot | null;
 }
 
 // The circular account avatar + dropdown, mounted in a tab-bar slot. Owns its
@@ -118,6 +120,24 @@ export class AccountSwitcher {
     if (changed) this.handlers.onSelect(id);
   }
 
+  private menuItem(a: AccountSwitcherOption, i: number): ReturnType<typeof html> {
+    const status = a.status ? accountStatusDisplay(a.status) : null;
+    return html`
+      <div class="account-menu-item ${i === this.menuIndex ? 'focused' : ''} ${a.id === this.selectedId ? 'current' : ''}"
+           data-key="acc:${a.id}" data-account-id="${a.id}">
+        <span class="account-menu-avatar" style="background:${avatarColor(a.name)}">${firstLetter(a.name)}</span>
+        <span class="account-menu-copy">
+          <span class="account-menu-name">${a.name}</span>
+          ${status ? html`
+            <span class="account-menu-status ${status.tone}">${status.summary}</span>
+            <span class="account-menu-checked">${status.checked}</span>
+          ` : ''}
+        </span>
+        <span class="account-menu-check">${a.id === this.selectedId ? raw(CHECK_ICON) : ''}</span>
+      </div>
+    `;
+  }
+
   private render(): void {
     if (!this.shown) { morph(this.slot, html``); return; }
     const active = this.accounts.find((a) => a.id === this.selectedId) ?? this.accounts[0];
@@ -126,14 +146,7 @@ export class AccountSwitcher {
               aria-label="${t('nav.switchAccount')}" style="background:${avatarColor(active.name)}">${firstLetter(active.name)}</button>
       ${this.open ? html`
         <div class="account-menu" data-nav-container>
-          ${this.accounts.map((a, i) => html`
-            <div class="account-menu-item ${i === this.menuIndex ? 'focused' : ''} ${a.id === this.selectedId ? 'current' : ''}"
-                 data-key="acc:${a.id}" data-account-id="${a.id}">
-              <span class="account-menu-avatar" style="background:${avatarColor(a.name)}">${firstLetter(a.name)}</span>
-              <span class="account-menu-name">${a.name}</span>
-              <span class="account-menu-check">${a.id === this.selectedId ? raw(CHECK_ICON) : ''}</span>
-            </div>
-          `)}
+          ${this.accounts.map((a, i) => this.menuItem(a, i))}
         </div>
       ` : ''}
     `);

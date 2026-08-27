@@ -22,8 +22,9 @@ import {
 } from '../setup/actions';
 import { parseSetupState, SetupStateStore } from '../setup/state';
 import { isValidUploadId, UploadStore } from '../upload/store';
+import { BackupStore } from '../backup/store';
 
-export type ServiceChangeEvent = 'uploads-changed' | 'setup-changed';
+export type ServiceChangeEvent = 'uploads-changed' | 'setup-changed' | 'backup-changed';
 
 const PAIRING_MAX_FAILURES = 5;
 const PAIRING_LOCK_MS = 60 * 1000;
@@ -104,6 +105,7 @@ export function startServer(
   onChange?: (event: ServiceChangeEvent) => void,
   setupActions = new SetupActionStore(),
   setupState = new SetupStateStore(),
+  backups = new BackupStore(),
 ): Promise<{ server: http.Server; port: number }> {
   let boundPort = port;
   const setupToken = randomBytes(6).toString('hex');
@@ -226,6 +228,70 @@ export function startServer(
         const id = Number(pathname.slice('/setup-actions/'.length));
         const deleted = isSafeInteger(id) && setupActions.remove(id);
         sendJson(res, deleted ? 200 : 404, { deleted, id });
+      } else if (pathname === '/backup' && req.method === 'PUT') {
+        if (!isLoopback(req)) {
+          sendJson(res, 403, { error: 'Local access only' });
+          return;
+        }
+        try {
+          backups.publish(JSON.parse(await readBody(req, 2 * 1024 * 1024)));
+          sendJson(res, 200, { published: true });
+        } catch (e) {
+          sendJson(res, 400, { error: e instanceof Error ? e.message : String(e) });
+        }
+      } else if (pathname === '/backup' && req.method === 'GET') {
+        if (query('token') !== setupToken) {
+          sendJson(res, 403, { error: 'Invalid setup token' });
+          return;
+        }
+        try {
+          const groups = (query('groups') || '').split(',').filter(Boolean);
+          sendJson(res, 200, backups.export(groups));
+        } catch (e) {
+          sendJson(res, 409, { error: e instanceof Error ? e.message : String(e) });
+        }
+      } else if (pathname === '/backup-import' && req.method === 'POST') {
+        if (query('token') !== setupToken) {
+          sendJson(res, 403, { error: 'Invalid setup token' });
+          return;
+        }
+        try {
+          const request = backups.add(JSON.parse(await readBody(req, 2 * 1024 * 1024)));
+          try { onChange?.('backup-changed'); } catch (cbErr) {
+            console.error('[lan] onChange callback threw:', cbErr);
+          }
+          sendJson(res, 202, { id: request.id, status: 'pending' });
+        } catch (e) {
+          sendJson(res, 400, { error: e instanceof Error ? e.message : String(e) });
+        }
+      } else if (pathname === '/backup-import' && req.method === 'GET') {
+        if (!isLoopback(req)) {
+          sendJson(res, 403, { error: 'Local access only' });
+          return;
+        }
+        sendJson(res, 200, backups.list());
+      } else if (pathname.indexOf('/backup-import/') === 0 && req.method === 'PUT') {
+        if (!isLoopback(req)) {
+          sendJson(res, 403, { error: 'Local access only' });
+          return;
+        }
+        const id = Number(pathname.slice('/backup-import/'.length));
+        try {
+          const body = JSON.parse(await readBody(req, 2048)) as { error?: unknown };
+          const error = typeof body.error === 'string' ? body.error : '';
+          const completed = isSafeInteger(id) && backups.complete(id, error);
+          sendJson(res, completed ? 200 : 404, { completed, id });
+        } catch (e) {
+          sendJson(res, 400, { error: e instanceof Error ? e.message : String(e) });
+        }
+      } else if (pathname.indexOf('/backup-import/') === 0 && req.method === 'GET') {
+        if (query('token') !== setupToken) {
+          sendJson(res, 403, { error: 'Invalid setup token' });
+          return;
+        }
+        const id = Number(pathname.slice('/backup-import/'.length));
+        const status = isSafeInteger(id) ? backups.status(id) : null;
+        sendJson(res, status ? 200 : 404, status || { error: 'Import not found' });
       } else if (pathname === '/uploads' && req.method === 'POST') {
         if (query('token') !== setupToken) {
           sendJson(res, 403, { error: 'Invalid setup token' });
@@ -276,7 +342,7 @@ export function startServer(
         }
       } else {
         send(res, 404, 'text/plain; charset=utf-8',
-          'Not found. Use /setup, /setup-actions, /uploads, or /info');
+          'Not found. Use /setup, /setup-actions, /backup, /uploads, or /info');
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

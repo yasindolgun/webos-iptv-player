@@ -106,6 +106,15 @@ describe('chooseAudioIndex', () => {
   it('falls back to the default when the pref matches nothing', () => {
     expect(chooseAudioIndex(opts, { name: 'gone', lang: 'gone' })).toBe(0);
   });
+
+  it('uses a normalized global language after a missing saved pick', () => {
+    const languages = [
+      opt({ index: 0, name: 'Track 1', lang: 'deu', isDefault: true }),
+      opt({ index: 1, name: 'English', lang: 'eng' }),
+    ];
+    expect(chooseAudioIndex(languages, null, 'en-US')).toBe(1);
+    expect(chooseAudioIndex(languages, { name: 'Track 1', lang: '' }, 'en')).toBe(0);
+  });
 });
 
 describe('isPrefMatch', () => {

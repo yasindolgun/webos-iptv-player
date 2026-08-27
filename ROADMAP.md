@@ -14,12 +14,14 @@ The app already provides the foundations that a large-catalog TV client needs:
 - IndexedDB-backed user data and bounded, budgeted caches
 - worker-based XMLTV loading and search indexing
 - native webOS playback with desktop HLS, MPEG-TS, and DASH adapters
-- LAN-only QR setup and M3U upload without a hosted relay
-- playback resume, Continue Watching, Recently Watched, and Watchlist
+- LAN-only QR setup, M3U upload, and credential-free backup/restore
+- playback resume, episode completion, Continue Watching, Recently Watched,
+  and Watchlist
 - a Home section with playback shortcuts, refresh status, and account-aware data
 - automatic next-episode and Watchlist playback queues with an Up Next countdown
 - bounded native, HLS, DASH, and catch-up recovery paths for transient failures
-- per-stream subtitle synchronization and remembered audio/subtitle selections
+- per-stream subtitle sync, remembered track picks, and global language defaults
+- non-blocking Xtream expiry and connection status with checked timestamps
 - remote, Magic Remote, accessibility, localization, and webOS 4 fallbacks
 - a production-path benchmark at 50,000 items under CPU throttling
 
@@ -113,95 +115,7 @@ Acceptance criteria:
   stable channel and group identities where possible.
 - Remote, Magic Remote, and pointer entry all use the same prompt and policy.
 
-## Priority 4: Default audio and subtitle language
-
-Add global playback preferences while retaining more specific remembered picks.
-
-- Add a preferred audio language setting.
-- Extend subtitle preference to `Off`, `Forced`, or a preferred language; keep
-  the online-subtitle search language separately configurable if needed.
-- Normalize common two-letter, three-letter, manifest, and display-name forms
-  before matching tracks.
-- Resolve tracks in this order: remembered item/channel choice, global language
-  preference, forced/default rendition, then provider or native default.
-- Preserve an explicit per-item subtitle-off choice across reopens.
-- Apply the same policy to native webOS, HLS, DASH, and VOD track discovery
-  wherever the platform exposes selectable tracks.
-
-Acceptance criteria:
-
-- A remembered channel or VOD choice always overrides the global preference.
-- Missing preferred tracks fall back without delaying playback or showing an
-  error.
-- Collapsed same-language native audio renditions remain selectable using the
-  existing manifest metadata fallback.
-- Settings migration preserves all existing per-item track choices.
-
-## Priority 5: LAN backup and restore
-
-Use the bundled LAN service to migrate user-owned data between TVs without a
-cloud account.
-
-- Export a versioned JSON archive through the authenticated, short-lived LAN
-  setup session.
-- Let the user choose favorites, channel/group customization, EPG mappings and
-  offsets, Watchlist, appearance/playback preferences, Recently Watched, and
-  resume history.
-- Exclude Xtream passwords, credential-bearing stream URLs, subtitle-provider
-  keys/tokens, transient LAN state, and caches by default.
-- Validate schema, size, record shapes, and stable identifiers before import.
-- Preview the included data groups and offer Merge or Replace explicitly.
-- Make restore transactional where IndexedDB permits it and leave current data
-  intact when validation or writing fails.
-
-Acceptance criteria:
-
-- An archive never contains secrets in the default export path.
-- Unknown future fields are ignored safely; unsupported schema versions produce
-  an actionable error before any mutation.
-- Importing the same archive twice is idempotent under Merge.
-- Export and import work from a phone browser on the same LAN and never require
-  an external service.
-
-## Priority 6: Episode completion history
-
-Make finished episodes visible independently of resumable playback progress.
-
-- Add a compact, account-scoped completion record rather than retaining a fake
-  resume entry at the end of an episode.
-- Show Watched and In Progress states in virtualized episode lists.
-- Highlight the next unwatched episode when opening a series.
-- Let users toggle an episode watched/unwatched and clear series history.
-- Keep the existing Up Next countdown and automatic episode queue unchanged.
-
-Acceptance criteria:
-
-- Completing an episode clears resume progress and records completion in one
-  logical operation.
-- Replay from the beginning does not erase Watched until the user explicitly
-  changes it or completes the episode again.
-- Account switching never mixes episode history.
-- Large seasons retain bounded DOM and storage behavior.
-
-## Priority 7: Account status visibility
-
-Make verified Xtream account state easier to see without exposing credentials or
-turning startup into a blocking authentication check.
-
-- Show expiry and connection usage in the account switcher or Home summary.
-- Persist only the minimum verified status snapshot with a clear checked time.
-- Distinguish expired, disabled, unreachable, and unlimited accounts.
-- Refresh status on explicit account verification and normal catalog refresh,
-  with stale data clearly labeled.
-
-Acceptance criteria:
-
-- Status is non-blocking and disappears cleanly for M3U-only users.
-- Unix expiry values, unlimited accounts, and provider type inconsistencies are
-  covered by unit tests.
-- Passwords and full credential-bearing URLs never enter logs or rendered HTML.
-
-## Priority 8: Guide preview feasibility
+## Priority 4: Guide preview feasibility
 
 Prototype a small live preview in the EPG detail area, then keep it only if the
 native video plane behaves reliably across supported TVs.

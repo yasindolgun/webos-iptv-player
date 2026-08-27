@@ -11,6 +11,7 @@ import {
   flushCacheWrites,
 } from './services/idb-cache';
 import { SetupClient } from './services/setup-client';
+import { BackupClient } from './services/backup-client';
 import { setServicePort } from './services/service-http';
 import { ChannelList } from './components/channel-list';
 import { Player } from './components/player';
@@ -47,6 +48,10 @@ import { $, show, hide } from './utils/dom';
 import { createLogger, installGlobalErrorHandlers, logEnvironment } from './utils/logger';
 import type { Action, NumberEvent, CatchupInfo, Channel, EpgSource, PlaylistEntry } from './types';
 import { getLocale, initLocale, resolveLocale, setLocale, t, tp } from './i18n';
+import {
+  refreshXtreamAccountStatus,
+  XTREAM_ACCOUNT_STATUS_EVENT,
+} from './services/xtream-account-status';
 
 const log = createLogger('App');
 
@@ -253,6 +258,7 @@ class App {
       onSelectAccount: (id) => this.selectXtreamAccount(id),
     });
     this.tabBar.init();
+    window.addEventListener(XTREAM_ACCOUNT_STATUS_EVENT, () => this.syncAccountStatusViews());
 
     KeyHandler.init();
     KeyHandler.setHandler((action, event) => this.handleKey(action, event));
@@ -448,6 +454,11 @@ class App {
     }
     await this.queueDeviceSetupSync();
     void SetupClient.publishState();
+    await BackupClient.publishArchive();
+    if (await BackupClient.applyPendingImports()) {
+      location.reload();
+      return;
+    }
     await this.settings.refreshSetupInfo();
     await this.settings.refreshUploads();
     await this.loadChannelsAfterFirstUpload();
@@ -563,6 +574,13 @@ class App {
             void this.queueDeviceSetupSync();
             return;
           }
+          if (resp && typeof resp === 'object' &&
+              (resp as { event?: unknown }).event === 'backup-changed') {
+            void BackupClient.applyPendingImports().then((applied) => {
+              if (applied) location.reload();
+            }).catch(err => log.error('Backup import sync failed:', err));
+            return;
+          }
           void this.settings.refreshUploads()
             .then(() => this.loadChannelsAfterFirstUpload())
             .catch(err => log.error('Upload event refresh failed:', err));
@@ -663,7 +681,9 @@ class App {
       this.tabBar.setSections(hasXtream || hasM3uCatalog);
       const xtreamAccounts = StorageService.getPlaylists()
         .filter((p) => p.source === 'xtream' && p.xtream && isSourceEnabled(p));
-      this.tabBar.setAccounts(xtreamAccounts, this.activeXtreamAccount()?.id ?? '');
+      this.tabBar.setAccounts(this.xtreamAccountOptions(xtreamAccounts),
+        this.activeXtreamAccount()?.id ?? '');
+      this.refreshXtreamAccountStatuses();
 
       this.channelList.render();
       this.returnToView(destination ?? 'home');
@@ -806,6 +826,8 @@ class App {
       hasSeries: !!account || PlaylistService.getContentKindCount('series') > 0,
       resume,
       lastRefreshAt: StorageService.getLastPlaylistRefreshAt(),
+      accountName: account?.name ?? '',
+      accountStatus: account ? StorageService.getXtreamAccountStatus(account.id) : null,
     };
   }
 
@@ -1015,7 +1037,9 @@ class App {
       this.tabBar.setSections(hasXtream || hasM3uCatalog);
       const xtreamAccounts = StorageService.getPlaylists()
         .filter((p) => p.source === 'xtream' && p.xtream && isSourceEnabled(p));
-      this.tabBar.setAccounts(xtreamAccounts, this.activeXtreamAccount()?.id ?? '');
+      this.tabBar.setAccounts(this.xtreamAccountOptions(xtreamAccounts),
+        this.activeXtreamAccount()?.id ?? '');
+      this.refreshXtreamAccountStatuses(sourceIds);
       this.channelList.render();
       this.scanReminders();
       ReminderService.reschedulePending();
@@ -1069,6 +1093,7 @@ class App {
     const current = this.navigator.current ?? 'home';
     if (current !== 'settings') this.settingsOrigin = current;
     this.settings.render();
+    void BackupClient.publishArchive();
     this.navigateTo('settings');
   }
 
@@ -1098,6 +1123,9 @@ class App {
     this.tabBar.setAccounts(this.catalogSources(section).map(source => ({
       id: catalogSourceKey(source),
       name: names.get(source.playlistId) ?? source.playlistId,
+      status: source.kind === 'xtream'
+        ? StorageService.getXtreamAccountStatus(source.playlistId)
+        : null,
     })), catalogSourceKey(selected));
   }
 
@@ -1113,6 +1141,7 @@ class App {
       const account = StorageService.getPlaylists().find(entry =>
         entry.id === source.playlistId && entry.source === 'xtream' && entry.xtream);
       if (!account) return;
+      this.refreshXtreamAccountStatuses([account.id]);
       const view = section === 'movies' ? this.movies : this.series;
       view.open(account).catch((err) => log.error(
         `${section === 'movies' ? 'Movies' : 'Series'} open failed`,
@@ -1156,6 +1185,43 @@ class App {
     return accounts.find((a) => a.id === selId) ?? accounts[0] ?? null;
   }
 
+  private xtreamAccountOptions(accounts: PlaylistEntry[]) {
+    return accounts.map(account => ({
+      id: account.id,
+      name: account.name,
+      status: StorageService.getXtreamAccountStatus(account.id),
+    }));
+  }
+
+  private syncAccountStatusViews(): void {
+    const current = this.navigator.current;
+    if (current === 'movies' || current === 'series') {
+      const source = this.activeCatalogSource(current);
+      if (source) this.setCatalogSwitcher(current, source);
+    } else {
+      const accounts = StorageService.getPlaylists()
+        .filter(item => item.source === 'xtream' && item.xtream && isSourceEnabled(item));
+      this.tabBar.setAccounts(this.xtreamAccountOptions(accounts),
+        this.activeXtreamAccount()?.id ?? '');
+    }
+    if (current === 'home') this.home.update(this.homeState());
+  }
+
+  private refreshXtreamAccountStatuses(sourceIds?: readonly string[]): void {
+    const requested = sourceIds ? new Set(sourceIds) : null;
+    const accounts = StorageService.getPlaylists().filter(item =>
+      item.source === 'xtream' && item.xtream && isSourceEnabled(item)
+      && (!requested || requested.has(item.id)));
+    for (const account of accounts) {
+      void refreshXtreamAccountStatus(account).catch(err => log.warn(
+        'Xtream account status refresh failed',
+        'event=xtream.account_status.failed',
+        `source=${account.id}`,
+        err,
+      ));
+    }
+  }
+
   // A different Xtream account was picked in the avatar dropdown: persist it and
   // reload whichever account-scoped section is showing. Live/Settings just store.
   private selectXtreamAccount(id: string): void {
@@ -1174,8 +1240,8 @@ class App {
     if (!account) return;
     log.info('Xtream account switched to', account.name);
     this.tabBar.setAccounts(
-      StorageService.getPlaylists()
-        .filter((p) => p.source === 'xtream' && p.xtream && isSourceEnabled(p)),
+      this.xtreamAccountOptions(StorageService.getPlaylists()
+        .filter((p) => p.source === 'xtream' && p.xtream && isSourceEnabled(p))),
       account.id,
     );
     if (current === 'movies') {
@@ -1604,6 +1670,7 @@ class App {
       // settings never reach the phone page otherwise. Advisory, so it never
       // holds up closing Settings.
       void SetupClient.publishState();
+      void BackupClient.publishArchive();
     }
     if (action === 'reload') {
       this.resetView('channels');

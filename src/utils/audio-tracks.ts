@@ -1,5 +1,6 @@
 import type { AudioOption, AudioPref, ManifestAudio } from '../types';
 import { t } from '../i18n';
+import { languageMatches } from './language';
 
 // The hls.js audio-track fields we read, structural to avoid an hls.js type dep.
 export interface HlsAudioTrackLike {
@@ -34,14 +35,24 @@ export function nativeAudioOptions(list: AudioTrackList): AudioOption[] {
   });
 }
 
-/** Pick a track index for `options`, preferring `pref` (name then language), else the default. */
-export function chooseAudioIndex(options: AudioOption[], pref: AudioPref | null): number {
+/** Pick by remembered name/language, global language, then stream default. */
+export function chooseAudioIndex(
+  options: AudioOption[],
+  pref: AudioPref | null,
+  preferredLanguage = '',
+): number {
   if (!options.length) return -1;
   if (pref) {
     const byName = pref.name && options.find(o => o.name.toLowerCase() === pref.name.toLowerCase());
     if (byName) return byName.index;
-    const byLang = pref.lang && options.find(o => o.lang.toLowerCase() === pref.lang.toLowerCase());
+    const byLang = pref.lang && options.find(o => languageMatches(o.lang, pref.lang));
     if (byLang) return byLang.index;
+  }
+  if (preferredLanguage) {
+    const byLanguage = options.find(o =>
+      languageMatches(o.lang, preferredLanguage)
+      || languageMatches(o.name, preferredLanguage));
+    if (byLanguage) return byLanguage.index;
   }
   return (options.find(o => o.isDefault) ?? options[0]).index;
 }
@@ -50,7 +61,7 @@ export function chooseAudioIndex(options: AudioOption[], pref: AudioPref | null)
 export function isPrefMatch(opt: AudioOption | undefined, pref: AudioPref | null): boolean {
   return !!pref && !!opt
     && ((!!pref.name && opt.name.toLowerCase() === pref.name.toLowerCase())
-      || (!!pref.lang && opt.lang.toLowerCase() === pref.lang.toLowerCase()));
+      || (!!pref.lang && languageMatches(opt.lang, pref.lang)));
 }
 
 // Parse the EXT-X-MEDIA:TYPE=AUDIO renditions from an HLS master playlist, in

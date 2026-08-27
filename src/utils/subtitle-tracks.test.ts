@@ -136,6 +136,32 @@ describe('chooseSubtitleIndex', () => {
   it('falls back to off when the pref matches nothing and nothing is forced', () => {
     expect(chooseSubtitleIndex(opts, { off: false, name: 'gone', lang: 'gone' })).toBe(-1);
   });
+
+  it('applies off, forced and normalized language defaults after remembered picks', () => {
+    const tracks = [
+      opt({ index: 0, name: 'Deutsch', lang: 'deu', isDefault: true }),
+      opt({ index: 1, name: 'English', lang: 'eng' }),
+      opt({ index: 2, name: 'Track 3', lang: 'l3', isForced: true }),
+    ];
+    expect(chooseSubtitleIndex(tracks, null, 'off', 'en')).toBe(-1);
+    expect(chooseSubtitleIndex(tracks, null, 'forced', 'en')).toBe(2);
+    expect(chooseSubtitleIndex(tracks, null, 'language', 'en-US')).toBe(1);
+    expect(chooseSubtitleIndex(
+      tracks,
+      { off: false, name: 'Deutsch', lang: '' },
+      'language',
+      'en',
+    )).toBe(0);
+  });
+
+  it('falls back from a missing preferred language to forced, then default', () => {
+    const forced = opts.map((option, index) => ({ ...option, isForced: index === 2 }));
+    expect(chooseSubtitleIndex(forced, null, 'language', 'zz')).toBe(2);
+    const withDefault = opts.map((option, index) => ({ ...option, isDefault: index === 1 }));
+    expect(chooseSubtitleIndex(withDefault, null, 'language', 'zz')).toBe(1);
+    const providerDefault = opts.map((option, index) => ({ ...option, active: index === 0 }));
+    expect(chooseSubtitleIndex(providerDefault, null, 'language', 'zz')).toBe(0);
+  });
 });
 
 describe('isSubtitlePrefMatch', () => {

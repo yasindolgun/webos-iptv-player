@@ -114,7 +114,8 @@ match** (so a collapsed list isn't mislabelled):
 ## Per-track-source memory
 
 The chosen track is remembered as `{ name, language }` and re-applied on the next tune-in — matched
-by name, then language, else the stream default. Live/catch-up channels key on `channelKey`; VOD
+by name, then language. With no matching saved pick, the global preferred audio language is tried
+before the stream default. Live/catch-up channels key on `channelKey`; VOD
 (Xtream movies/episodes) keys on `vod:<account>:<kind>:<itemId>`, so a movie and an episode each keep
 their own pick. The manifest names are what make this reliable for HLS; the empty-metadata native
 tracks alone can't be keyed, but a VOD container's tracks usually carry real labels.

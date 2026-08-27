@@ -483,6 +483,7 @@ export class PlayerTracks {
     path: string,
     options: AudioOption[],
     pref: AudioPref | null,
+    preferredLanguage: string,
     index: number,
   ): void {
     const option = options.find(item => item.index === index);
@@ -491,6 +492,7 @@ export class PlayerTracks {
       : t('player.audioFallback', { number: index + 1 });
     log.info(`audio: ${path} | tracks:`, options.length,
       '| storage pref:', pref ? (pref.name || pref.lang || '(unnamed)') : 'none',
+      '| global language:', preferredLanguage || 'none',
       '| using:', index, label,
       isPrefMatch(option, pref) ? '(saved pref)' : '(stream default)');
   }
@@ -505,8 +507,9 @@ export class PlayerTracks {
       this.preferenceKey(),
       this.legacyPreferenceKey(),
     );
-    const index = chooseAudioIndex(options, pref);
-    this.logAudioChoice('hls', options, pref, index);
+    const preferredLanguage = StorageService.getPlaybackTrackPreferences().audioLanguage;
+    const index = chooseAudioIndex(options, pref, preferredLanguage);
+    this.logAudioChoice('hls', options, pref, preferredLanguage, index);
     if (index >= 0) this.pipeline.setMseAudioTrack(index);
   }
 
@@ -514,13 +517,14 @@ export class PlayerTracks {
     if (this.pipeline.isMseActive()) return; // hls.js owns the rendition; videoEl exposes only the active one
     const list = this.options.getVideoElement()?.audioTracks;
     if (!list || list.length < 2) return;
-    const options = this.audioOptions();
+    const options = this.displayAudioOptions().filter(option => option.available);
     const pref = StorageService.getAudioPref(
       this.preferenceKey(),
       this.legacyPreferenceKey(),
     );
-    const index = chooseAudioIndex(options, pref);
-    this.logAudioChoice('native', options, pref, index);
+    const preferredLanguage = StorageService.getPlaybackTrackPreferences().audioLanguage;
+    const index = chooseAudioIndex(options, pref, preferredLanguage);
+    this.logAudioChoice('native', options, pref, preferredLanguage, index);
     if (index < 0 || list[index].enabled) return; // already active — don't disturb playback
     for (let i = 0; i < list.length; i++) list[i].enabled = (i === index);
   }
@@ -769,7 +773,13 @@ export class PlayerTracks {
       return;
     } // CC path owns it
     const options = this.subtitleOptions();
-    const index = chooseSubtitleIndex(options, pref);
+    const defaults = StorageService.getPlaybackTrackPreferences();
+    const index = chooseSubtitleIndex(
+      options,
+      pref,
+      defaults.subtitleMode,
+      defaults.subtitleLanguage,
+    );
     this.logSubtitleChoice('self-render', options, pref, index);
     this.applySubtitleChoice(index);
   }
@@ -816,7 +826,13 @@ export class PlayerTracks {
       this.preferenceKey(),
       this.legacyPreferenceKey(),
     );
-    const index = chooseSubtitleIndex(options, pref);
+    const defaults = StorageService.getPlaybackTrackPreferences();
+    const index = chooseSubtitleIndex(
+      options,
+      pref,
+      defaults.subtitleMode,
+      defaults.subtitleLanguage,
+    );
     this.logSubtitleChoice('hls', options, pref, index);
     this.pipeline.setMseSubtitleTrack(index);
     this.loadSubtitleOffset();
@@ -835,7 +851,13 @@ export class PlayerTracks {
     if (this.options.getVod()) {
       const options = this.subtitleOptions();
       if (!options.length) return;
-      const index = chooseSubtitleIndex(options, pref);
+      const defaults = StorageService.getPlaybackTrackPreferences();
+      const index = chooseSubtitleIndex(
+        options,
+        pref,
+        defaults.subtitleMode,
+        defaults.subtitleLanguage,
+      );
       this.logSubtitleChoice('vod-native', options, pref, index);
       this.applySubtitleChoice(index);
       this.loadSubtitleOffset();

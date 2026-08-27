@@ -51,7 +51,7 @@
 
 - **M3U playlists** — load multiple M3U/M3U8 lists, auto-deduplicated, and temporarily disable a source without deleting its setup
 - **Xtream Codes accounts** — add or temporarily disable accounts, or switch between accounts from the top-bar avatar; playlists and EPG data are derived from their credentials
-- **LAN setup** — configure sources and online subtitle settings or upload `.m3u` files from a phone on the same network by scanning a QR code ([LAN service](docs/lan-service.md))
+- **LAN setup** — configure sources and subtitles, upload `.m3u` files, or transfer a credential-free backup from a phone on the same network ([LAN service](docs/lan-service.md))
 
 **Live TV & on-demand**
 
@@ -59,7 +59,7 @@
 - **Channel health** — check live streams and mark them as healthy, suspect, or unavailable
 - **Reminders** — flag an upcoming program and get notified at air time, even with the app closed, to tune straight in
 - **Recently Watched** — return to recent live channels or resume partially watched catch-up programs
-- **Movies & Series** — browse an Xtream account's VOD catalogs, with Continue Watching and account-scoped Watchlist rails
+- **Movies & Series** — browse an Xtream account's VOD catalogs, with Continue Watching, account-scoped Watchlist rails, and Watched / In Progress episode states
 - **Automatic VOD queues** — continue through series episodes or remaining Watchlist movies, removing completed titles from the Watchlist
 - **Catch-up & Live DVR** — replay past programs, and pause / rewind / return to the live edge on live streams
 
@@ -227,7 +227,7 @@ Opens at http://localhost:3000. Video playback uses HLS.js, mpegts.js, and dash.
 Open with the **Blue** key or the **Settings** tab in the top bar. Sections:
 
 - **Language** — follow the TV's system language when supported, or choose a language explicitly.
-- **Device Setup** — scan the QR code to configure the app from a phone, or open the shown URL on a computer and enter the pairing code.
+- **Device Setup** — scan the QR code to configure the app, transfer selected local data with Merge/Replace, or enter the pairing code from a computer.
 - **Xtream Accounts** — add, edit, remove, or temporarily disable accounts; check credentials, connection usage, and expiry; and choose TS, HLS, or Auto for live streams. The playlist and EPG are derived from the account credentials on Save.
 - **Playlists** — add, edit, remove, or temporarily disable M3U URLs. Re-applied on Save.
 - **Upload Playlist** — QR code + LAN URL on the left, list of currently uploaded playlists on the right. Scan the QR from a phone/laptop on the same network to upload `.m3u` files; they appear in this list within milliseconds via Luna push.

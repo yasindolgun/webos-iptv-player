@@ -1,6 +1,6 @@
 import { CONFIG } from '../config';
 import { DEFAULT_THEME, DEFAULT_OVERLAY, DEFAULT_TEXT_SIZE, isValidTextSize, type OverlayStyle, type TextSize } from '../config/themes';
-import type { AudioPref, CatchupProgressEntry, Channel, ChannelCustomization, PlaylistEntry, RecentlyWatchedLiveEntry, Reminder, ResumeEntry, ResumeKind, SubtitlePref, TzMode, WatchlistEntry, WatchlistKind } from '../types';
+import type { AudioPref, CatchupProgressEntry, Channel, ChannelCustomization, EpisodeCompletion, PlaybackTrackPreferences, PlaylistEntry, RecentlyWatchedLiveEntry, Reminder, ResumeEntry, ResumeKind, SubtitlePref, TzMode, WatchlistEntry, WatchlistKind, XtreamAccountStatusSnapshot } from '../types';
 import type { OnlineSubtitleConfig, PickedOnlineSub } from './subtitle-search/types';
 import { channelKey, legacyChannelKey } from '../utils/channel';
 import { genPlaylistId } from '../utils/playlist';
@@ -44,6 +44,7 @@ interface UserDataState {
   subtitleOffsets: Record<string, number>;
   resume: Record<string, ResumeEntry>;
   watchHistory: Record<string, ResumeEntry>;
+  episodeCompletions: Record<string, EpisodeCompletion>;
   watchlist: Record<string, WatchlistEntry>;
   onlineSubPicks: Record<string, PickedOnlineSub>;
   catchupProgress: Record<string, StoredCatchup>;
@@ -87,6 +88,12 @@ function resumeKey(entry: Pick<ResumeEntry, 'accountId' | 'kind' | 'itemId'>): s
 
 function historyKey(entry: Pick<ResumeEntry, 'accountId' | 'kind' | 'itemId'>): string {
   return `history:${entry.accountId}|${entry.kind}|${entry.itemId}`;
+}
+
+function episodeCompletionKey(
+  entry: Pick<EpisodeCompletion, 'accountId' | 'itemId'>,
+): string {
+  return `completed:${entry.accountId}|${entry.itemId}`;
 }
 
 function watchlistKey(entry: Pick<WatchlistEntry, 'accountId' | 'kind' | 'itemId'>): string {
@@ -149,6 +156,10 @@ function allUserRecords(data: UserDataState): Parameters<typeof replaceAllUserDa
       ...Object.keys(data.watchHistory).map(key => {
         const entry = data.watchHistory[key];
         return record(historyKey(entry), entry, { updatedAt: entry.updatedAt });
+      }),
+      ...Object.keys(data.episodeCompletions).map(key => {
+        const entry = data.episodeCompletions[key];
+        return record(episodeCompletionKey(entry), entry, { updatedAt: entry.completedAt });
       }),
       ...Object.keys(data.catchupProgress).map(key => {
         const entry = data.catchupProgress[key];
@@ -296,7 +307,7 @@ async function loadUserDataState(): Promise<UserDataState> {
   const channelState = records['channel-state'];
   const watchlist = records.watchlist as UserDataRecord<WatchlistEntry>[];
   const progress = records['playback-progress'] as
-    UserDataRecord<ResumeEntry | StoredCatchup>[];
+    UserDataRecord<ResumeEntry | StoredCatchup | EpisodeCompletion>[];
   const recentlyWatched = records['recently-watched'] as
     UserDataRecord<RecentlyWatchedLiveEntry>[];
   const onlineSubPicks = records['online-sub-picks'] as
@@ -311,6 +322,7 @@ async function loadUserDataState(): Promise<UserDataState> {
     subtitleOffsets: {},
     resume: {},
     watchHistory: {},
+    episodeCompletions: {},
     watchlist: {},
     onlineSubPicks: {},
     catchupProgress: {},
@@ -352,6 +364,9 @@ async function loadUserDataState(): Promise<UserDataState> {
     } else if (item.key.startsWith('history:')) {
       const entry = item.value as ResumeEntry;
       data.watchHistory[`${entry.accountId}|${entry.kind}|${entry.itemId}`] = entry;
+    } else if (item.key.startsWith('completed:')) {
+      const entry = item.value as EpisodeCompletion;
+      data.episodeCompletions[`${entry.accountId}|${entry.itemId}`] = entry;
     } else if (item.key.startsWith('catchup:')) {
       const entry = item.value as StoredCatchup;
       data.catchupProgress[`${entry.channelKey}|${entry.progStart}`] = entry;
@@ -541,8 +556,48 @@ export const StorageService = {
     const previous = get<PlaylistEntry[]>('playlists', []);
     if (JSON.stringify(previous) === JSON.stringify(playlists)) return true;
     const stored = set('playlists', playlists);
-    if (stored) evictCache();
+    if (stored) {
+      evictCache();
+      const accountIds = new Set(playlists
+        .filter(item => item.source === 'xtream')
+        .map(item => item.id));
+      const statuses = get<Record<string, XtreamAccountStatusSnapshot>>('xtream_account_status', {});
+      let statusesChanged = false;
+      for (const id of Object.keys(statuses)) {
+        if (accountIds.has(id)) continue;
+        delete statuses[id];
+        statusesChanged = true;
+      }
+      if (statusesChanged) set('xtream_account_status', statuses);
+    }
     return stored;
+  },
+
+  async reloadUserData(): Promise<void> {
+    await flushUserDataWrites();
+    userData = await loadUserDataState();
+    userDataInitPromise = Promise.resolve();
+  },
+
+  getXtreamAccountStatus(accountId: string): XtreamAccountStatusSnapshot | null {
+    const value = get<Record<string, unknown>>('xtream_account_status', {})[accountId];
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const item = value as Partial<XtreamAccountStatusSnapshot>;
+    if (!['active', 'expired', 'disabled', 'unreachable'].includes(item.state ?? '')
+        || typeof item.checkedAt !== 'number' || !Number.isFinite(item.checkedAt)
+        || !Number.isFinite(new Date(item.checkedAt).getTime())
+        || (item.expiresAt !== null
+          && (typeof item.expiresAt !== 'number' || !Number.isFinite(item.expiresAt)
+            || !Number.isFinite(new Date(item.expiresAt * 1000).getTime())))
+        || typeof item.maxConnections !== 'number' || !Number.isFinite(item.maxConnections)
+        || typeof item.activeConnections !== 'number'
+        || !Number.isFinite(item.activeConnections)) return null;
+    return cloneValue(item as XtreamAccountStatusSnapshot);
+  },
+  setXtreamAccountStatus(accountId: string, status: XtreamAccountStatusSnapshot): void {
+    const statuses = get<Record<string, XtreamAccountStatusSnapshot>>('xtream_account_status', {});
+    statuses[accountId] = cloneValue(status);
+    set('xtream_account_status', statuses);
   },
 
   getLastPlaylistRefreshAt(): number | null {
@@ -751,6 +806,38 @@ export const StorageService = {
     set('locale', locale);
   },
 
+  getPlaybackTrackPreferences(): PlaybackTrackPreferences {
+    const stored = get<Partial<PlaybackTrackPreferences>>('playback_track_preferences', {});
+    const subtitleMode = stored.subtitleMode === 'off'
+      || stored.subtitleMode === 'language'
+      || stored.subtitleMode === 'forced'
+      ? stored.subtitleMode
+      : 'forced';
+    return {
+      audioLanguage: typeof stored.audioLanguage === 'string'
+        ? stored.audioLanguage.slice(0, 32)
+        : '',
+      subtitleMode,
+      subtitleLanguage: subtitleMode === 'language'
+        && typeof stored.subtitleLanguage === 'string'
+        ? stored.subtitleLanguage.slice(0, 32)
+        : '',
+    };
+  },
+  setPlaybackTrackPreferences(preferences: PlaybackTrackPreferences): void {
+    const subtitleMode = preferences.subtitleMode === 'off'
+      || preferences.subtitleMode === 'language'
+      ? preferences.subtitleMode
+      : 'forced';
+    set('playback_track_preferences', {
+      audioLanguage: preferences.audioLanguage.slice(0, 32),
+      subtitleMode,
+      subtitleLanguage: subtitleMode === 'language'
+        ? preferences.subtitleLanguage.slice(0, 32)
+        : '',
+    });
+  },
+
   // Selected color theme id (see src/config/themes.ts). Default = Midnight.
   getTheme(): string {
     return get<string>('theme', DEFAULT_THEME);
@@ -928,6 +1015,66 @@ export const StorageService = {
     const all = get<Record<string, ResumeEntry>>('resume', {});
     delete all[key];
     set('resume', all);
+  },
+
+  getEpisodeCompletion(accountId: string, itemId: string): EpisodeCompletion | null {
+    if (!userData) return null;
+    const entry = userData.episodeCompletions[`${accountId}|${itemId}`] ?? null;
+    return entry ? cloneValue(entry) : null;
+  },
+  getEpisodeCompletions(accountId: string, seriesId: string): EpisodeCompletion[] {
+    if (!userData) return [];
+    return Object.keys(userData.episodeCompletions)
+      .map(key => userData!.episodeCompletions[key])
+      .filter(entry => entry.accountId === accountId && entry.seriesId === seriesId)
+      .sort((a, b) => b.completedAt - a.completedAt)
+      .map(cloneValue);
+  },
+  setEpisodeCompleted(
+    accountId: string,
+    seriesId: string,
+    itemId: string,
+    completed: boolean,
+    completedAt = Date.now(),
+  ): void {
+    if (!userData || !accountId || !itemId) return;
+    const mapKey = `${accountId}|${itemId}`;
+    const completionKey = episodeCompletionKey({ accountId, itemId });
+    if (!completed) {
+      delete userData.episodeCompletions[mapKey];
+      persistUserChanges('playback-progress', [], [completionKey]);
+      return;
+    }
+    const entry: EpisodeCompletion = { accountId, seriesId, itemId, completedAt };
+    userData.episodeCompletions[mapKey] = entry;
+    const resumeMapKey = `${accountId}|episode|${itemId}`;
+    delete userData.resume[resumeMapKey];
+    persistUserChanges(
+      'playback-progress',
+      [record(completionKey, entry, { updatedAt: completedAt })],
+      [resumeKey({ accountId, kind: 'episode', itemId })],
+    );
+  },
+  clearSeriesEpisodeHistory(accountId: string, seriesId: string): void {
+    if (!userData) return;
+    const deletes: string[] = [];
+    for (const key of Object.keys(userData.episodeCompletions)) {
+      const entry = userData.episodeCompletions[key];
+      if (entry.accountId !== accountId || entry.seriesId !== seriesId) continue;
+      deletes.push(episodeCompletionKey(entry));
+      delete userData.episodeCompletions[key];
+    }
+    for (const collection of [userData.resume, userData.watchHistory]) {
+      for (const key of Object.keys(collection)) {
+        const entry = collection[key];
+        const ownerSeriesId = entry.seriesId ?? entry.watchlistOwner?.itemId;
+        if (entry.accountId !== accountId || entry.kind !== 'episode'
+            || ownerSeriesId !== seriesId) continue;
+        deletes.push(collection === userData.resume ? resumeKey(entry) : historyKey(entry));
+        delete collection[key];
+      }
+    }
+    persistUserChanges('playback-progress', [], deletes);
   },
 
   // Which Xtream account drives Movies / Series / Search. Null = pick the first.

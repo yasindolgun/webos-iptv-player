@@ -20,6 +20,7 @@ vi.mock('../services/storage-service', () => ({
     getSubtitlePref: vi.fn(), setSubtitlePref: vi.fn(),
     getAudioPref: vi.fn(), setAudioPref: vi.fn(),
     setResume: vi.fn(), setWatchHistory: vi.fn(), clearResume: vi.fn(),
+    setEpisodeCompleted: vi.fn(),
     removeWatchlist: vi.fn(),
     getPickedOnlineSub: vi.fn(), setPickedOnlineSub: vi.fn(),
     setCatchupProgress: vi.fn(), getCatchupProgress: vi.fn(), clearCatchupProgress: vi.fn(),
@@ -960,6 +961,7 @@ describe('Player VOD mode', () => {
     player.playVod(req({
       itemId: 'e1',
       kind: 'episode',
+      seriesId: 's1',
       episodeQueue: [next],
       watchlistOwner: { kind: 'series', itemId: 's1' },
     }));
@@ -982,6 +984,36 @@ describe('Player VOD mode', () => {
     expect(StorageService.clearResume).toHaveBeenCalledWith('x1', 'vod', '10');
     expect(StorageService.removeWatchlist).toHaveBeenCalledWith('x1', 'vod', '10');
     expect(r.onBack).toHaveBeenCalled();
+  });
+
+  it('marks an episode completed when playback ends', () => {
+    const video = fakeVideo(1_800);
+    player.init(video);
+    player.playVod(req({ itemId: 'e1', kind: 'episode', seriesId: 's1' }));
+
+    video.dispatchEvent(new Event('ended'));
+
+    expect(StorageService.setEpisodeCompleted).toHaveBeenCalledWith(
+      'x1', 's1', 'e1', true,
+    );
+    expect(StorageService.clearResume).not.toHaveBeenCalledWith('x1', 'episode', 'e1');
+  });
+
+  it('marks an episode completed when leaving inside the finish pad', () => {
+    const video = fakeVideo(1_800);
+    player.init(video);
+    vi.mocked(StorageService.setResume).mockClear();
+    player.playVod(req({ itemId: 'e1', kind: 'episode', seriesId: 's1' }));
+    video.currentTime = 1_795;
+
+    player.handleAction('back');
+
+    expect(StorageService.setEpisodeCompleted).toHaveBeenCalledWith(
+      'x1', 's1', 'e1', true, expect.any(Number),
+    );
+    expect(StorageService.setResume).not.toHaveBeenCalledWith(
+      expect.objectContaining({ itemId: 'e1' }),
+    );
   });
 
   it('counts down and starts the next movie from a Watchlist queue', async () => {
@@ -1019,7 +1051,9 @@ describe('Player VOD mode', () => {
       url: 'http://host:8080/series/u/p/e2.mp4', title: 'Series One — S1E2',
       poster: '', accountId: 'x1', itemId: 'e2', kind: 'episode' as const, subtitles: [],
     };
-    player.playVod(req({ itemId: 'e1', kind: 'episode', episodeQueue: [next] }));
+    player.playVod(req({
+      itemId: 'e1', kind: 'episode', seriesId: 's1', episodeQueue: [next],
+    }));
     vi.mocked(probeMedia).mockClear();
 
     video.dispatchEvent(new Event('ended'));

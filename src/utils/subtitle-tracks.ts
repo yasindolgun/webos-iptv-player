@@ -1,9 +1,10 @@
-import type { SubtitleOption, SubtitlePref, ManifestSubtitle, ManifestClosedCaption } from '../types';
+import type { DefaultSubtitleMode, SubtitleOption, SubtitlePref, ManifestSubtitle, ManifestClosedCaption } from '../types';
 import { CONFIG } from '../config';
 import ISO6391 from 'iso-639-1';
 import { iso6392BTo1 } from 'iso-639-2/2b-to-1';
 import { iso6392TTo1 } from 'iso-639-2/2t-to-1';
 import { t } from '../i18n';
+import { languageMatches, normalizeLanguage } from './language';
 
 // The hls.js subtitle-track fields we read, structural to avoid an hls.js type dep.
 export interface HlsSubtitleTrackLike {
@@ -20,7 +21,8 @@ export interface HlsSubtitleTrackLike {
 // covers CJK/Arabic/Hebrew/Thai — 中文 confirmed on-device.
 export function languageName(lang: string): string {
   const code = lang.toLowerCase().split('-')[0];
-  const two = code.length === 3 ? (iso6392BTo1[code] || iso6392TTo1[code]) : code;
+  const two = normalizeLanguage(code)
+    || (code.length === 3 ? (iso6392BTo1[code] || iso6392TTo1[code]) : code);
   return (two && ISO6391.getNativeName(two)) || lang;
 }
 
@@ -78,23 +80,40 @@ export function nativeSubtitleOptions(list: TextTrackList): SubtitleOption[] {
 /** Pick a subtitle index for `options`, or -1 for off. Honors an explicit "off"
  *  pref, else matches by name then language; with no usable pref the stream
  *  default is the forced track if any, otherwise off (subtitles stay off). */
-export function chooseSubtitleIndex(options: SubtitleOption[], pref: SubtitlePref | null): number {
+export function chooseSubtitleIndex(
+  options: SubtitleOption[],
+  pref: SubtitlePref | null,
+  defaultMode: DefaultSubtitleMode = 'forced',
+  preferredLanguage = '',
+): number {
   if (pref) {
     if (pref.off) return -1;
     const byName = pref.name && options.find(o => o.name.toLowerCase() === pref.name.toLowerCase());
     if (byName) return byName.index;
-    const byLang = pref.lang && options.find(o => o.lang.toLowerCase() === pref.lang.toLowerCase());
+    const byLang = pref.lang && options.find(o => languageMatches(o.lang, pref.lang));
     if (byLang) return byLang.index;
   }
+  if (defaultMode === 'off') return -1;
+  if (defaultMode === 'language' && preferredLanguage) {
+    const byLanguage = options.find(o =>
+      languageMatches(o.lang, preferredLanguage)
+      || languageMatches(o.name, preferredLanguage));
+    if (byLanguage) return byLanguage.index;
+  }
   const forced = options.find(o => o.isForced);
-  return forced ? forced.index : -1;
+  if (forced) return forced.index;
+  if (defaultMode === 'language') {
+    const streamDefault = options.find(o => o.isDefault) ?? options.find(o => o.active);
+    if (streamDefault) return streamDefault.index;
+  }
+  return -1;
 }
 
 /** Whether `pref` actually matched `opt` by name/language (vs. off / a fallback). */
 export function isSubtitlePrefMatch(opt: SubtitleOption | undefined, pref: SubtitlePref | null): boolean {
   return !!pref && !pref.off && !!opt
     && ((!!pref.name && opt.name.toLowerCase() === pref.name.toLowerCase())
-      || (!!pref.lang && opt.lang.toLowerCase() === pref.lang.toLowerCase()));
+      || (!!pref.lang && languageMatches(opt.lang, pref.lang)));
 }
 
 // Parse the EXT-X-MEDIA:TYPE=SUBTITLES renditions from an HLS master playlist, in
