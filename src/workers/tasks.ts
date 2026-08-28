@@ -1,4 +1,4 @@
-import type { ParsedEpg } from '../types';
+import type { ParsedEpg, ParsedPlaylist } from '../types';
 import type { XMLTVParseStats } from '../parsers/xmltv-parser';
 
 export interface XMLTVWorkerRequest {
@@ -71,6 +71,11 @@ export interface ListSearchQueryRequest {
   limit?: number;
 }
 
+export interface M3UParseWorkerRequest {
+  buffer: ArrayBuffer;
+  sourceUrl: string;
+}
+
 export interface ScopedSearchReleaseRequest {
   owner: string;
   sessionId: number;
@@ -98,6 +103,10 @@ export interface MappingSearchQueryRequest {
 }
 
 export interface AppWorkerTasks {
+  'm3u.parse': {
+    request: M3UParseWorkerRequest;
+    response: ParsedPlaylist;
+  };
   'xmltv.load': {
     request: XMLTVWorkerRequest;
     response: XMLTVWorkerResponse;

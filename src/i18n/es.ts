@@ -301,6 +301,8 @@ export const ES_MESSAGES = {
   'settings.dataManagement': 'Gestión de datos',
   'settings.refreshAll': 'Actualizar lista y guía',
   'settings.refreshingData': 'Actualizando datos…', 'settings.refreshProgress': '{completed} de {total} fuentes actualizadas',
+  'settings.refreshPhaseDownload': 'Descargando lista…', 'settings.refreshPhaseParse': 'Analizando lista…',
+  'settings.refreshPhaseMerge': 'Combinando lista…', 'settings.refreshPhaseCache': 'Guardando caché de la lista…',
   'settings.lastUpdated': 'Última actualización: {time}', 'settings.notRefreshedYet': 'Aún no se ha actualizado',
   'settings.refreshComplete': 'Lista y guía actualizadas', 'settings.refreshFailed': 'No se pudo completar la actualización',
   'settings.refreshSourcesFailed': { one: 'No se pudo actualizar {count} fuente', other: 'No se pudieron actualizar {count} fuentes' },

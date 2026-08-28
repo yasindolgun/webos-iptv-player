@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { readFile } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
@@ -46,6 +46,13 @@ const FIXTURE = {
 };
 const COLD_PLAYLIST_URL = 'http://host/cold-list.m3u';
 const XMLTV_PIPELINE_URL = 'http://host/benchmark-guide.xml.gz';
+
+async function openLiveFromHome(page: Page): Promise<void> {
+  const live = page.locator('[data-home-action="live"]');
+  await expect(live).toBeVisible({ timeout: 30_000 });
+  await live.click();
+  await expect(page.locator('#view-channels')).toBeVisible({ timeout: 30_000 });
+}
 
 test('records 50,000-item application benchmarks', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'The benchmark uses Chromium heap metrics');
@@ -98,7 +105,7 @@ test('records 50,000-item application benchmarks', async ({ page, browserName })
   try {
     const startupStarted = Date.now();
     await page.goto('/');
-    await expect(page.locator('#view-channels')).toBeVisible();
+    await openLiveFromHome(page);
     await expect(page.locator('.channel-item').first()).toBeVisible();
     const startupReadyMs = Date.now() - startupStarted;
     const startupHover = await page.evaluate(measureStartupHoverBenchmark);
@@ -164,7 +171,7 @@ test('records 50,000-item application benchmarks', async ({ page, browserName })
     assertXMLTVCatalogBenchmark(parsers.xmltvCatalog);
     await page.evaluate(installM3USearchFixture);
     await page.reload();
-    await expect(page.locator('#view-channels')).toBeVisible();
+    await openLiveFromHome(page);
     suites.search.m3u = await page.evaluate(
       runM3USearchBenchmark,
       { querySamples: QUERY_SAMPLES },
@@ -173,7 +180,7 @@ test('records 50,000-item application benchmarks', async ({ page, browserName })
     await page.evaluate(installUniqueGroupFixture, SCALE);
     const groupStartupStarted = Date.now();
     await page.reload();
-    await expect(page.locator('#view-channels')).toBeVisible();
+    await openLiveFromHome(page);
     const groups = await page.evaluate(runGroupBenchmark, { keySamples: KEY_SAMPLES });
     groups.startupMs = Date.now() - groupStartupStarted;
     assertGroupBenchmarkScale(groups, SCALE);
@@ -184,7 +191,7 @@ test('records 50,000-item application benchmarks', async ({ page, browserName })
     });
     const coldStarted = performance.now();
     await page.reload();
-    await expect(page.locator('#view-channels')).toBeVisible();
+    await openLiveFromHome(page);
     await expect(page.locator('.channel-item').first()).toBeVisible();
     const coldResult = await page.evaluate(() => {
       const totalSize = parseFloat(
@@ -231,11 +238,19 @@ test('records 50,000-item application benchmarks', async ({ page, browserName })
     await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
     console.log(`Benchmark report: ${outputPath}`);
   } finally {
-    await page.goto('/benchmark-seed.html');
-    await page.evaluate(cleanupBenchmarkFixture, {
-      accountId: FIXTURE.accountId,
-      epgUrl: FIXTURE.epgUrl,
-      backupKey: FIXTURE.backupKey,
-    });
+    try {
+      await page.goto('/benchmark-seed.html');
+      await page.evaluate(cleanupBenchmarkFixture, {
+        accountId: FIXTURE.accountId,
+        epgUrl: FIXTURE.epgUrl,
+        backupKey: FIXTURE.backupKey,
+      });
+    } finally {
+      try {
+        await cdp.detach();
+      } finally {
+        await page.request.post('/__benchmark-shutdown');
+      }
+    }
   }
 });

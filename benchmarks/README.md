@@ -37,7 +37,7 @@ sample counts instead of comparing incompatible reports.
 
 | Suite | Metrics |
 |---|---|
-| Startup | Cached playlist, indexes, and EPG restoration until Channels is visible; hover-to-next-frame latency is regression-gated |
+| Startup | Cached playlist, indexes, and EPG restoration through the Home → Live activation until Channels is visible; hover-to-next-frame latency is regression-gated |
 | Cold load | Uncached 50,000-channel M3U fetch, production parse, index build, and first useful render |
 | Raw parsing | Production M3U and XMLTV parsers plus the production playlist derived-index builder over generated 50,000-item data, and a provider-shaped guide parsed twice — whole feed vs. programmes pre-filtered to the 15% of channels a playlist keeps while retaining the lightweight XMLTV channel catalog for manual mapping, each bracketed by a forced GC so `parsers.xmltvCatalog` reports both duration and retained heap; `parsers.xmltvPipelineBuffered` and `parsers.xmltvPipeline` fetch the same gzip guide through the legacy buffered and production worker-streaming paths, with end-to-end timing, maximum animation-frame gap, and separate forced-GC CDP page-heap sampling; derived-index duration, production XMLTV duration, and frame gap are regression-gated |
 | Channel List | Bounded DOM size and D-pad handler p50/p95/max |

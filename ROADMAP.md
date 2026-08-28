@@ -12,7 +12,7 @@ The app already provides the foundations that a large-catalog TV client needs:
 - M3U and multi-account Xtream sources, XMLTV, catch-up, and live DVR
 - virtualized channel, group, EPG, search, catalog, and episode collections
 - IndexedDB-backed user data and bounded, budgeted caches
-- worker-based XMLTV loading and search indexing
+- worker-based M3U decoding/parsing, XMLTV loading, and search indexing
 - native webOS playback with desktop HLS, MPEG-TS, and DASH adapters
 - LAN-only QR setup, M3U upload, and credential-free backup/restore
 - playback resume, episode completion, Continue Watching, Recently Watched,
@@ -25,20 +25,63 @@ The app already provides the foundations that a large-catalog TV client needs:
 - remote, Magic Remote, accessibility, localization, and webOS 4 fallbacks
 - a production-path benchmark at 50,000 items under CPU throttling
 
+## Engineering audit update — 2026-08-28
+
+The project-wide type, compatibility, unit, integration, and browser gates were
+reviewed together with the startup, worker, cache, and large-list lifecycles.
+This pass completed the first M3U worker boundary and tightened several
+independent reliability gaps:
+
+- playlist bytes are transferred to the classic app worker for decoding and
+  parsing, while Settings reports download, parse, merge, and cache phases
+- an M3U worker request has a bounded timeout, so a silent worker cannot leave
+  startup or refresh waiting forever; failures before ownership transfer use
+  the production parser on the page as a compatibility fallback
+- the player sidebar reuses already decoded channel logos across reopen cycles
+  while preserving the one-logo-per-frame reveal budget
+- Settings Cancel now uses the component's single delegated activation path,
+  removing a render-time listener race in the legacy engine path
+- bundled-service startup E2E coverage now waits for the actual reconciliation
+  boundary and mocks every prerequisite endpoint instead of depending on host
+  network-failure timing
+- desktop and TV benchmark reloads follow the current Home → Live startup flow
+  instead of waiting forever for the retired direct-to-Live launch behavior
+- benchmark Xtream fixtures use the credential-scoped production cache key, so
+  catalog measurements cannot silently fall through to empty network fixtures
+- throttled worker-idle checks now allow scheduler jitter, and the isolated
+  benchmark preview server shuts down cleanly after Windows runs
+
+The remaining high-impact gaps found by the audit feed Priority 1 and 2 below:
+
+- the M3U benchmark times the synchronous parser and overall cold readiness,
+  but does not yet isolate the production worker round trip, structured-clone
+  result cost, or maximum page frame gap
+- parsed channels still return to the page as one complete object graph before
+  merge, indexing, and persistence, so the worker boundary does not yet bound
+  peak memory for 100,000-200,000-item sources
+- derived indexes are still prepared on the page, and the 200,000-item target
+  has no staged 50,000/100,000/200,000 profile or device memory budget yet
+- the desktop benchmark baseline was recorded with Chrome 149 while the current
+  Playwright runtime is Chrome 151; regenerate it deliberately before using
+  comparative regression results from the new engine
+- real webOS 4 validation remains required; the Chromium 53 project is a
+  compatibility simulation, not an engine or memory emulator
+
 ## Priority 1: Large-source ingestion
 
+M3U bytes are transferred to the existing classic app worker for decoding and
+parsing, with download, parse, merge, and cache progress reported separately.
+The request is bounded and retains a main-thread compatibility fallback when
+the worker fails before taking ownership of the input buffer.
 Move the remaining expensive playlist work off the UI thread while preserving
 the tolerant production parser and current cache format.
 
-- Run M3U decoding, parsing, and derived-index preparation in the existing
-  classic app worker.
-- Add progressive status for download, parse, merge, and cache phases without
-  making progress reporting part of the parser's data model.
+- Run derived-index preparation in the existing classic app worker.
+- Add a production-path M3U pipeline benchmark that records worker round-trip
+  duration, maximum page frame gap, input transfer, result-clone cost, and the
+  failure-timeout path separately from the synchronous raw-parser benchmark.
 - Evaluate chunked decoding where the webOS 4 API surface permits it; retain a
   bounded buffered fallback for legacy engines and providers that cannot stream.
-- Fetch playlist bytes as an `ArrayBuffer` and transfer ownership to the worker
-  where supported; do not assume `ReadableStream` or `TextDecoderStream` exists
-  on the Chromium 53 baseline.
 - Avoid cloning multiple full playlist copies or a complete parsed object tree
   between the page and worker. Prefer bounded record batches or worker-owned
   persistence, and return only progress and compact index summaries to the page.

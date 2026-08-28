@@ -298,6 +298,8 @@ export const ZH_CN_MESSAGES = {
   'settings.dataManagement': '数据管理',
   'settings.refreshAll': '刷新播放列表和节目指南',
   'settings.refreshingData': '正在刷新数据…', 'settings.refreshProgress': '已刷新 {completed}/{total} 个来源',
+  'settings.refreshPhaseDownload': '正在下载播放列表…', 'settings.refreshPhaseParse': '正在解析播放列表…',
+  'settings.refreshPhaseMerge': '正在合并播放列表…', 'settings.refreshPhaseCache': '正在保存播放列表缓存…',
   'settings.lastUpdated': '上次更新：{time}', 'settings.notRefreshedYet': '尚未刷新',
   'settings.refreshComplete': '播放列表和节目指南已刷新', 'settings.refreshFailed': '刷新未能完成',
   'settings.refreshSourcesFailed': { one: '{count} 个来源无法刷新', other: '{count} 个来源无法刷新' },

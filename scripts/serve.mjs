@@ -5,6 +5,7 @@ import { LEGACY_HEADER, readLegacyAsset } from './chromium-53-simulation.mjs';
 
 const PORT = 3000;
 const DIR = 'dist';
+const benchmarkShutdown = process.argv.includes('--benchmark-shutdown');
 
 const MIME = {
   '.css': 'text/css',
@@ -20,8 +21,16 @@ const MIME = {
   '.xml': 'application/xml',
 };
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
   const pathname = new URL(req.url || '/', 'http://localhost').pathname;
+  if (benchmarkShutdown && pathname === '/__benchmark-shutdown') {
+    res.writeHead(200, { 'Connection': 'close', 'Content-Type': 'text/plain' });
+    res.end('Stopping benchmark server', () => {
+      server.close();
+      setTimeout(() => process.exit(0), 100).unref();
+    });
+    return;
+  }
   const file = join(DIR, pathname === '/' ? '/index.html' : pathname);
   try {
     const ext = extname(file);
@@ -39,6 +48,8 @@ createServer(async (req, res) => {
     res.writeHead(404);
     res.end('Not found');
   }
-}).listen(PORT, () => {
+});
+
+server.listen(PORT, () => {
   console.log(`Preview: http://localhost:${PORT}`);
 });

@@ -34,7 +34,7 @@ interface WorkerFailure {
 type WorkerResponse = WorkerSuccess | WorkerFailure;
 
 interface WorkerLike {
-  postMessage(message: unknown): void;
+  postMessage(message: unknown, transfer?: Transferable[]): void;
   terminate(): void;
   addEventListener(type: 'message', listener: (event: MessageEvent<unknown>) => void): void;
   addEventListener(type: 'error', listener: (event: ErrorEvent) => void): void;
@@ -49,12 +49,19 @@ interface WorkerEndpoint {
 type PendingRequest = {
   resolve(value: unknown): void;
   reject(reason: Error): void;
+  timer: ReturnType<typeof setTimeout> | null;
 };
+
+export interface WorkerRequestOptions {
+  transfer?: Transferable[];
+  timeoutMs?: number;
+}
 
 export type WorkerRpcFatalReason =
   | 'execution_error'
   | 'message_error'
-  | 'protocol_error';
+  | 'protocol_error'
+  | 'timeout';
 
 interface WorkerRpcClientOptions {
   onFatal?(error: Error, reason: WorkerRpcFatalReason): void;
@@ -93,6 +100,7 @@ export class WorkerRpcClient<Tasks extends WorkerTaskMap<Tasks>> {
   request<TaskName extends keyof Tasks & string>(
     task: TaskName,
     payload: Tasks[TaskName]['request'],
+    options: WorkerRequestOptions = {},
   ): Promise<Tasks[TaskName]['response']> {
     if (this.closed) return Promise.reject(new Error('Worker RPC client is terminated'));
     const id = this.nextId++;
@@ -100,11 +108,20 @@ export class WorkerRpcClient<Tasks extends WorkerTaskMap<Tasks>> {
       this.pending.set(id, {
         resolve: value => resolve(value as Tasks[TaskName]['response']),
         reject,
+        timer: options.timeoutMs && options.timeoutMs > 0
+          ? setTimeout(() => this.failFatal(
+              new Error(`Worker task timed out: ${task}`),
+              'timeout',
+            ), options.timeoutMs)
+          : null,
       });
       const message: WorkerRequest = { kind: 'request', id, task, payload };
       try {
-        this.worker.postMessage(message);
+        if (options.transfer?.length) this.worker.postMessage(message, options.transfer);
+        else this.worker.postMessage(message);
       } catch (error) {
+        const pending = this.pending.get(id);
+        if (pending?.timer) clearTimeout(pending.timer);
         this.pending.delete(id);
         reject(asError(error));
       }
@@ -129,6 +146,7 @@ export class WorkerRpcClient<Tasks extends WorkerTaskMap<Tasks>> {
     const pending = this.pending.get(value.id);
     if (!pending) return;
     this.pending.delete(value.id);
+    if (pending.timer) clearTimeout(pending.timer);
     if (value.kind === 'success') {
       pending.resolve(value.result);
       return;
@@ -143,7 +161,10 @@ export class WorkerRpcClient<Tasks extends WorkerTaskMap<Tasks>> {
   }
 
   private failAll(error: Error): void {
-    for (const request of this.pending.values()) request.reject(error);
+    for (const request of this.pending.values()) {
+      if (request.timer) clearTimeout(request.timer);
+      request.reject(error);
+    }
     this.pending.clear();
   }
 

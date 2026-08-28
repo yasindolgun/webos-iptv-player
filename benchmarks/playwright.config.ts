@@ -22,8 +22,9 @@ export default defineConfig({
     video: 'off',
   },
   webServer: {
-    command: 'npm run preview',
+    command: 'node scripts/serve.mjs --benchmark-shutdown',
     cwd: '..',
+    gracefulShutdown: { signal: 'SIGINT', timeout: 500 },
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120_000,

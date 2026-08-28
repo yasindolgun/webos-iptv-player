@@ -7,8 +7,8 @@ import {
   type PlaylistEntry,
   type PlaylistTab,
 } from '../types';
-import { parseM3U } from '../parsers/m3u-parser';
-import { fetchPlaylistText } from '../utils/fetch-helper';
+import { fetchPlaylistBytes } from '../utils/fetch-helper';
+import { parseM3UOffThread } from '../workers/m3u-parser-client';
 import {
   xtreamPlaylistUrl,
   xtreamEpgUrl,
@@ -48,6 +48,8 @@ const log = createLogger('Playlist');
 export interface PlaylistRefreshProgress {
   completed: number;
   total: number;
+  phase: 'download' | 'parse' | 'merge' | 'cache';
+  sourceId?: string;
 }
 
 export interface PlaylistRefreshReport {
@@ -64,6 +66,18 @@ function usableDirectSource(value: string): string {
   } catch {
     return '';
   }
+}
+
+function isXtreamLiveEntry(channel: Channel): boolean {
+  try {
+    const firstPathPart = new URL(channel.url).pathname.split('/').filter(Boolean)[0]
+      ?.toLowerCase();
+    if (firstPathPart === 'movie' || firstPathPart === 'series') return false;
+    if (firstPathPart === 'live') return true;
+  } catch {
+    // Fall back to the M3U group classification for non-standard stream routes.
+  }
+  return (channel.contentKind ?? m3uContentKind(channel.sourceGroup ?? channel.group)) === 'live';
 }
 
 function xtreamLivePlaylist(
@@ -86,6 +100,7 @@ function xtreamLivePlaylist(
     catchupSource: '',
     catchupDays: 0,
     catchupStreamId: stream.streamId,
+    contentKind: 'live',
   }));
   const groups = Array.from(new Set(channels.map(channel => channel.group)));
   return {
@@ -162,6 +177,9 @@ class PlaylistServiceImpl {
   async load(): Promise<Channel[]> {
     const enabledSources = StorageService.getPlaylists().filter(isSourceEnabled);
     const enabledIds = new Set(enabledSources.map(source => source.id));
+    const xtreamIds = new Set(enabledSources
+      .filter(source => source.source === 'xtream')
+      .map(source => source.id));
     if (!enabledIds.size) {
       this.reset();
       this.logLoadCompleted('none', 0, 0);
@@ -171,16 +189,26 @@ class PlaylistServiceImpl {
     // successful snapshot at startup until the user explicitly asks for a refresh.
     const cached = await getCachedPlaylist(true);
     if (cached) {
-      const channelsNeedFiltering = cached.channels
-        .some(channel => channel.playlistIds.some(id => !enabledIds.has(id)));
-      this.allChannels = channelsNeedFiltering
-        ? cached.channels
-            .map(channel => ({
-              ...channel,
-              playlistIds: channel.playlistIds.filter(id => enabledIds.has(id)),
-            }))
-            .filter(channel => channel.playlistIds.length > 0)
-        : cached.channels;
+      let compactedXtreamEntries = 0;
+      let channelsChanged = false;
+      const filteredChannels: Channel[] = [];
+      for (const channel of cached.channels) {
+        const keepXtreamMembership = isXtreamLiveEntry(channel);
+        const playlistIds = channel.playlistIds.filter(id =>
+          enabledIds.has(id) && (!xtreamIds.has(id) || keepXtreamMembership));
+        if (playlistIds.length !== channel.playlistIds.length) {
+          channelsChanged = true;
+          if (!keepXtreamMembership
+              && channel.playlistIds.some(id => xtreamIds.has(id))) {
+            compactedXtreamEntries++;
+          }
+        }
+        if (!playlistIds.length) continue;
+        filteredChannels.push(playlistIds.length === channel.playlistIds.length
+          ? channel
+          : { ...channel, playlistIds });
+      }
+      this.allChannels = channelsChanged ? filteredChannels : cached.channels;
       const epgSourcesNeedFiltering = cached.epgSources
         .some(source => source.playlistIds.some(id => !enabledIds.has(id)));
       this.epgSources = epgSourcesNeedFiltering
@@ -192,6 +220,14 @@ class PlaylistServiceImpl {
             .filter(source => source.playlistIds.length > 0)
         : cached.epgSources;
       log.info('Cache hit:', this.allChannels.length, 'channels,', this.epgSources.length, 'epg sources');
+      if (compactedXtreamEntries) {
+        log.info(
+          'Compacted non-live Xtream entries from the startup cache',
+          'event=xtream.playlist.cache.compacted',
+          `entries=${compactedXtreamEntries}`,
+        );
+        scheduleCachedPlaylist(this.allChannels, this.epgSources);
+      }
       this.applyCustomization();
       this.buildPlaylistTabs();
       StorageService.migrateFavoriteKeys(this.channels);
@@ -272,7 +308,15 @@ class PlaylistServiceImpl {
     const catalogCacheRestoredIds = new Set<string>();
     let failedPlaylists = 0;
     let completedPlaylists = 0;
-    onProgress?.({ completed: 0, total: playlists.length });
+    const reportProgress = (
+      phase: PlaylistRefreshProgress['phase'],
+      sourceId?: string,
+    ): void => onProgress?.({
+      completed: completedPlaylists,
+      total: playlists.length,
+      phase,
+      ...(sourceId ? { sourceId } : {}),
+    });
     const addEpgSource = (url: string, playlistId: string, kind: EpgSource['kind']): void => {
       const existing = epgSources.find((source) => source.url === url);
       if (existing) {
@@ -311,9 +355,11 @@ class PlaylistServiceImpl {
         let parsed: ParsedPlaylist | null = null;
         let playlistError: unknown;
         try {
-          const text = await fetchPlaylistText(fetchUrl, 60000);
-          log.info('Fetched', pl.name || pl.url, '|', text.length, 'bytes');
-          parsed = parseM3U(text, fetchUrl);
+          reportProgress('download', plKey);
+          const buffer = await fetchPlaylistBytes(fetchUrl, 60000);
+          log.info('Fetched', pl.name || pl.url, '|', buffer.byteLength, 'bytes');
+          reportProgress('parse', plKey);
+          parsed = await parseM3UOffThread(buffer, fetchUrl);
         } catch (err) {
           playlistError = err;
           if (!xtreamCredentials) throw err;
@@ -326,9 +372,7 @@ class PlaylistServiceImpl {
 
         let fallbackStreams: XtreamLiveStream[] | undefined;
         if (xtreamCredentials) {
-          const hasLivePlaylistEntries = parsed?.channels.some(channel =>
-            channel.contentKind === 'live'
-            && !/\/(?:movie|series)\//i.test(channel.url)) ?? false;
+          const hasLivePlaylistEntries = parsed?.channels.some(isXtreamLiveEntry) ?? false;
           if (!hasLivePlaylistEntries) {
             log.warn(
               'Xtream playlist contained no live channels; trying the Player API live catalog',
@@ -368,6 +412,22 @@ class PlaylistServiceImpl {
           if ((!parsed || !parsed.channels.length) && playlistError) throw playlistError;
         }
         if (!parsed) throw new Error('Xtream source returned no playlist or live catalog');
+
+        if (xtreamCredentials) {
+          const parsedCount = parsed.channels.length;
+          parsed.channels = parsed.channels.filter(isXtreamLiveEntry);
+          parsed.groups = Array.from(new Set(parsed.channels.map(channel => channel.group)));
+          const omitted = parsedCount - parsed.channels.length;
+          if (omitted) {
+            log.info(
+              'Omitted non-live entries from the Xtream channel playlist',
+              'event=xtream.playlist.non_live_omitted',
+              `entries=${omitted}`,
+            );
+          }
+        }
+
+        reportProgress('merge', plKey);
 
         if (pl.source !== 'xtream') {
           for (const kind of ['movie', 'series', 'other'] as const) {
@@ -466,7 +526,6 @@ class PlaylistServiceImpl {
       }
       plDone();
       completedPlaylists++;
-      onProgress?.({ completed: completedPlaylists, total: playlists.length });
     }
 
     const playlistRanks = new Map(allConfigured.map((playlist, index) => [playlist.id, index]));
@@ -531,6 +590,7 @@ class PlaylistServiceImpl {
     this.epgSources = epgSources;
     // Cache the raw parse: customization is a view over it, so an edit re-sorts
     // memory instead of forcing a re-fetch.
+    reportProgress('cache');
     if (!failedPlaylists
         || (restoredPlaylists === failedPlaylists && !catalogCacheRestoredIds.size)) {
       scheduleCachedPlaylist(allChannels, epgSources);

@@ -307,6 +307,8 @@ export const UK_MESSAGES = {
   'settings.dataManagement': 'Керування даними',
   'settings.refreshAll': 'Оновити плейлист і телегід',
   'settings.refreshingData': 'Дані оновлюються…', 'settings.refreshProgress': 'Оновлено джерел: {completed} з {total}',
+  'settings.refreshPhaseDownload': 'Плейлист завантажується…', 'settings.refreshPhaseParse': 'Плейлист обробляється…',
+  'settings.refreshPhaseMerge': 'Плейлист об’єднується…', 'settings.refreshPhaseCache': 'Кеш плейлиста зберігається…',
   'settings.lastUpdated': 'Останнє оновлення: {time}', 'settings.notRefreshedYet': 'Ще не оновлювалося',
   'settings.refreshComplete': 'Плейлист і телегід оновлено', 'settings.refreshFailed': 'Не вдалося завершити оновлення',
   'settings.refreshSourcesFailed': { one: 'Не вдалося оновити {count} джерело', other: 'Не вдалося оновити {count} джерела' },

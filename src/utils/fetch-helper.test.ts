@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   fetchLimitedText,
   fetchMaybeGzipText,
+  fetchPlaylistBytes,
   fetchPlaylistText,
   fetchText,
   fetchWithTimeout,
@@ -35,6 +36,16 @@ describe('fetchText / fetchWithTimeout', () => {
   });
 
   describe('fetchPlaylistText', () => {
+    it('returns the original playlist buffer for worker transfer', async () => {
+      const bytes = new Uint8Array([1, 2, 3]);
+      vi.stubGlobal('fetch', vi.fn(async () => ({
+        ok: true,
+        arrayBuffer: async () => bytes.buffer,
+      } as unknown as Response)));
+
+      await expect(fetchPlaylistBytes('http://host/a')).resolves.toBe(bytes.buffer);
+    });
+
     it('decodes a BOM-marked UTF-16 playlist', async () => {
       const source = '#EXTM3U\n#EXTINF:-1,Alpha\nhttp://host/a';
       const bytes = new Uint8Array(source.length * 2 + 2);

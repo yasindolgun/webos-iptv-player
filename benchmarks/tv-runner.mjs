@@ -153,10 +153,18 @@ async function reloadApp(client, selectors = ['#view-channels']) {
   await waitForLoad(client, () => client.call('Page.reload', { ignoreCache: true }));
   await evaluate(client, async (readySelectors) => {
     const started = Date.now();
+    let openedLive = false;
     while (Date.now() - started < 30_000) {
       for (const selector of readySelectors) {
         const element = document.querySelector(selector);
         if (element && !element.classList.contains('hidden')) return true;
+      }
+      if (!openedLive && readySelectors.indexOf('#view-channels') >= 0) {
+        const live = document.querySelector('[data-home-action="live"]');
+        if (live && !live.closest('.hidden')) {
+          openedLive = true;
+          live.click();
+        }
       }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }

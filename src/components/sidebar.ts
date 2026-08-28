@@ -910,6 +910,11 @@ export class Sidebar {
     });
 
     sources.forEach((src) => {
+      if (this.decodedLogos.has(src)) {
+        this.logoRevealQueue.push(src);
+        this.scheduleLogoReveal(generation);
+        return;
+      }
       void this.preloadLogo(src).then((decoded) => {
         if (generation !== this.logoLoadGeneration || !this.isVisible) return;
         if (!decoded) {

@@ -30,7 +30,7 @@
     "version": "node scripts/sync-version.mjs && git add appinfo.json",
     "benchmark:typecheck": "tsc -p benchmarks/tsconfig.json",
     "benchmark:parser-build": "node benchmarks/build-parser-bundle.mjs",
-    "benchmark": "npm run benchmark:typecheck && npm run benchmark:parser-build && playwright test --config benchmarks/playwright.config.ts",
+    "benchmark": "npm run typecheck && node esbuild.config.mjs --preview && npm run benchmark:typecheck && npm run benchmark:parser-build && playwright test --config benchmarks/playwright.config.ts",
     "benchmark:check": "npm run benchmark && node benchmarks/compare.mjs",
     "benchmark:update": "npm run benchmark && node benchmarks/compare.mjs --update",
     "benchmark:tv": "npm run benchmark:parser-build && node benchmarks/tv-runner.mjs",

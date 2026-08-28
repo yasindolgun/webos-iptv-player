@@ -81,6 +81,7 @@ export const CONFIG = {
   M3U: {
     CATALOG_SEARCH_RESULT_CAP: 50_000,   // cap worker result transfer for very broad queries
     CATALOG_FRAME_THRESHOLD: 2_500,      // prepare larger catalogs outside the interaction frame
+    PARSE_TIMEOUT_MS: 120 * 1000,        // fail a wedged worker instead of leaving startup stuck
   },
 
   // Catch-up (time-shift) resume and history store tuning.

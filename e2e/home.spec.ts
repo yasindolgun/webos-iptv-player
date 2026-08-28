@@ -28,6 +28,17 @@ test('opens Live with OK', async ({ page }) => {
   await expect(page.locator('#view-channels')).toBeVisible();
 });
 
+test('reaches Settings with horizontal remote navigation', async ({ page }) => {
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.locator('[data-home-action="settings"]')).toHaveClass(/focused/);
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('[data-home-action="live"]')).toHaveClass(/focused/);
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Enter');
+
+  await expect(page.locator('#view-settings')).toBeVisible();
+});
+
 test('Settings Cancel and Save return to Home', async ({ page }) => {
   const settings = page.locator('[data-home-action="settings"]');
   await settings.click();

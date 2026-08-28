@@ -301,6 +301,8 @@ export const IT_MESSAGES = {
   'settings.dataManagement': 'Gestione dati',
   'settings.refreshAll': 'Aggiorna playlist e guida',
   'settings.refreshingData': 'Aggiornamento dati…', 'settings.refreshProgress': '{completed} di {total} sorgenti aggiornate',
+  'settings.refreshPhaseDownload': 'Download della lista…', 'settings.refreshPhaseParse': 'Analisi della lista…',
+  'settings.refreshPhaseMerge': 'Unione della lista…', 'settings.refreshPhaseCache': 'Salvataggio della cache della lista…',
   'settings.lastUpdated': 'Ultimo aggiornamento: {time}', 'settings.notRefreshedYet': 'Non ancora aggiornato',
   'settings.refreshComplete': 'Playlist e guida aggiornate', 'settings.refreshFailed': 'Impossibile completare l’aggiornamento',
   'settings.refreshSourcesFailed': { one: 'Impossibile aggiornare {count} sorgente', other: 'Impossibile aggiornare {count} sorgenti' },

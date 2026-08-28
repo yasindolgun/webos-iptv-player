@@ -79,9 +79,25 @@ export class Home {
       if (focused && focused.getAttribute('aria-disabled') !== 'true') {
         this.activate(focused.dataset.homeAction as HomeAction);
       }
-    } else if (action === 'up' || action === 'down' || action === 'left' || action === 'right') {
+    } else if (action === 'left' || action === 'right') {
+      this.moveHorizontal(action);
+    } else if (action === 'up' || action === 'down') {
       this.nav.move(action);
     }
+  }
+
+  private moveHorizontal(direction: 'left' | 'right'): void {
+    const cards = Array.from(
+      this.container.querySelectorAll<HTMLElement>('[data-home-action][data-focusable]'),
+    );
+    if (!cards.length) return;
+    const current = cards.indexOf(this.nav.focused as HTMLElement);
+    if (current < 0) {
+      this.nav.focus(cards[0]);
+      return;
+    }
+    const offset = direction === 'left' ? cards.length - 1 : 1;
+    this.nav.focus(cards[(current + offset) % cards.length]);
   }
 
   private activate(action: HomeAction): void {
@@ -97,7 +113,7 @@ export class Home {
     disabled = false,
   ): ReturnType<typeof html> {
     return html`
-      <button type="button" class="home-card ${extraClass}" data-focusable
+      <button type="button" class="home-card ${extraClass}" ${disabled ? '' : raw('data-focusable')}
               data-key="${action}" data-home-action="${action}"
               aria-disabled="${disabled ? 'true' : 'false'}">
         <span class="home-card-icon">${raw(ICONS[action])}</span>

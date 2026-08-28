@@ -19,6 +19,24 @@ async function installStartupHarness(
 ): Promise<void> {
   await page.route('http://127.0.0.1:9999/setup-state', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"updated":true}' }));
+  await page.route('http://127.0.0.1:9999/setup-actions', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('http://127.0.0.1:9999/backup', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await page.route('http://127.0.0.1:9999/backup-import', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('http://127.0.0.1:9999/info', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ip: '127.0.0.1',
+        port: 9999,
+        setupUrl: 'http://127.0.0.1:9999/setup',
+        manualUrl: 'http://127.0.0.1:9999/setup',
+        pairingCode: '123456',
+      }),
+    }));
   await page.addInitScript(({ initialVisibility, devMode }) => {
     type Cb = (resp: unknown) => void;
     type LunaOpts = {
@@ -130,8 +148,10 @@ test('channels render while service startup is pending without duplicate work', 
 });
 
 test('uploaded-only startup keeps Settings open after background reconciliation', async ({ page }) => {
-  await page.route('http://127.0.0.1:9999/uploads', (route) =>
-    route.fulfill({
+  let uploadLists = 0;
+  await page.route('http://127.0.0.1:9999/uploads', (route) => {
+    uploadLists++;
+    return route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify([{
@@ -141,7 +161,8 @@ test('uploaded-only startup keeps Settings open after background reconciliation'
         createdAt: 1,
         url: 'http://127.0.0.1:9999/uploads/ch1.m3u',
       }]),
-    }));
+    });
+  });
   await page.route('http://127.0.0.1:9999/uploads/ch1.m3u', (route) =>
     route.fulfill({
       status: 200,
@@ -154,8 +175,11 @@ test('uploaded-only startup keeps Settings open after background reconciliation'
   await expect(page.locator('#view-settings')).toBeVisible();
   await releaseServiceStart(page);
 
+  await expect.poll(() => uploadLists).toBe(1);
+  await expect(page.locator('.channel-item')).toHaveCount(2);
   await expect(page.locator('#view-settings')).toBeVisible();
   await page.locator('#cancel-settings').click();
+  await expect(page.locator('#view-home')).toBeVisible();
   await page.locator('[data-home-action="live"]').click();
   await expect(page.locator('.channel-item')).toHaveCount(2);
 });

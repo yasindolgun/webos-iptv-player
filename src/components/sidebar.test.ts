@@ -265,7 +265,7 @@ describe('Sidebar', () => {
         finishOpening();
         await Promise.resolve();
         await Promise.resolve();
-        expect(preload).toHaveBeenCalledTimes(2);
+        expect(preload).not.toHaveBeenCalled();
         vi.advanceTimersByTime(20);
         expect(el.querySelectorAll('.ch-logo[src]')).toHaveLength(1);
         vi.advanceTimersByTime(20);

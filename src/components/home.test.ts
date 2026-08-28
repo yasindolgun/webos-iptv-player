@@ -66,7 +66,7 @@ describe('Home', () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
-  it('moves geometrically with the D-pad before selecting', () => {
+  it('keeps vertical D-pad movement geometric', () => {
     open();
     const cards = Array.from(container.querySelectorAll<HTMLElement>('[data-home-action]'));
     const positions: Record<string, [number, number]> = {
@@ -81,10 +81,29 @@ describe('Home', () => {
       });
     }
 
-    home.handleAction('right');
+    home.handleAction('down');
     home.handleAction('select');
 
-    expect(onAction).toHaveBeenCalledWith('movies');
+    expect(onAction).toHaveBeenCalledWith('epg');
+  });
+
+  it('cycles horizontally through available cards and reaches Settings', () => {
+    open({ hasMovies: false, hasSeries: false, resume: null });
+
+    home.handleAction('right');
+    expect(container.querySelector('[data-home-action="epg"]')?.classList.contains('focused'))
+      .toBe(true);
+    home.handleAction('right');
+    home.handleAction('right');
+    expect(container.querySelector('[data-home-action="settings"]')?.classList.contains('focused'))
+      .toBe(true);
+    home.handleAction('right');
+    expect(container.querySelector('[data-home-action="live"]')?.classList.contains('focused'))
+      .toBe(true);
+    home.handleAction('left');
+    home.handleAction('select');
+
+    expect(onAction).toHaveBeenCalledWith('settings');
   });
 
   it('supports Magic Remote clicks and ignores unavailable cards', () => {

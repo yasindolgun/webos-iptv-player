@@ -52,15 +52,19 @@ export async function fetchText(url: string, timeout = 30000): Promise<string> {
 }
 
 export async function fetchPlaylistText(url: string, timeout = 30000): Promise<string> {
+  const buffer = await fetchPlaylistBytes(url, timeout);
+  const { decodePlaylistBytes } = await import('../parsers/m3u-parser');
+  return decodePlaylistBytes(new Uint8Array(buffer));
+}
+
+export async function fetchPlaylistBytes(url: string, timeout = 30000): Promise<ArrayBuffer> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
 
   try {
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const { decodePlaylistBytes } = await import('../parsers/m3u-parser');
-    return decodePlaylistBytes(bytes);
+    return await response.arrayBuffer();
   } finally {
     clearTimeout(timer);
   }

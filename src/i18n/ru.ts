@@ -307,6 +307,8 @@ export const RU_MESSAGES = {
   'settings.dataManagement': 'Управление данными',
   'settings.refreshAll': 'Обновить плейлист и телегид',
   'settings.refreshingData': 'Данные обновляются…', 'settings.refreshProgress': 'Обновлено источников: {completed} из {total}',
+  'settings.refreshPhaseDownload': 'Плейлист загружается…', 'settings.refreshPhaseParse': 'Плейлист обрабатывается…',
+  'settings.refreshPhaseMerge': 'Плейлист объединяется…', 'settings.refreshPhaseCache': 'Кэш плейлиста сохраняется…',
   'settings.lastUpdated': 'Последнее обновление: {time}', 'settings.notRefreshedYet': 'Ещё не обновлялось',
   'settings.refreshComplete': 'Плейлист и телегид обновлены', 'settings.refreshFailed': 'Не удалось завершить обновление',
   'settings.refreshSourcesFailed': { one: 'Не удалось обновить {count} источник', other: 'Не удалось обновить {count} источника' },

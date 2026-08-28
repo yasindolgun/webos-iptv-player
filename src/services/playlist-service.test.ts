@@ -29,6 +29,10 @@ vi.mock('./idb-cache', () => cacheMock);
 vi.mock('./m3u-catalog-cache', () => m3uCacheMock);
 vi.mock('../utils/fetch-helper', async (importOriginal) => ({
   ...await importOriginal<typeof import('../utils/fetch-helper')>(),
+  fetchPlaylistBytes: async (url: string, timeout?: number) => {
+    const text = await fetchTextMock(url, timeout);
+    return new TextEncoder().encode(text).buffer;
+  },
   fetchPlaylistText: fetchTextMock,
   fetchText: fetchTextMock,
   fetchLimitedText: fetchTextMock,
@@ -300,14 +304,16 @@ describe('PlaylistService.refresh', () => {
     fetchTextMock.mockImplementation((url: string) =>
       url.includes('p1') ? Promise.reject(new Error('temporary failure')) : Promise.resolve(P2),
     );
-    const progress: { completed: number; total: number }[] = [];
+    const progress: import('./playlist-service').PlaylistRefreshProgress[] = [];
 
     const report = await PlaylistService.refreshWithReport((next) => progress.push(next));
 
     expect(progress).toEqual([
-      { completed: 0, total: 2 },
-      { completed: 1, total: 2 },
-      { completed: 2, total: 2 },
+      { completed: 0, total: 2, phase: 'download', sourceId: 'a' },
+      { completed: 1, total: 2, phase: 'download', sourceId: 'b' },
+      { completed: 1, total: 2, phase: 'parse', sourceId: 'b' },
+      { completed: 1, total: 2, phase: 'merge', sourceId: 'b' },
+      { completed: 2, total: 2, phase: 'cache' },
     ]);
     expect(report.sourceCount).toBe(2);
     expect(report.failedSourceIds).toEqual(['a']);
@@ -469,6 +475,31 @@ http://host:8080/live/u1/p1/102.ts`;
     expect(channels.map(c => c.name)).toEqual(['Alpha', 'Bravo']);
     // Live URLs come straight from the M3U on the native /live/USER/PASS/ID.ts form.
     expect(channels.every(c => /\/live\/u1\/p1\/\d+\.ts$/.test(c.url))).toBe(true);
+  });
+
+  it('omits flattened movie and series entries from the live channel cache', async () => {
+    fetchTextMock.mockImplementation((url: string) => {
+      if (url.includes('action=get_live_streams')) return Promise.resolve('[]');
+      if (url.includes('player_api.php')) return Promise.resolve('{}');
+      return Promise.resolve(`${XT}
+#EXTINF:-1 group-title="Movies",Film One
+http://host:8080/movie/u1/p1/201.mp4
+#EXTINF:-1 group-title="Series",Series One
+http://host:8080/series/u1/p1/301.mkv`);
+    });
+
+    const channels = await PlaylistService.refresh();
+
+    expect(channels.map(channel => channel.name)).toEqual(['Alpha', 'Bravo']);
+    expect(cacheMock.scheduleCachedPlaylist).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'Alpha' }),
+        expect.objectContaining({ name: 'Bravo' }),
+      ]),
+      expect.any(Array),
+    );
+    const cachedChannels = cacheMock.scheduleCachedPlaylist.mock.calls[0][0] as Channel[];
+    expect(cachedChannels.map(channel => channel.name)).toEqual(['Alpha', 'Bravo']);
   });
 
   it('does not request live categories when get.php returns live channels', async () => {
@@ -746,6 +777,37 @@ describe('PlaylistService.load', () => {
     expect(PlaylistService.groups).toEqual(['News']);
     expect(PlaylistService.epgSources).toEqual(epgSources);
     expect(fetchTextMock).not.toHaveBeenCalled();
+  });
+
+  it('compacts non-live Xtream entries from an existing startup cache', async () => {
+    const cached = [
+      channel({
+        id: 'a', name: 'Alpha', group: 'News',
+        url: 'http://host:8080/live/u1/p1/101.ts', playlistIds: ['x'],
+        contentKind: 'live',
+      }),
+      channel({
+        id: 'm', name: 'Film One', group: 'Movies',
+        url: 'http://host:8080/movie/u1/p1/201.mp4', playlistIds: ['x'],
+        contentKind: 'movie',
+      }),
+      channel({
+        id: 's', name: 'Series One', group: 'Series',
+        url: 'http://host:8080/series/u1/p1/301.mkv', playlistIds: ['x'],
+        contentKind: 'series',
+      }),
+    ];
+    storageMock.getPlaylists.mockReturnValue([{
+      id: 'x', name: 'Acct', url: 'http://host:8080', source: 'xtream',
+      xtream: { username: 'u1', password: 'p1' },
+    }]);
+    cacheMock.getCachedPlaylist.mockResolvedValue({ channels: cached, epgSources: [] });
+
+    const result = await PlaylistService.load();
+
+    expect(result.map(channel => channel.name)).toEqual(['Alpha']);
+    expect(fetchTextMock).not.toHaveBeenCalled();
+    expect(cacheMock.scheduleCachedPlaylist).toHaveBeenCalledWith([cached[0]], []);
   });
 
   it('refreshes playlist sources on a cache miss', async () => {

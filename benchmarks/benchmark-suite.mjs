@@ -180,6 +180,11 @@ export async function installBenchmarkFixture(options) {
       source: 'xtream',
       xtream: { username: 'u', password: 'p' },
     };
+    const catalogSourceSignature = fnv1a([
+      account.url,
+      account.xtream.username,
+      account.xtream.password,
+    ].join('\n'));
     const serializedPlaylists = JSON.stringify([account]);
     localStorage.setItem('iptv_playlists', serializedPlaylists);
     localStorage.setItem('iptv_selectedXtream', JSON.stringify(options.accountId));
@@ -307,7 +312,7 @@ export async function installBenchmarkFixture(options) {
     }
     const catalog = fixtureTx.objectStore('catalog-cache');
     const put = (suffix, data) => catalog.put(cacheRecord('catalog-cache', 'catalog', {
-      key: `${options.accountId}|${suffix}`,
+      key: `${options.accountId}|${catalogSourceSignature}|${suffix}`,
       timestamp: Date.now(),
       data,
     }));
@@ -1048,8 +1053,11 @@ export async function measureXMLTVPipelineBenchmark(options, io) {
   await io.collectGarbage();
   let workerTerminatedAfterIdle;
   if (!options.buffered) {
-    await io.delay(1100);
-    workerTerminatedAfterIdle = !(await io.evaluate(inspectXMLTVWorkerRunning));
+    const idleDeadline = Date.now() + 5000;
+    do {
+      await io.delay(100);
+      workerTerminatedAfterIdle = !(await io.evaluate(inspectXMLTVWorkerRunning));
+    } while (!workerTerminatedAfterIdle && Date.now() < idleDeadline);
     if (!workerTerminatedAfterIdle) {
       throw new Error('XMLTV worker remained active after its idle timeout');
     }
@@ -1275,7 +1283,6 @@ export async function runViewReopenCycle() {
     };
     const settle = () => new Promise((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
     click('[data-section="live"]');
     await waitFor('#view-channels:not(.hidden)');
     key('Enter', 13);
@@ -1753,6 +1760,20 @@ export async function runBenchmarkSuites(options) {
     };
     const settle = () => new Promise((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const leaveEpgForLive = async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const channels = document.querySelector('#view-channels');
+        if (channels && !channels.classList.contains('hidden')) return;
+        const home = document.querySelector('[data-home-action="live"]');
+        if (home && !home.closest('.hidden')) {
+          click('[data-home-action="live"]');
+          break;
+        }
+        key('Backspace', 461);
+        await settle();
+      }
+      await waitFor('#view-channels:not(.hidden)');
+    };
     const assertWindow = (selector, name) => {
       const mounted = document.querySelectorAll(selector);
       if (!mounted.length) throw new Error(`${name} virtual window is blank`);
@@ -2102,8 +2123,7 @@ export async function runBenchmarkSuites(options) {
       ),
       navigation: await measureKeys('ArrowDown', 40),
     };
-    key('Backspace', 461);
-    await waitFor('#view-channels:not(.hidden)');
+    await leaveEpgForLive();
 
     const moviesStarted = performance.now();
     click('[data-section="movies"]');
@@ -2309,8 +2329,7 @@ export async function runBenchmarkSuites(options) {
     epgSearchInput.value = '';
     epgSearchInput.dispatchEvent(new Event('input', { bubbles: true }));
     await settle();
-    key('Backspace', 461);
-    await waitFor('#view-channels:not(.hidden)');
+    await leaveEpgForLive();
 
     key('', 405);
     await waitFor('.edit-hints');

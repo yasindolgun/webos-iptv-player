@@ -1,4 +1,4 @@
-import { WorkerRpcClient } from './worker-rpc';
+import { WorkerRpcClient, type WorkerRequestOptions } from './worker-rpc';
 import type { AppWorkerTasks } from './tasks';
 import { createLogger } from '../utils/logger';
 
@@ -47,11 +47,12 @@ function appWorkerClient(): WorkerRpcClient<AppWorkerTasks> {
 export async function runAppWorkerTask<TaskName extends keyof AppWorkerTasks & string>(
   task: TaskName,
   payload: AppWorkerTasks[TaskName]['request'],
+  options?: WorkerRequestOptions,
 ): Promise<AppWorkerTasks[TaskName]['response']> {
   clearIdleTimer();
   activeRequests++;
   try {
-    return await appWorkerClient().request(task, payload);
+    return await appWorkerClient().request(task, payload, options);
   } finally {
     activeRequests--;
     scheduleIdleTermination();

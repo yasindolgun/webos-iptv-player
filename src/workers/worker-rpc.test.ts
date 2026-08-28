@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { exposeWorkerTasks, WorkerRpcClient } from './worker-rpc';
 
 interface TestTasks {
@@ -18,8 +18,10 @@ class LinkedEndpoint {
   private messageListener: ((event: MessageEvent<unknown>) => void) | null = null;
   private errorListener: ((event: ErrorEvent) => void) | null = null;
   private messageErrorListener: (() => void) | null = null;
+  lastTransfer: Transferable[] | undefined;
 
-  postMessage(message: unknown): void {
+  postMessage(message: unknown, transfer?: Transferable[]): void {
+    this.lastTransfer = transfer;
     queueMicrotask(() => {
       this.peer?.messageListener?.({ data: message } as MessageEvent<unknown>);
     });
@@ -80,6 +82,41 @@ describe('WorkerRpcClient', () => {
       client.request('add', { left: 4, right: 5 }),
     ])).resolves.toEqual([3, 9]);
     await expect(client.request('fail', undefined)).rejects.toThrow('failed task');
+  });
+
+  it('passes transferables to the worker endpoint', async () => {
+    const [clientEndpoint, workerEndpoint] = linkedEndpoints();
+    exposeWorkerTasks<TestTasks>(workerEndpoint, {
+      add: ({ left, right }) => left + right,
+      fail: () => { throw new Error('failed task'); },
+    });
+    const client = new WorkerRpcClient<TestTasks>(clientEndpoint);
+    const buffer = new ArrayBuffer(4);
+
+    await expect(client.request('add', { left: 1, right: 2 }, { transfer: [buffer] }))
+      .resolves.toBe(3);
+    expect(clientEndpoint.lastTransfer).toEqual([buffer]);
+  });
+
+  it('terminates a worker that does not settle a bounded request', async () => {
+    vi.useFakeTimers();
+    try {
+      const [clientEndpoint] = linkedEndpoints();
+      const fatals: string[] = [];
+      const client = new WorkerRpcClient<TestTasks>(clientEndpoint, {
+        onFatal: (_error, reason) => fatals.push(reason),
+      });
+      const pending = client.request('add', { left: 1, right: 2 }, { timeoutMs: 1000 });
+      const rejection = expect(pending).rejects.toThrow('Worker task timed out: add');
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      await rejection;
+      expect(clientEndpoint.terminated).toBe(true);
+      expect(fatals).toEqual(['timeout']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rejects pending work and terminates explicitly', async () => {

@@ -1,4 +1,5 @@
 import '../polyfills';
+import { parseM3UBytes } from '../parsers/m3u-parser';
 import { fetchAndParseXMLTVInWorker } from '../parsers/xmltv-loader';
 import { exposeWorkerTasks, type WorkerTaskHandlers } from './worker-rpc';
 import { SearchWorkerIndex } from './search-index';
@@ -8,6 +9,10 @@ import type { AppWorkerTasks } from './tasks';
 const searchIndex = new SearchWorkerIndex();
 const scopedSearchIndex = new ScopedSearchIndex();
 const handlers: WorkerTaskHandlers<AppWorkerTasks> = {
+  'm3u.parse': request => parseM3UBytes(
+    new Uint8Array(request.buffer),
+    request.sourceUrl,
+  ),
   'xmltv.load': request => fetchAndParseXMLTVInWorker(request),
   'search.index': request => searchIndex.index(request),
   'search.query': request => searchIndex.query(request),
