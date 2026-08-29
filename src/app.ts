@@ -144,6 +144,7 @@ class App {
       () => {
         this.sidebar.refresh();
       },
+      () => this.menu.show(),
     );
     this.epgGrid = new EpgGrid(
       this.views.epg,
@@ -1507,8 +1508,8 @@ class App {
         break;
       case 'player':
         if (this.player.isVod()) {
-          // A VOD menu (opened by the pointer) captures D-pad nav; Left closes
-          // it. Otherwise D-pad drives VOD playback (seek / pause / OSD).
+          // A VOD menu (opened with Down or the pointer) captures D-pad nav;
+          // Left closes it. Otherwise D-pad drives VOD playback.
           if (this.menu.visible) {
             if (action === 'up' || action === 'down' || action === 'select') this.menu.handleAction(action);
             else if (action === 'left') this.menu.hide();

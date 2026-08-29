@@ -44,6 +44,7 @@ export class Player {
   private onTvPlaybackChanged: (channelIndex: number, catchupStart: number | null) => void;
   private canAutoRevealOsd: () => boolean;
   private onChannelHealthChanged: () => void;
+  private onOpenMenu: () => void;
   private videoEl: HTMLVideoElement | null = null;
   private pipeline: PlayerPipeline;
   private tracks: PlayerTracks;
@@ -90,12 +91,14 @@ export class Player {
     onTvPlaybackChanged: (channelIndex: number, catchupStart: number | null) => void = () => {},
     canAutoRevealOsd: () => boolean = () => true,
     onChannelHealthChanged: () => void = () => {},
+    onOpenMenu: () => void = () => {},
   ) {
     this.container = container;
     this.onBack = onBack;
     this.onTvPlaybackChanged = onTvPlaybackChanged;
     this.canAutoRevealOsd = canAutoRevealOsd;
     this.onChannelHealthChanged = onChannelHealthChanged;
+    this.onOpenMenu = onOpenMenu;
     this.pipeline = new PlayerPipeline({
       playbackLabel: loadToken => this.playbackLabel(loadToken),
       mediaState: video => this.mediaState(video),
@@ -585,6 +588,9 @@ export class Player {
         break;
       case 'right':
         this.seekBy(CONFIG.PLAYER.SEEK_STEP);
+        break;
+      case 'down':
+        this.onOpenMenu();
         break;
       case 'play':
         if (this.videoEl?.paused) this.pauseToggle();

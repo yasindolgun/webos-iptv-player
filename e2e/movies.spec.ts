@@ -238,8 +238,8 @@ test('a VOD sidecar subtitle attaches as a native text track and loads its cues 
   });
   expect(attached).toEqual({ count: 1, label: 'Track 1', kind: 'subtitles', mode: 'disabled' });
 
-  // Open the right-edge menu into the Subtitles sub-menu; the sidecar is listed.
-  await page.mouse.move(1900, 540);
+  // Open the menu with the standard remote, then enter Subtitles; the sidecar is listed.
+  await page.keyboard.press('ArrowDown');
   const menu = page.locator('#player-menu');
   await expect(menu).toBeVisible();
   await page.keyboard.press('ArrowDown'); // Title Info -> Settings

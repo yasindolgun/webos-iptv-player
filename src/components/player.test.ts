@@ -872,12 +872,21 @@ describe('Player VOD mode', () => {
 
   let player: Player;
   let container: HTMLElement;
+  let openMenu: ReturnType<typeof vi.fn>;
   beforeEach(() => {
     document.body.innerHTML = ''; // drop the outer beforeEach's #player-osd (a duplicate id breaks scoped querySelector)
     container = document.createElement('div');
     container.innerHTML = '<div id="player-osd"></div>';
     document.body.appendChild(container);
-    player = new Player(container, () => {});
+    openMenu = vi.fn();
+    player = new Player(
+      container,
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      openMenu,
+    );
   });
   afterEach(() => { container.remove(); });
 
@@ -895,6 +904,17 @@ describe('Player VOD mode', () => {
     player.init(video);
     player.playVod(req());
     expect(player.canSeek()).toBe(true); // playVod shows the OSD
+  });
+
+  it('opens the player menu with Down without changing VOD seek controls', () => {
+    const video = fakeVideo(3600);
+    player.init(video);
+    player.playVod(req());
+
+    player.handleAction('down');
+
+    expect(openMenu).toHaveBeenCalledOnce();
+    expect(video.currentTime).toBe(0);
   });
 
   it('resyncAV seeks backward by RESYNC_SEEK_BACK on VOD', () => {

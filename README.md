@@ -261,7 +261,9 @@ Open with the **Blue** key or the **Settings** tab in the top bar. Sections:
 | 0-9 | Direct channel entry | Direct channel entry | — |
 
 Movies, Series, Search, Settings, and Reminder Manager use standard D-pad
-navigation; **Back** returns to the previous view.
+navigation; **Back** returns to the previous view. During movie or episode
+playback, **Down** opens the player menu for audio and subtitle selection while
+**Left/Right** seek backward or forward.
 
 ## Docs
 
