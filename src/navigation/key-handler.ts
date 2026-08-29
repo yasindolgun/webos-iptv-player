@@ -1,8 +1,8 @@
 import { CONFIG } from '../config';
 import { createLogger } from '../utils/logger';
-import type { Action, NumberEvent } from '../types';
+import type { Action, ActionEvent } from '../types';
 
-type ActionHandler = (action: Action, event?: NumberEvent) => void;
+type ActionHandler = (action: Action, event?: ActionEvent) => void;
 
 const log = createLogger('Key');
 const K = CONFIG.KEYS;
@@ -46,6 +46,24 @@ let numberTimer: ReturnType<typeof setTimeout> | null = null;
 let channelCount: (() => number) | null = null;
 let wheelWarmedUp = true;
 let wheelIdleTimer: ReturnType<typeof setTimeout> | null = null;
+const heldDirections = new Map<number, { startedAt: number; lastAt: number }>();
+const HELD_DIRECTION_STALE_MS = 2000;
+
+function clearHeldDirections(): void {
+  heldDirections.clear();
+}
+
+function directionEvent(keyCode: number): ActionEvent | undefined {
+  if (keyCode !== K.LEFT && keyCode !== K.RIGHT) return undefined;
+  const now = Date.now();
+  const held = heldDirections.get(keyCode);
+  if (!held || now - held.lastAt > HELD_DIRECTION_STALE_MS) {
+    heldDirections.set(keyCode, { startedAt: now, lastAt: now });
+    return undefined;
+  }
+  held.lastAt = now;
+  return { repeat: true, heldMs: now - held.startedAt };
+}
 
 function hasScrollableAncestor(el: HTMLElement | null): boolean {
   for (let node: HTMLElement | null = el; node && node !== document.body; node = node.parentElement) {
@@ -148,8 +166,20 @@ export const KeyHandler = {
       cancelNumber();
       if (action) {
         e.preventDefault();
-        if (activeHandler) activeHandler(action);
+        const event = directionEvent(keyCode);
+        if (activeHandler) {
+          if (event) activeHandler(action, event);
+          else activeHandler(action);
+        }
       }
+    });
+
+    document.addEventListener('keyup', (e: KeyboardEvent) => {
+      heldDirections.delete(e.keyCode);
+    });
+    window.addEventListener('blur', clearHeldDirections);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) clearHeldDirections();
     });
 
     // Mouse support for desktop preview. Skip re-dispatching when the focusable hasn't changed.

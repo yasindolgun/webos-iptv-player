@@ -33,7 +33,12 @@ export const CONFIG = {
     // full-width number does not feel stalled once it can no longer grow.
     CHANNEL_NUMBER_TIMEOUT: 1200,
     CHANNEL_NUMBER_MAX_DIGITS: 4,  // fallback cap until the channel count is known
-    SEEK_STEP: 30,              // seconds per Left/Right press while seeking catch-up or live DVR
+    SEEK_STEP: 10,              // seconds per short Left/Right press while seeking catch-up or live DVR
+    SEEK_HOLD_DELAY: 500,       // ms before repeated Left/Right presses start seeking continuously
+    SEEK_HOLD_MEDIUM_MS: 1500,  // held duration where each repeat advances by SEEK_HOLD_MEDIUM_STEP
+    SEEK_HOLD_FAST_MS: 3000,    // held duration where each repeat advances by SEEK_HOLD_FAST_STEP
+    SEEK_HOLD_MEDIUM_STEP: 30,  // seconds per repeat after SEEK_HOLD_MEDIUM_MS
+    SEEK_HOLD_FAST_STEP: 60,    // seconds per repeat after SEEK_HOLD_FAST_MS
     HLS_MAX_RECOVERIES: 3,      // bounded hls.js fatal-error retries before giving up → next channel
     STALL_POLL_MS: 2000,        // native stall watchdog: currentTime poll interval
     STALL_FREEZE_TICKS: 5,      // ~10s frozen before the first in-place reload

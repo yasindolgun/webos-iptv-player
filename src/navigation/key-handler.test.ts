@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { CONFIG } from '../config';
-import type { Action, NumberEvent } from '../types';
+import type { Action, ActionEvent } from '../types';
 import { extractInputTimeline } from '../../scripts/tv-diag.mjs';
 
 // KeyHandler attaches its listeners to `document` and keeps module-level singleton
@@ -18,6 +18,10 @@ function press(keyCode: number, target: EventTarget = document): void {
   );
 }
 
+function release(keyCode: number, target: EventTarget = document): void {
+  target.dispatchEvent(new KeyboardEvent('keyup', { keyCode, bubbles: true } as KeyboardEventInit));
+}
+
 function wheel(deltaY: number, target: EventTarget = document.body): void {
   target.dispatchEvent(new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true }));
 }
@@ -32,8 +36,10 @@ describe('KeyHandler', () => {
     document.body.innerHTML = '';
     vi.useFakeTimers();
     handler = vi.fn();
-    KeyHandler.setHandler(handler as (a: Action, e?: NumberEvent) => void);
+    KeyHandler.setHandler(handler as (a: Action, e?: ActionEvent) => void);
     KeyHandler.setChannelCount(() => 0); // module state persists: back to "unknown"
+    release(K.LEFT);
+    release(K.RIGHT);
     // Same reason: a half-typed number left buffered by the previous test would
     // prepend its digits to this one. Any non-digit key abandons it.
     press(K.BACK);
@@ -110,6 +116,31 @@ describe('KeyHandler', () => {
       document.body.appendChild(ta);
       press(K.BACK, ta);
       expect(handler).toHaveBeenCalledWith('back');
+    });
+
+    it('reports how long a direction remains held and resets it on keyup', () => {
+      press(K.RIGHT);
+      expect(handler).toHaveBeenLastCalledWith('right');
+
+      vi.advanceTimersByTime(400);
+      press(K.RIGHT);
+      expect(handler).toHaveBeenLastCalledWith('right', { repeat: true, heldMs: 400 });
+
+      vi.advanceTimersByTime(1100);
+      press(K.RIGHT);
+      expect(handler).toHaveBeenLastCalledWith('right', { repeat: true, heldMs: 1500 });
+
+      release(K.RIGHT);
+      press(K.RIGHT);
+      expect(handler).toHaveBeenLastCalledWith('right');
+    });
+
+    it('forgets a held direction when the app loses focus', () => {
+      press(K.LEFT);
+      vi.advanceTimersByTime(1000);
+      window.dispatchEvent(new Event('blur'));
+      press(K.LEFT);
+      expect(handler).toHaveBeenLastCalledWith('left');
     });
   });
 

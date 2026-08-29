@@ -3,7 +3,7 @@ import type {
   AudioTrackOption,
   CatchupInfo,
   Channel,
-  NumberEvent,
+  ActionEvent,
   SubtitleTrackOption,
   VodPlayback,
   VodQueueItem,
@@ -560,7 +560,7 @@ export class Player {
     }, ch.catchupDays);
   }
 
-  private handleVodAction(action: Action): void {
+  private handleVodAction(action: Action, event?: ActionEvent): void {
     if (this.tracks.handleAction(action)) return;
     if (this.upNextTimer) {
       if (action === 'select' || action === 'play') this.playNextItem();
@@ -584,10 +584,10 @@ export class Player {
         else this.osd.toggle();
         break;
       case 'left':
-        this.seekBy(-CONFIG.PLAYER.SEEK_STEP);
+        this.seekBy(-this.seekStep(event));
         break;
       case 'right':
-        this.seekBy(CONFIG.PLAYER.SEEK_STEP);
+        this.seekBy(this.seekStep(event));
         break;
       case 'down':
         this.onOpenMenu();
@@ -945,7 +945,20 @@ export class Player {
   }
 
   seekBy(seconds: number): void {
+    if (seconds === 0) return;
     this.seekTo((this.pendingSeekTarget ?? this.videoEl?.currentTime ?? 0) + seconds);
+  }
+
+  private seekStep(event?: ActionEvent): number {
+    if (!event || !('heldMs' in event)) return CONFIG.PLAYER.SEEK_STEP;
+    if (event.heldMs < CONFIG.PLAYER.SEEK_HOLD_DELAY) return 0;
+    if (event.heldMs >= CONFIG.PLAYER.SEEK_HOLD_FAST_MS) {
+      return CONFIG.PLAYER.SEEK_HOLD_FAST_STEP;
+    }
+    if (event.heldMs >= CONFIG.PLAYER.SEEK_HOLD_MEDIUM_MS) {
+      return CONFIG.PLAYER.SEEK_HOLD_MEDIUM_STEP;
+    }
+    return CONFIG.PLAYER.SEEK_STEP;
   }
 
   /** Seek to a fraction (0..1) of the seekable range (DVR window or VOD duration). */
@@ -1227,11 +1240,11 @@ export class Player {
     this.tracks.selectSubtitleTrack(index);
   }
 
-  handleAction(action: Action, event?: NumberEvent): void {
+  handleAction(action: Action, event?: ActionEvent): void {
     // Any non-OK button means 5-way/button input, so a tracked cursor position
     // is stale — drop it so OK toggles the OSD rather than seeking.
     if (action !== 'select') this.osd.clearPointer();
-    if (this.vod) { this.handleVodAction(action); return; }
+    if (this.vod) { this.handleVodAction(action, event); return; }
     switch (action) {
       case 'back':
       case 'stop':
@@ -1248,10 +1261,10 @@ export class Player {
         else this.osd.toggle();
         break;
       case 'left':
-        this.seekBy(-CONFIG.PLAYER.SEEK_STEP);
+        this.seekBy(-this.seekStep(event));
         break;
       case 'right':
-        this.seekBy(CONFIG.PLAYER.SEEK_STEP);
+        this.seekBy(this.seekStep(event));
         break;
       case 'up':
       case 'channel_up':
@@ -1277,7 +1290,7 @@ export class Player {
         this.goToLive();
         break;
       case 'number':
-        if (event) this.playChannelNumber(event.number);
+        if (event && 'number' in event) this.playChannelNumber(event.number);
         break;
     }
   }

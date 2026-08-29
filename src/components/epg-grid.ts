@@ -1,6 +1,6 @@
 import type {
   Action,
-  NumberEvent,
+  ActionEvent,
   CatchupInfo,
   CatchupProgressEntry,
   Channel,
@@ -1045,7 +1045,7 @@ export class EpgGrid {
     this.render();
   }
 
-  handleAction(action: Action, _event?: NumberEvent): void {
+  handleAction(action: Action, _event?: ActionEvent): void {
     if (this.resumePrompt.visible) {
       this.resumePrompt.handleAction(action);
       return;

@@ -5,7 +5,7 @@ import type {
   Channel,
   ChannelGroupId,
   ChannelHealthStatus,
-  NumberEvent,
+  ActionEvent,
 } from '../types';
 import { SpatialNav } from '../navigation/spatial-nav';
 import { html, raw, type Safe } from '../utils/dom';
@@ -348,7 +348,7 @@ export class ChannelList {
     return this.editor.handleBack();
   }
 
-  handleAction(action: Action, event?: NumberEvent): boolean {
+  handleAction(action: Action, event?: ActionEvent): boolean {
     if (this.editor.handleAction(action)) return true;
 
     switch (action) {
@@ -409,7 +409,7 @@ export class ChannelList {
         break;
 
       case 'number': {
-        if (!event) break;
+        if (!event || !('number' in event)) break;
         const num = event.number - 1;
         if (num >= 0 && num < PlaylistService.channels.length) {
           this.setPlaying(num);

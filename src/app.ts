@@ -46,7 +46,7 @@ import {
 import { truncate } from './utils/text';
 import { $, show, hide } from './utils/dom';
 import { createLogger, installGlobalErrorHandlers, logEnvironment } from './utils/logger';
-import type { Action, NumberEvent, CatchupInfo, Channel, EpgSource, PlaylistEntry } from './types';
+import type { Action, ActionEvent, CatchupInfo, Channel, EpgSource, PlaylistEntry } from './types';
 import { getLocale, initLocale, resolveLocale, setLocale, t, tp } from './i18n';
 import {
   refreshXtreamAccountStatus,
@@ -1347,12 +1347,12 @@ class App {
     return `view_${currentView}`;
   }
 
-  private handleKey(action: Action, event?: NumberEvent): void {
+  private handleKey(action: Action, event?: ActionEvent): void {
     const currentView = this.navigator.current;
 
     log.debug('Key routed', 'event=key.action', `action=${action}`,
       `view=${currentView}`, `consumer=${this.keyConsumer(currentView)}`,
-      `number=${event ? String(event.number) : 'none'}`);
+      `number=${event && 'number' in event ? String(event.number) : 'none'}`);
 
     // The digit OSD is body-mounted and outlives every view, so an abandoned
     // entry must be cleared before a modal gets a chance to swallow this.
@@ -1399,7 +1399,7 @@ class App {
     // the two views that act on them (the guide and prompts ignore numbers).
     if (action === 'number_input') {
       if (currentView === 'channels' || currentView === 'player') {
-        showNumberEntry(event?.digits ?? '');
+        showNumberEntry(event && 'digits' in event ? event.digits ?? '' : '');
       }
       return;
     }

@@ -273,6 +273,14 @@ export interface NumberEvent {
   digits?: string;
 }
 
+/** Metadata attached to an auto-repeated directional key while it is held. */
+export interface KeyRepeatEvent {
+  repeat: true;
+  heldMs: number;
+}
+
+export type ActionEvent = NumberEvent | KeyRepeatEvent;
+
 /** A selectable audio track exposed by the active player (the picker's view model). */
 export interface AudioTrackOption {
   index: number;
