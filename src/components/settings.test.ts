@@ -1424,7 +1424,7 @@ describe('Settings uploads section', () => {
     setupMock.getInfo.mockResolvedValueOnce({
       ip: '192.168.1.2',
       port: 8890,
-      setupUrl: 'http://192.168.1.2:8890/setup?token=abc123',
+      setupUrl: 'http://192.168.1.2:8890/setup#token=abc123',
       manualUrl: 'http://192.168.1.2:8890',
       pairingCode: '1234',
     });
@@ -1453,7 +1453,7 @@ describe('Settings uploads section', () => {
     setupMock.getInfo.mockResolvedValueOnce({
       ip: '192.168.1.2',
       port: 8890,
-      setupUrl: 'http://192.168.1.2:8890/setup?token=abc123',
+      setupUrl: 'http://192.168.1.2:8890/setup#token=abc123',
       manualUrl: 'http://192.168.1.2:8890',
       pairingCode: '1234',
     });

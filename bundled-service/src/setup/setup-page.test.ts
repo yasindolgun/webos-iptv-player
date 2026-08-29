@@ -22,6 +22,20 @@ function response(data: unknown, status = 200): {
 }
 
 describe('setup page forms', () => {
+  it('does not accept a setup token from the query string', () => {
+    const dom = new JSDOM(PAGE_HTML, {
+      runScripts: 'dangerously',
+      url: 'http://host/setup?token=abc123',
+      beforeParse(window) {
+        Object.defineProperty(window.navigator, 'languages', { value: ['en'] });
+      },
+    });
+
+    expect(dom.window.document.querySelector<HTMLElement>('#pair-card')!.hidden).toBe(false);
+    expect(dom.window.document.querySelector<HTMLElement>('#setup-card')!.hidden).toBe(true);
+    dom.window.close();
+  });
+
   it('switches language from the globe menu and saves it in a cookie', () => {
     const dom = new JSDOM(PAGE_HTML, {
       runScripts: 'dangerously',
@@ -54,7 +68,7 @@ describe('setup page forms', () => {
       if (url === '/setup-state?token=paired-token') {
         return Promise.resolve(response({ playlists: [], xtreamAccounts: [], epgUrl: '' }));
       }
-      if (url === '/uploads') return Promise.resolve(response([]));
+      if (url === '/uploads?token=paired-token') return Promise.resolve(response([]));
       return Promise.resolve(response({ error: 'unexpected request' }, 500));
     });
     const dom = new JSDOM(PAGE_HTML, {
@@ -83,7 +97,7 @@ describe('setup page forms', () => {
 
   it('submits a playlist with the QR token and waits for TV acknowledgement', async () => {
     const fetchMock = vi.fn((url: string, options?: { method?: string; body?: string }) => {
-      if (url === '/uploads') return Promise.resolve(response([]));
+      if (url === '/uploads?token=abc123') return Promise.resolve(response([]));
       if (url === '/setup-state?token=abc123') {
         return Promise.resolve(response({ playlists: [], xtreamAccounts: [], epgUrl: '' }));
       }
@@ -100,7 +114,7 @@ describe('setup page forms', () => {
     virtualConsole.on('jsdomError', error => errors.push(error));
     const dom = new JSDOM(PAGE_HTML, {
       runScripts: 'dangerously',
-      url: 'http://host/setup?token=abc123',
+      url: 'http://host/setup#token=abc123',
       virtualConsole,
       beforeParse(window) {
         Object.defineProperty(window.navigator, 'languages', { value: ['en'] });
@@ -133,7 +147,7 @@ describe('setup page forms', () => {
   it('renders synchronized sources and removes an Xtream account by id', async () => {
     let removed = false;
     const fetchMock = vi.fn((url: string, options?: { method?: string; body?: string }) => {
-      if (url === '/uploads') return Promise.resolve(response([]));
+      if (url === '/uploads?token=abc123') return Promise.resolve(response([]));
       if (url === '/setup-state?token=abc123') {
         return Promise.resolve(response({
           playlists: [{ id: 'p1', name: 'Alpha', url: 'http://host/a.m3u' }],
@@ -154,7 +168,7 @@ describe('setup page forms', () => {
     });
     const dom = new JSDOM(PAGE_HTML, {
       runScripts: 'dangerously',
-      url: 'http://host/setup?token=abc123',
+      url: 'http://host/setup#token=abc123',
       beforeParse(window) {
         Object.defineProperty(window.navigator, 'languages', { value: ['en'] });
         window.fetch = fetchMock as unknown as typeof window.fetch;
@@ -185,7 +199,7 @@ describe('setup page forms', () => {
     let nextId = 20;
     const posts: unknown[] = [];
     const fetchMock = vi.fn((url: string, options?: { method?: string; body?: string }) => {
-      if (url === '/uploads') {
+      if (url === '/uploads?token=abc123') {
         return Promise.resolve(response([
           { id: 'upload-1', name: 'Uploaded', count: 2, createdAt: 1 },
         ]));
@@ -222,7 +236,7 @@ describe('setup page forms', () => {
     });
     const dom = new JSDOM(PAGE_HTML, {
       runScripts: 'dangerously',
-      url: 'http://host/setup?token=abc123',
+      url: 'http://host/setup#token=abc123',
       beforeParse(window) {
         Object.defineProperty(window.navigator, 'languages', { value: ['en'] });
         window.fetch = fetchMock as unknown as typeof window.fetch;
@@ -248,7 +262,7 @@ describe('setup page forms', () => {
 
   it('masks saved subtitle credentials and clears one on a single delete', async () => {
     const fetchMock = vi.fn((url: string, options?: { method?: string; body?: string }) => {
-      if (url === '/uploads') return Promise.resolve(response([]));
+      if (url === '/uploads?token=abc123') return Promise.resolve(response([]));
       if (url === '/setup-state?token=abc123') {
         return Promise.resolve(response({
           playlists: [],
@@ -275,7 +289,7 @@ describe('setup page forms', () => {
     });
     const dom = new JSDOM(PAGE_HTML, {
       runScripts: 'dangerously',
-      url: 'http://host/setup?token=abc123',
+      url: 'http://host/setup#token=abc123',
       beforeParse(window) {
         Object.defineProperty(window.navigator, 'languages', { value: ['en'] });
         window.fetch = fetchMock as unknown as typeof window.fetch;

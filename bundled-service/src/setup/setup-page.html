@@ -758,7 +758,7 @@
   var backupImport = document.getElementById("backup-import");
   var backupStatus = document.getElementById("backup-status");
   var selectedBackupArchive = null;
-  var setupToken = new URLSearchParams(window.location.search).get("token") || "";
+  var setupToken = new URLSearchParams(window.location.hash.slice(1)).get("token") || "";
   var uploadedSources = {};
 
   function authenticatedUrl(path) {
@@ -2186,7 +2186,7 @@
   // Refresh persisted rows from /uploads. Leaves in-progress and just-finished
   // rows (data-id set after success) alone so a stale fetch doesn't wipe them.
   function refresh() {
-    fetch("/uploads").then(function (r) { return r.json(); }).then(function (items) {
+    fetch(authenticatedUrl("/uploads")).then(function (r) { return r.json(); }).then(function (items) {
       var existingIds = {};
       Array.from(list.querySelectorAll("li[data-id]")).forEach(function (n) { existingIds[n.dataset.id] = n; });
       var seen = {};

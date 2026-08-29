@@ -70,7 +70,7 @@ async function stubLanService(page: Page): Promise<void> {
     body: JSON.stringify({
       ip: '192.168.1.2',
       port: 9999,
-      setupUrl: 'http://192.168.1.2:9999/setup?token=abc123',
+      setupUrl: 'http://192.168.1.2:9999/setup#token=abc123',
       manualUrl: 'http://192.168.1.2:9999',
       pairingCode: '1234',
     }),

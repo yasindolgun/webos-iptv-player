@@ -46,7 +46,7 @@ HTTP (called by phones, and by the app for reconcile):
 |---|---|---|
 | `/info` | GET | Loopback-only metadata, including setup URLs and the pairing code. |
 | `/` or `/setup` | GET | Public setup page; asks for the TV pairing code. |
-| `/setup?token=…` | GET | QR entry that opens the same page already authorized. |
+| `/setup#token=…` | GET | QR entry that opens the same page already authorized. |
 | `/pair` | POST | Rate-limited exchange of the four-digit code for the setup token. |
 | `/setup-state` | PUT | Loopback-only sanitized source state, including enabled flags, published by the TV. |
 | `/setup-state?token=…` | GET | Sanitized source and online-subtitle state for the setup page. |
@@ -54,9 +54,9 @@ HTTP (called by phones, and by the app for reconcile):
 | `/setup-actions` | GET | Loopback-only list consumed by the TV app. |
 | `/setup-actions/:id` | DELETE | Loopback-only acknowledgement from the TV app. |
 | `/setup-actions/:id?token=…` | GET | Phone-facing application status. |
-| `/uploads` | GET | List all stored uploads with serve-back URLs. |
+| `/uploads[?token=…]` | GET | List uploads; loopback callers need no token. |
 | `/uploads?name=foo.m3u&token=…` | POST | Save a playlist; fires `serviceEvents`. |
-| `/uploads/:id[.m3u]` | GET | Serve a stored playlist. |
+| `/uploads/:id[.m3u][?token=…]` | GET | Serve an upload; loopback callers need no token. |
 | `/uploads/:id?token=…` | DELETE | Remove an upload; loopback callers do not need the token. |
 | `/backup` | PUT | Loopback-only publication of the current credential-free archive. |
 | `/backup?token=…&groups=…` | GET | Download only the selected archive groups. |
@@ -111,15 +111,17 @@ bundled-service initialization consumes the queue after reconnecting.
 
 ## Setup authorization
 
-Every HTTP bind generates a random 12-character token. `/info` is available
+Every HTTP bind generates a random 32-character token. `/info` is available
 only over loopback, so only the TV app can obtain the tokenized setup URL for
-the QR code. It also returns a random four-digit code for computers that open
-the short root URL manually. The public page exchanges that code for the full
-token; five failures from one client lock pairing for one minute.
+the QR code. The QR keeps the token in the URL fragment, which browsers do not
+send in the initial HTTP request; the setup page attaches it only to protected
+API calls. `/info` also returns a random four-digit code for computers that
+open the short root URL manually. The public page exchanges that code for the
+full token; five failures from one client lock pairing for one minute.
 
 The token is required to submit source changes, query their status, upload M3U
 files, download or import a backup, read the sanitized setup state, or remotely
-delete uploads. Publishing
+list, read, or delete uploads. Publishing
 state and reading or acknowledging queued actions is loopback-only, which
 prevents another LAN client from injecting state or reading Xtream
 credentials. Upload identifiers are validated before file access so requests

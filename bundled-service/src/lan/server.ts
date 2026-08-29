@@ -53,10 +53,21 @@ function sendJson(res: http.ServerResponse, status: number, data: unknown): void
   send(res, status, 'application/json; charset=utf-8', JSON.stringify(data));
 }
 
-function isLoopback(req: http.IncomingMessage): boolean {
-  const address = req.socket.remoteAddress || '';
+function isLoopbackAddress(address: string): boolean {
   return address === '127.0.0.1' || address === '::1' ||
     address === '::ffff:127.0.0.1';
+}
+
+function isLoopback(req: http.IncomingMessage): boolean {
+  return isLoopbackAddress(req.socket.remoteAddress || '');
+}
+
+export function isAuthorizedLanClient(
+  remoteAddress: string | undefined,
+  presentedToken: string | null | undefined,
+  setupToken: string,
+): boolean {
+  return isLoopbackAddress(remoteAddress || '') || presentedToken === setupToken;
 }
 
 function readBody(req: http.IncomingMessage, limitBytes = 16 * 1024 * 1024): Promise<string> {
@@ -108,7 +119,7 @@ export function startServer(
   backups = new BackupStore(),
 ): Promise<{ server: http.Server; port: number }> {
   let boundPort = port;
-  const setupToken = randomBytes(6).toString('hex');
+  const setupToken = randomBytes(16).toString('hex');
   const pairingCode = padStart(String(secureRandomInt(10000)), 4, '0');
   const pairingAttempts = Object.create(null) as {
     [client: string]: { failures: number; blockedUntil: number } | undefined;
@@ -132,7 +143,7 @@ export function startServer(
         sendJson(res, 200, {
           ip,
           port: parseInt(hostPort, 10) || boundPort,
-          setupUrl: 'http://' + ip + ':' + hostPort + '/setup?token=' + setupToken,
+          setupUrl: 'http://' + ip + ':' + hostPort + '/setup#token=' + setupToken,
           manualUrl: 'http://' + ip + ':' + hostPort,
           pairingCode,
           dataDir,
@@ -307,6 +318,10 @@ export function startServer(
           sendJson(res, 400, { error: e instanceof Error ? e.message : String(e) });
         }
       } else if (pathname === '/uploads') {
+        if (!isAuthorizedLanClient(req.socket.remoteAddress, query('token'), setupToken)) {
+          sendJson(res, 403, { error: 'Invalid setup token' });
+          return;
+        }
         const base = 'http://' + host;
         const items = uploads.list().map((m) => ({
           ...m,
@@ -326,7 +341,7 @@ export function startServer(
           return;
         }
         if (req.method === 'DELETE') {
-          if (!isLoopback(req) && query('token') !== setupToken) {
+          if (!isAuthorizedLanClient(req.socket.remoteAddress, query('token'), setupToken)) {
             sendJson(res, 403, { error: 'Invalid setup token' });
             return;
           }
@@ -334,6 +349,10 @@ export function startServer(
           if (ok) { try { onChange?.('uploads-changed'); } catch (cbErr) { console.error('[lan] onChange callback threw:', cbErr); } }
           sendJson(res, ok ? 200 : 404, { deleted: ok, id });
         } else {
+          if (!isAuthorizedLanClient(req.socket.remoteAddress, query('token'), setupToken)) {
+            sendJson(res, 403, { error: 'Invalid setup token' });
+            return;
+          }
           try {
             send(res, 200, 'audio/mpegurl; charset=utf-8', uploads.read(id));
           } catch {

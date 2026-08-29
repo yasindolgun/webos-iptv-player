@@ -22,7 +22,8 @@ beforeAll(async () => {
   baseUrl = `http://127.0.0.1:${result.port}`;
   setServicePort(result.port);
   const info = await (await fetch(`${baseUrl}/info`)).json() as { setupUrl: string };
-  setupToken = new URL(info.setupUrl).search;
+  const fragment = new URL(info.setupUrl).hash.slice(1);
+  setupToken = `?token=${new URLSearchParams(fragment).get('token')!}`;
 });
 
 afterAll(async () => {

@@ -416,7 +416,7 @@ const UPLOADS = [
 const SERVICE_INFO = {
   ip: '192.168.1.42',
   port: UPLOAD_PORT,
-  setupUrl: `http://192.168.1.42:${UPLOAD_PORT}/setup?token=0123456789ab`,
+  setupUrl: `http://192.168.1.42:${UPLOAD_PORT}/setup#token=0123456789abcdef0123456789abcdef`,
   manualUrl: `http://192.168.1.42:${UPLOAD_PORT}`,
   pairingCode: '6993',
 };
@@ -983,9 +983,9 @@ try {
                 </style>
               </head>
               <body>
-                <iframe src="/setup?token=0123456789ab&amp;panel=sources"
+                <iframe src="/setup#token=0123456789abcdef0123456789abcdef&amp;panel=sources"
                         title="Source setup"></iframe>
-                <iframe src="/setup?token=0123456789ab&amp;panel=uploads"
+                <iframe src="/setup#token=0123456789abcdef0123456789abcdef&amp;panel=uploads"
                         title="Playlist upload"></iframe>
               </body>
             </html>`,

@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type * as http from 'http';
-import { startServer } from './server';
+import { isAuthorizedLanClient, startServer } from './server';
 
 let server: http.Server;
 let baseUrl: string;
@@ -44,8 +44,8 @@ beforeAll(async () => {
     pairingCode: string;
   };
   const parsedSetupUrl = new URL(info.setupUrl);
-  setupUrl = baseUrl + parsedSetupUrl.pathname + parsedSetupUrl.search;
-  setupToken = parsedSetupUrl.searchParams.get('token')!;
+  setupUrl = baseUrl + parsedSetupUrl.pathname + parsedSetupUrl.hash;
+  setupToken = new URLSearchParams(parsedSetupUrl.hash.slice(1)).get('token')!;
   pairingCode = info.pairingCode;
 });
 
@@ -75,9 +75,20 @@ describe('GET /info', () => {
     };
     expect(info.ip).toBeTruthy();
     expect(info.port).toBeGreaterThan(0);
-    expect(info.setupUrl).toMatch(/^http:\/\/.+:\d+\/setup\?token=[a-f0-9]{12}$/);
+    expect(info.setupUrl).toMatch(/^http:\/\/.+:\d+\/setup#token=[a-f0-9]{32}$/);
     expect(info.manualUrl).toMatch(/^http:\/\/.+:\d+$/);
     expect(info.pairingCode).toMatch(/^\d{4}$/);
+  });
+});
+
+describe('LAN authorization', () => {
+  it('allows loopback or the setup token and rejects unauthenticated LAN clients', () => {
+    expect(isAuthorizedLanClient('127.0.0.1', undefined, 'secret')).toBe(true);
+    expect(isAuthorizedLanClient('::1', undefined, 'secret')).toBe(true);
+    expect(isAuthorizedLanClient('::ffff:127.0.0.1', undefined, 'secret')).toBe(true);
+    expect(isAuthorizedLanClient('192.0.2.10', 'secret', 'secret')).toBe(true);
+    expect(isAuthorizedLanClient('192.0.2.10', undefined, 'secret')).toBe(false);
+    expect(isAuthorizedLanClient('192.0.2.10', 'wrong', 'secret')).toBe(false);
   });
 });
 
@@ -212,9 +223,8 @@ describe('setup state', () => {
 });
 
 describe('setup actions', () => {
-  async function postAction(payload: unknown, url = setupUrl): Promise<Response> {
-    const token = new URL(url).search;
-    return fetch(`${baseUrl}/setup-actions${token}`, {
+  async function postAction(payload: unknown): Promise<Response> {
+    return fetch(`${baseUrl}/setup-actions?token=${setupToken}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -310,12 +320,15 @@ describe('setup actions', () => {
       type: 'epg', url: 'http://host/epg.xml',
     });
     const { id } = (await created.json()) as { id: number };
-    const token = new URL(setupUrl).search;
-    expect(await (await fetch(`${baseUrl}/setup-actions/${id}${token}`)).json())
+    expect(await (await fetch(
+      `${baseUrl}/setup-actions/${id}?token=${setupToken}`,
+    )).json())
       .toEqual({ id, pending: true });
     const removed = await fetch(`${baseUrl}/setup-actions/${id}`, { method: 'DELETE' });
     expect(removed.status).toBe(200);
-    expect(await (await fetch(`${baseUrl}/setup-actions/${id}${token}`)).json())
+    expect(await (await fetch(
+      `${baseUrl}/setup-actions/${id}?token=${setupToken}`,
+    )).json())
       .toEqual({ id, pending: false });
     expect(await (await fetch(`${baseUrl}/setup-actions`)).json()).toEqual([]);
   });
@@ -540,7 +553,8 @@ describe('startServer onChange callback (Luna push fan-out source)', () => {
     const info = (await (await fetch(`http://127.0.0.1:${port}/info`)).json()) as {
       setupUrl: string;
     };
-    return new URL(info.setupUrl).searchParams.get('token')!;
+    const fragment = new URL(info.setupUrl).hash.slice(1);
+    return new URLSearchParams(fragment).get('token')!;
   }
 
   it('fires onChange after a successful POST /uploads', async () => {
@@ -572,8 +586,9 @@ describe('startServer onChange callback (Luna push fan-out source)', () => {
     const localBase = `http://127.0.0.1:${port}`;
     try {
       const info = (await (await fetch(`${localBase}/info`)).json()) as { setupUrl: string };
-      const token = new URL(info.setupUrl).search;
-      const res = await fetch(`${localBase}/setup-actions${token}`, {
+      const fragment = new URL(info.setupUrl).hash.slice(1);
+      const token = new URLSearchParams(fragment).get('token')!;
+      const res = await fetch(`${localBase}/setup-actions?token=${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'epg', url: 'http://host/epg.xml' }),
