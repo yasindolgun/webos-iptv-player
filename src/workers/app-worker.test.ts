@@ -27,8 +27,10 @@ afterEach(() => {
 });
 
 describe('app worker M3U task', () => {
-  it('parses the transferred buffer and reports worker-side timing phases', () => {
-    const source = '#EXTM3U\n#EXTINF:-1,Alpha\nhttp://host/a';
+  it('retains parsed channels and releases them in bounded result batches', () => {
+    const entries = Array.from({ length: 501 }, (_, index) =>
+      `#EXTINF:-1,ch${String(index + 1)}\nhttp://host/${String(index + 1)}`);
+    const source = ['#EXTM3U', ...entries].join('\n');
     const buffer = new TextEncoder().encode(source).buffer;
     vi.spyOn(Date, 'now')
       .mockReturnValueOnce(1000)
@@ -41,12 +43,14 @@ describe('app worker M3U task', () => {
       buffer,
       sourceUrl: 'http://host/list.m3u',
       sentAtEpochMs: 900,
+      sessionId: 7,
     });
 
     expect(result).toMatchObject({
       data: {
-        channels: [{ name: 'Alpha', url: 'http://host/a' }],
+        groups: ['builtin:uncategorized'],
       },
+      channelCount: 501,
       metrics: {
         inputBytes: buffer.byteLength,
         inputTransferMs: 100,
@@ -54,5 +58,18 @@ describe('app worker M3U task', () => {
         completedAtEpochMs: 1100,
       },
     });
+    expect('channels' in result.data).toBe(false);
+
+    const first = handlers['m3u.parse.next']({ sessionId: 7 });
+    const second = handlers['m3u.parse.next']({ sessionId: 7 });
+
+    expect(first.channels).toHaveLength(500);
+    expect(first.done).toBe(false);
+    expect(second.channels).toEqual([
+      expect.objectContaining({ name: 'ch501', url: 'http://host/501' }),
+    ]);
+    expect(second.done).toBe(true);
+    expect(() => handlers['m3u.parse.next']({ sessionId: 7 }))
+      .toThrow('M3U parse session is no longer available');
   });
 });

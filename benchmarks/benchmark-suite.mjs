@@ -843,6 +843,8 @@ export async function runM3UPipelineTimingBenchmark(options) {
       inputTransferMs: round(result.inputTransferMs),
       parseMs: round(result.parseMs),
       resultCloneDeliveryMs: round(result.resultCloneDeliveryMs),
+      resultBatchSize: result.resultBatchSize,
+      resultBatches: result.resultBatches,
       unattributedMs: round(Math.max(0, result.roundTripMs - attributedMs)),
       roundTripMs: round(result.roundTripMs),
       maxFrameGapMs: round(maxFrameGapMs),
@@ -895,6 +897,13 @@ export function assertM3UPipelineBenchmark(report, scale) {
   }
   if (report.inputBytes <= 0 || report.roundTripMs < report.parseMs) {
     throw new Error('M3U pipeline timing metrics are inconsistent');
+  }
+  if (report.resultBatchSize !== 500
+      || report.resultBatches !== Math.ceil(scale / report.resultBatchSize)) {
+    throw new Error(
+      `M3U pipeline delivered ${String(report.resultBatches)} result batches of `
+      + `${String(report.resultBatchSize)} for scale ${String(scale)}`,
+    );
   }
   if (!report.workerTerminatedAfterIdle
       || !report.timeout.timedOut

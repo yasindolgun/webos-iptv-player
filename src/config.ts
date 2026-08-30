@@ -87,6 +87,7 @@ export const CONFIG = {
     CATALOG_SEARCH_RESULT_CAP: 50_000,   // cap worker result transfer for very broad queries
     CATALOG_FRAME_THRESHOLD: 2_500,      // prepare larger catalogs outside the interaction frame
     PARSE_TIMEOUT_MS: 120 * 1000,        // fail a wedged worker instead of leaving startup stuck
+    RESULT_BATCH_SIZE: 500,              // bound each parsed-channel clone from worker to page
   },
 
   // Catch-up (time-shift) resume and history store tuning.

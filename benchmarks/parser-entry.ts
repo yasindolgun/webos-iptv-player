@@ -54,6 +54,8 @@ interface BenchmarkM3UPipelineResult {
   inputTransferMs: number;
   parseMs: number;
   resultCloneDeliveryMs: number;
+  resultBatchSize: number;
+  resultBatches: number;
   roundTripMs: number;
   channels: number;
   groups: number;
@@ -100,6 +102,8 @@ window.__IPTV_BENCHMARK__ = {
       inputTransferMs: result.metrics.inputTransferMs,
       parseMs: result.metrics.parseMs,
       resultCloneDeliveryMs: result.metrics.resultCloneDeliveryMs,
+      resultBatchSize: result.metrics.resultBatchSize,
+      resultBatches: result.metrics.resultBatches,
       roundTripMs: result.metrics.roundTripMs,
       channels: result.data.channels.length,
       groups: result.data.groups.length,

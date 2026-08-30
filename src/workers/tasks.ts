@@ -1,4 +1,4 @@
-import type { ParsedEpg, ParsedPlaylist } from '../types';
+import type { Channel, ParsedEpg, ParsedPlaylist } from '../types';
 import type { XMLTVParseStats } from '../parsers/xmltv-parser';
 
 export interface XMLTVWorkerRequest {
@@ -75,16 +75,27 @@ export interface M3UParseWorkerRequest {
   buffer: ArrayBuffer;
   sourceUrl: string;
   sentAtEpochMs: number;
+  sessionId: number;
 }
 
 export interface M3UParseWorkerResponse {
-  data: ParsedPlaylist;
+  data: Omit<ParsedPlaylist, 'channels'>;
+  channelCount: number;
   metrics: {
     inputBytes: number;
     inputTransferMs: number;
     parseMs: number;
     completedAtEpochMs: number;
   };
+}
+
+export interface M3UParseBatchRequest {
+  sessionId: number;
+}
+
+export interface M3UParseBatchResponse {
+  channels: Channel[];
+  done: boolean;
 }
 
 export interface ScopedSearchReleaseRequest {
@@ -117,6 +128,10 @@ export interface AppWorkerTasks {
   'm3u.parse': {
     request: M3UParseWorkerRequest;
     response: M3UParseWorkerResponse;
+  };
+  'm3u.parse.next': {
+    request: M3UParseBatchRequest;
+    response: M3UParseBatchResponse;
   };
   'xmltv.load': {
     request: XMLTVWorkerRequest;

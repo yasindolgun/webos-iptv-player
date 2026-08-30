@@ -68,6 +68,31 @@ checks idle cleanup and the bounded timeout termination path. The first Chrome
 page costs substantially more than parsing it, making bounded result batches or
 worker-owned persistence the next ingestion target.
 
+## Large-source ingestion update — 2026-08-30
+
+The first bounded-result milestone is complete. The M3U worker now returns
+compact playlist metadata first and retains parsed channels behind a private
+session. The page pulls at most 500 channels per request; each delivered slot is
+cleared in the worker before the next batch, so no RPC response clones the full
+parsed channel graph. The client rejects empty intermediate batches and partial
+delivery instead of accepting a truncated source.
+
+The production benchmark records and asserts the batch size and count alongside
+the existing transfer, parse, delivery, frame-gap, idle-cleanup, and timeout
+metrics. At 50,000 generated channels, the first 500-record full-suite run kept
+the measured page frame gap at the prior baseline (33.3 ms vs. 33.4 ms).
+Retaining the worker for the complete pull session then reduced an isolated
+round trip from about 1.31 seconds to 0.91 seconds by removing per-batch idle
+timer churn. Experiments at 1,000 and 5,000 records raised the measured frame
+gap to roughly 67 and 100 ms without recovering the total time, so the smaller
+responsive batch remains the measured default.
+
+This milestone bounds cross-thread result cloning, not total catalog residency.
+The worker still constructs the complete parsed graph before delivery and the
+page eventually hydrates every channel. Worker-owned IndexedDB persistence,
+single-writer backpressure, derived-index preparation, and staged device memory
+budgets remain the next Priority 1 work.
+
 ## Priority 1: Large-source ingestion
 
 M3U bytes are transferred to the existing classic app worker for decoding and

@@ -88,6 +88,8 @@ export interface M3UPipelineBenchmark {
   inputTransferMs: number;
   parseMs: number;
   resultCloneDeliveryMs: number;
+  resultBatchSize: number;
+  resultBatches: number;
   unattributedMs: number;
   roundTripMs: number;
   maxFrameGapMs: number;
