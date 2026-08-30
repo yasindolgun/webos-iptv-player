@@ -42,6 +42,7 @@
   .player-sidebar .sidebar-ch-item .ch-info > * + * { margin-top: 2px; }
   .player-menu .menu-items > * + * { margin-top: 6px; }
   .player-menu .menu-item > * + * { margin-left: 14px; }
+  .player-menu .menu-diagnostics > * + * { margin-top: 0; margin-left: 0; }
   .subs-row > * + * { margin-left: 12px; }
   .subs-count > * + * { margin-left: 5px; }
   .epg-legend > * + * { margin-left: 22px; }

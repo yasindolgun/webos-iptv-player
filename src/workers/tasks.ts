@@ -1,4 +1,12 @@
-import type { Channel, EpgSource, ParsedEpg, ParsedPlaylist } from '../types';
+import type {
+  Channel,
+  EpgSource,
+  ParsedEpg,
+  ParsedPlaylist,
+  PlaylistEntry,
+  SeriesItem,
+  VodItem,
+} from '../types';
 import type { XMLTVParseStats } from '../parsers/xmltv-parser';
 import type {
   PlaylistIndexDocument,
@@ -34,8 +42,6 @@ export interface SearchIndexRequest {
   reset?: boolean;
   channels?: string[][];
   programmes?: string[][];
-  movies?: string[];
-  series?: string[];
 }
 
 export interface SearchIndexResponse {
@@ -54,11 +60,47 @@ export interface SearchRankedIndices {
   hasMore: boolean;
 }
 
+export interface SearchCatalogDocument {
+  id: string;
+  name: string;
+}
+
+export interface SearchRankedDocuments {
+  documents: SearchCatalogDocument[];
+  hasMore: boolean;
+}
+
+export interface SearchCatalogLoadRequest {
+  sessionId: number;
+  account: PlaylistEntry;
+}
+
+export interface SearchCatalogLoadResponse {
+  accepted: boolean;
+  movieCount: number;
+  seriesCount: number;
+}
+
+export interface SearchCatalogHydrateRequest {
+  sessionId: number;
+  movieIds: string[];
+  seriesIds: string[];
+}
+
+export interface SearchCatalogHydrateResponse {
+  movies: VodItem[];
+  series: SeriesItem[];
+}
+
+export interface SearchCatalogReleaseRequest {
+  sessionId: number;
+}
+
 export interface SearchQueryResponse {
   channels: SearchRankedIndices;
   programmes: SearchRankedIndices;
-  movies: SearchRankedIndices;
-  series: SearchRankedIndices;
+  movies: SearchRankedDocuments;
+  series: SearchRankedDocuments;
 }
 
 export interface ListSearchIndexRequest {
@@ -209,6 +251,18 @@ export interface AppWorkerTasks {
   'search.query': {
     request: SearchQueryRequest;
     response: SearchQueryResponse | null;
+  };
+  'search.catalog.load': {
+    request: SearchCatalogLoadRequest;
+    response: SearchCatalogLoadResponse;
+  };
+  'search.catalog.hydrate': {
+    request: SearchCatalogHydrateRequest;
+    response: SearchCatalogHydrateResponse;
+  };
+  'search.catalog.release': {
+    request: SearchCatalogReleaseRequest;
+    response: SearchIndexResponse;
   };
   'list-search.index': {
     request: ListSearchIndexRequest;

@@ -20,7 +20,10 @@ vi.mock('../services/playlist-service', () => ({
   },
 }));
 
-import { PlayerMenu } from './player-menu';
+import {
+  PlayerMenu,
+  type PlayerDiagnosticsSnapshot,
+} from './player-menu';
 
 // Number of colour actions before the "Audio Track" row in the main menu.
 const MENU_ACTIONS = 4;
@@ -37,6 +40,8 @@ let selectSubtitleTrack: ReturnType<typeof vi.fn>;
 let subtitleTracks: SubtitleTrackOption[];
 let getSubtitleOffsetState: ReturnType<typeof vi.fn>;
 let openSubtitleOffset: ReturnType<typeof vi.fn>;
+let getDiagnostics: ReturnType<typeof vi.fn>;
+let diagnostics: PlayerDiagnosticsSnapshot;
 let menu: PlayerMenu;
 
 beforeEach(() => {
@@ -58,11 +63,22 @@ beforeEach(() => {
   selectSubtitleTrack = vi.fn();
   getSubtitleOffsetState = vi.fn(() => ({ available: false, label: '0.00 s' }));
   openSubtitleOffset = vi.fn();
+  diagnostics = {
+    pipeline: { value: 'hls.js', source: 'derived' },
+    resolution: { value: '1920x1080 (1080p)', source: 'observed' },
+    hdr: null,
+    frameRate: { value: '60', source: 'declared' },
+    bitrate: { value: '4.5 Mbps', source: 'declared' },
+    videoCodec: { value: 'H.264', source: 'declared' },
+    audioCodec: { value: 'AAC', source: 'declared' },
+    bufferRange: { value: '0:10 - 0:40', source: 'observed' },
+  };
+  getDiagnostics = vi.fn(() => diagnostics);
   menu = new PlayerMenu(
     container, getCurrentChannel, onAction,
     getAudioTracks, selectAudioTrack,
     getSubtitleTracks, selectSubtitleTrack,
-    getSubtitleOffsetState, openSubtitleOffset,
+    getSubtitleOffsetState, openSubtitleOffset, getDiagnostics,
   );
 });
 
@@ -79,7 +95,9 @@ describe('PlayerMenu', () => {
   it('renders the action items and the playing channel name on show', () => {
     menu.show();
     expect(menu.visible).toBe(true);
-    expect(items().map(i => i.dataset.menuAction)).toEqual(['red', 'green', 'yellow', 'blue']);
+    expect(items().map(i => i.dataset.menuAction)).toEqual([
+      'red', 'green', 'yellow', 'blue', '__diagnostics_open__',
+    ]);
     expect(el.textContent).toContain('Alpha');
     expect(items()[0].classList.contains('focused')).toBe(true);
   });
@@ -106,7 +124,7 @@ describe('PlayerMenu', () => {
       menu.handleAction('up'); // already at 0
       expect(items()[0].classList.contains('focused')).toBe(true);
       for (let i = 0; i < 10; i++) menu.handleAction('down');
-      expect(items()[3].classList.contains('focused')).toBe(true);
+      expect(items()[4].classList.contains('focused')).toBe(true);
     });
 
     it('scrolls only the menu list to reveal the focused row', () => {
@@ -378,6 +396,34 @@ describe('PlayerMenu', () => {
     });
   });
 
+  describe('playback diagnostics', () => {
+    it('opens a read-only details view with an explicit source for every value', () => {
+      menu.show();
+      el.querySelector<HTMLElement>('[data-menu-action="__diagnostics_open__"]')!.click();
+
+      expect(getDiagnostics).toHaveBeenCalledOnce();
+      expect(items()).toHaveLength(1);
+      expect(items()[0].dataset.menuAction).toBe('__menu_back__');
+      expect(el.textContent).toContain('Playback details');
+      expect(el.textContent).toContain('hls.js');
+      expect(el.textContent).toContain('1920x1080 (1080p)');
+      expect(el.textContent).toContain('4.5 Mbps');
+      expect(el.textContent).toContain('Observed');
+      expect(el.textContent).toContain('Declared');
+      expect(el.textContent).toContain('Derived');
+      expect(el.querySelectorAll('.diagnostic-row')).toHaveLength(7);
+    });
+
+    it('returns to the action list on Back without closing the menu', () => {
+      menu.show();
+      el.querySelector<HTMLElement>('[data-menu-action="__diagnostics_open__"]')!.click();
+
+      expect(menu.handleBack()).toBe(true);
+      expect(menu.visible).toBe(true);
+      expect(items().map(i => i.dataset.menuAction)).toContain('__diagnostics_open__');
+    });
+  });
+
   describe('VOD mode (no channel)', () => {
     beforeEach(() => getCurrentChannel.mockReturnValue(null));
 
@@ -403,7 +449,9 @@ describe('PlayerMenu', () => {
 
     it('still shows Info and Settings even without any tracks', () => {
       menu.show();
-      expect(items().map(i => i.dataset.menuAction)).toEqual(['yellow', 'blue']);
+      expect(items().map(i => i.dataset.menuAction)).toEqual([
+        'yellow', 'blue', '__diagnostics_open__',
+      ]);
     });
 
     it('selecting Info or Settings emits the color action to the host', () => {

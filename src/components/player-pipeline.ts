@@ -67,6 +67,9 @@ export interface PlayerPipelineOptions {
   onManifest: (manifest: PipelineManifest) => void;
 }
 
+export type PlaybackPath = 'none' | 'pending' | 'native' | 'direct'
+  | 'hls.js' | 'dash.js' | 'mpegts.js';
+
 export class PlayerPipeline {
   private videoEl: HTMLVideoElement | null = null;
   private hls: InstanceType<HlsType> | null = null;
@@ -78,6 +81,7 @@ export class PlayerPipeline {
   private manifestSeq = 0;
   private manifestController: AbortController | null = null;
   private videoLoadLabels = new WeakMap<HTMLVideoElement, string>();
+  private path: PlaybackPath = 'none';
 
   constructor(private callbacks: PlayerPipelineOptions) {}
 
@@ -118,6 +122,10 @@ export class PlayerPipeline {
     return this.engine?.streamInfo() ?? null;
   }
 
+  activePath(): PlaybackPath {
+    return this.path;
+  }
+
   load(
     url: string,
     extras: Record<string, string> | null,
@@ -126,6 +134,7 @@ export class PlayerPipeline {
     const videoEl = this.videoEl;
     if (!videoEl) return;
     const token = ++this.loadToken;
+    this.path = 'pending';
     this.videoLoadLabels.set(videoEl, this.callbacks.playbackLabel(token));
     const safeUrl = diagnosticStreamUrl(url);
     this.cancelManifest();
@@ -210,6 +219,7 @@ export class PlayerPipeline {
     // serve HLS with no .m3u8 suffix — so classify by the server's Content-Type,
     // falling back to the URL and defaulting to HLS.
     if (opts?.direct) {
+      this.path = 'direct';
       log.info('Selected direct playback', 'event=playback.path.direct',
         this.callbacks.playbackLabel(token),
         'reason=direct', 'url=', safeUrl, '| desktop direct VOD');
@@ -241,6 +251,7 @@ export class PlayerPipeline {
           'reason=probe');
         this.loadWithDash(url, token);
       } else if (isDirect) {
+        this.path = 'direct';
         log.info('Selected direct playback', 'event=playback.path.direct',
           this.callbacks.playbackLabel(token),
           'reason=probe');
@@ -262,6 +273,7 @@ export class PlayerPipeline {
     // Its fetch may not be abortable on every target, so the load token is the
     // final guard against restarting playback after stop/suspend.
     this.loadToken++;
+    this.path = 'none';
     this.cancelManifest();
     this.destroyLoaders();
   }
@@ -351,6 +363,7 @@ export class PlayerPipeline {
   private playNative(url: string, mime: string): void {
     const videoEl = this.videoEl;
     if (!videoEl) return;
+    this.path = 'native';
     // A <source> with an explicit MIME tells the player the format even when the
     // URL has no file extension.
     videoEl.removeAttribute('src');
@@ -374,6 +387,7 @@ export class PlayerPipeline {
     const Hls = win.__Hls as HlsType | undefined;
     try {
       if (!Hls?.isSupported()) {
+        this.path = 'direct';
         log.warn('hls.js unsupported; using direct playback',
             'event=playback.path.direct', this.callbacks.playbackLabel(loadToken),
             'reason=hls-unsupported');
@@ -396,6 +410,7 @@ export class PlayerPipeline {
         };
       }
       this.hlsRecoveries = 0;
+      this.path = 'hls.js';
       const hls = new Hls(hlsConfig);
       this.hls = hls;
       this.engine = createHlsEngine(hls);
@@ -443,6 +458,7 @@ export class PlayerPipeline {
         }
       });
     } catch (error) {
+      this.path = 'direct';
       log.warn('hls.js initialization failed; using direct playback',
         'event=playback.hls.init.failed', this.callbacks.playbackLabel(loadToken), error);
       this.videoEl.src = url;
@@ -455,6 +471,7 @@ export class PlayerPipeline {
     const dashjs = win.__dashjs as DashjsNamespace | undefined;
     try {
       if (!dashjs) {
+        this.path = 'direct';
         log.warn('dash.js unavailable; using direct playback',
           'event=playback.path.direct', this.callbacks.playbackLabel(loadToken),
           'reason=dash-unavailable');
@@ -463,6 +480,7 @@ export class PlayerPipeline {
         return;
       }
       this.dashRecoveries = 0;
+      this.path = 'dash.js';
       const player = dashjs.MediaPlayer().create();
       player.updateSettings({
         streaming: { buffer: { bufferTimeDefault: CONFIG.PLAYER.BUFFER_LENGTH } },
@@ -491,6 +509,7 @@ export class PlayerPipeline {
         this.dashRecoveries++;
       });
     } catch (error) {
+      this.path = 'direct';
       log.warn('dash.js initialization failed; using direct playback',
         'event=playback.dash.init.failed', this.callbacks.playbackLabel(loadToken), error);
       this.videoEl.src = url;
@@ -503,10 +522,11 @@ export class PlayerPipeline {
     const mpegts = win.__mpegts as MpegtsType | undefined;
     try {
       if (!mpegts?.isSupported()) {
-      log.warn('mpegts.js unsupported; using direct playback',
-        'event=playback.path.direct', this.callbacks.playbackLabel(loadToken),
-        'reason=mpegts-unsupported');
-      this.videoEl.src = url;
+        this.path = 'direct';
+        log.warn('mpegts.js unsupported; using direct playback',
+          'event=playback.path.direct', this.callbacks.playbackLabel(loadToken),
+          'reason=mpegts-unsupported');
+        this.videoEl.src = url;
         this.videoEl.play().catch(() => {});
         return;
       }
@@ -515,6 +535,7 @@ export class PlayerPipeline {
         isLive: true,
         url,
       });
+      this.path = 'mpegts.js';
       this.mpegtsPlayer = player;
       player.attachMediaElement(this.videoEl);
       player.load();
@@ -525,6 +546,7 @@ export class PlayerPipeline {
         this.callbacks.onError();
       });
     } catch (error) {
+      this.path = 'direct';
       log.warn('mpegts.js initialization failed; using direct playback',
         'event=playback.mpegts.init.failed', this.callbacks.playbackLabel(loadToken), error);
       this.videoEl.src = url;

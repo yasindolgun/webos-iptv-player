@@ -34,6 +34,7 @@ async function installDashStub(page: Page): Promise<void> {
     const videoTrack = {
       index: 0,
       codec: 'video/mp4;codecs="avc1.4d401f"',
+      bitrate: 800000,
     };
     const audioTrack = {
       index: 0,
@@ -121,7 +122,7 @@ async function installDashStub(page: Page): Promise<void> {
   });
 }
 
-test('routes an MPD through dash.js and renders its stream info', async ({ page }) => {
+test('routes an MPD through dash.js and separates OSD facts from details', async ({ page }) => {
   await installDashStub(page);
   await routePlaylist(page, DASH_M3U);
   await page.route(DASH_URL, route => route.fulfill({
@@ -158,9 +159,19 @@ test('routes an MPD through dash.js and renders its stream info', async ({ page 
   const info = page.locator('#player-osd .osd-stream-info');
   await expect(info).toBeVisible();
   await expect(info).toContainText('720p');
-  await expect(info).toContainText('H.264');
-  await expect(info).toContainText('AAC');
-  await expect(info).toContainText('Track 1');
+  await expect(info).not.toContainText('H.264');
+  await expect(info).not.toContainText('800 kbps');
+
+  await page.keyboard.press('ArrowRight');
+  await page.locator('[data-menu-action="__diagnostics_open__"]').click();
+  const details = page.locator('#player-menu .menu-diagnostics');
+  await expect(details).toContainText('dash.js');
+  await expect(details).toContainText('H.264');
+  await expect(details).toContainText('AAC');
+  await expect(details).toContainText('800 kbps');
+  await expect(details).toContainText('Observed');
+  await expect(details).toContainText('Declared');
+  await expect(details).toContainText('Derived');
 });
 
 test('loads the real dash.js engine in the desktop preview', async ({ page }) => {

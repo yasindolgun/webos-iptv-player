@@ -934,6 +934,11 @@
   line-height: 1;
 }
 .menu-icon.audio { color: #9b59b6; }
+.menu-icon.diagnostics {
+  color: var(--accent);
+  font-family: serif;
+  font-weight: 700;
+}
 .menu-icon.subtitle {
   color: #1abc9c;
   display: inline-flex;
@@ -984,6 +989,42 @@
 .player-menu .menu-item.unavailable.focused {
   opacity: 0.6;
 }
+
+.player-menu .menu-diagnostics {
+  flex-direction: column;
+  gap: 0;
+}
+
+.player-menu .diagnostic-row {
+  padding: 16px 8px;
+  border-bottom: 1px solid var(--overlay-divider);
+}
+
+.player-menu .diagnostic-label {
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+.player-menu .diagnostic-value {
+  margin-top: 3px;
+  overflow-wrap: break-word;
+  color: var(--text-primary);
+  font-size: 22px;
+}
+
+.player-menu .diagnostic-source {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.player-menu .diagnostic-source.source-observed { color: #6fd6a7; }
+.player-menu .diagnostic-source.source-declared { color: #82b8ff; }
+.player-menu .diagnostic-source.source-parsed { color: #d6adff; }
+.player-menu .diagnostic-source.source-derived { color: #ffd27a; }
 
 /* Subtitle search overlay — centered modal over the player */
 .subs-overlay {

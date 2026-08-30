@@ -80,6 +80,8 @@ export const CONFIG = {
     SEARCH_INITIAL_RESULTS: 200,         // first ranked results published per Search group
     SEARCH_EXPANSION_FACTOR: 5,          // grow retained results near a virtual window boundary
     SEARCH_RESULT_CAP: 50_000,           // final per-group cap after progressive expansion
+    SEARCH_CATALOG_BLOCK_SIZE: 500,      // full catalog records per IndexedDB hydration block
+    SEARCH_DETAIL_CACHE_SIZE: 100,       // hydrated movie/series records retained by Search
     ARCHIVE_TTL_MS: 10 * 60 * 1000,      // per-channel get_simple_data_table freshness
     WATCHLIST_MAX_ITEMS: 200,            // per account and content type
   },

@@ -115,6 +115,14 @@ describe('Home', () => {
     expect(onAction).toHaveBeenCalledWith('settings');
   });
 
+  it('activates the available Continue Watching card', () => {
+    open({ resume });
+
+    container.querySelector<HTMLElement>('[data-home-action="continue"]')!.click();
+
+    expect(onAction).toHaveBeenCalledWith('continue');
+  });
+
   it('disables duplicate refresh activation while refreshing', () => {
     open();
     home.setRefreshing(true);

@@ -3,6 +3,11 @@ import { CONFIG } from '../config';
 import { parseM3UBytes } from '../parsers/m3u-parser';
 import type { Channel } from '../types';
 import { CachedPlaylistBatchWriter } from '../services/idb-cache';
+import {
+  hydrateXtreamSearchCatalog,
+  loadXtreamSearchCatalog,
+  type XtreamSearchCatalog,
+} from '../services/xtream-search-catalog';
 import { fetchAndParseXMLTVInWorker } from '../parsers/xmltv-loader';
 import {
   exposeWorkerTasks,
@@ -19,6 +24,11 @@ import {
 
 const searchIndex = new SearchWorkerIndex();
 const scopedSearchIndex = new ScopedSearchIndex();
+let searchCatalogSession: {
+  id: number;
+  catalog: XtreamSearchCatalog | null;
+  controller: AbortController;
+} | null = null;
 let m3uSession: {
   id: number;
   channels: Array<Channel | null>;
@@ -143,6 +153,49 @@ const handlers: WorkerTaskHandlers<AppWorkerTasks> = {
   'xmltv.load': request => fetchAndParseXMLTVInWorker(request),
   'search.index': request => searchIndex.index(request),
   'search.query': request => searchIndex.query(request),
+  'search.catalog.load': async request => {
+    searchCatalogSession?.controller.abort();
+    const controller = new AbortController();
+    const session: NonNullable<typeof searchCatalogSession> = {
+      id: request.sessionId,
+      catalog: null,
+      controller,
+    };
+    searchCatalogSession = session;
+    const catalog = await loadXtreamSearchCatalog(request.account, controller.signal);
+    if (searchCatalogSession !== session || controller.signal.aborted) {
+      return { accepted: false, movieCount: 0, seriesCount: 0 };
+    }
+    session.catalog = catalog;
+    const indexed = searchIndex.catalog(
+      request.sessionId,
+      catalog.movies.documents,
+      catalog.series.documents,
+    );
+    return {
+      accepted: indexed.accepted,
+      movieCount: catalog.movies.documents.length,
+      seriesCount: catalog.series.documents.length,
+    };
+  },
+  'search.catalog.hydrate': request => {
+    const session = searchCatalogSession;
+    if (!session || session.id !== request.sessionId || !session.catalog) {
+      return { movies: [], series: [] };
+    }
+    return hydrateXtreamSearchCatalog(
+      session.catalog,
+      request.movieIds,
+      request.seriesIds,
+    );
+  },
+  'search.catalog.release': request => {
+    const session = searchCatalogSession;
+    if (!session || session.id !== request.sessionId) return { accepted: false };
+    session.controller.abort();
+    searchCatalogSession = null;
+    return { accepted: true };
+  },
   'list-search.index': request => scopedSearchIndex.indexList(request),
   'list-search.query': request => scopedSearchIndex.queryList(request),
   'list-search.release': request => scopedSearchIndex.releaseList(request),

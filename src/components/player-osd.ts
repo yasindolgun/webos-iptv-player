@@ -30,12 +30,6 @@ export interface PlayerOsdStreamInfo {
     label: string;
   } | null;
   hdr: string;
-  fps: string;
-  bitrate: string;
-  videoCodec: string;
-  audioCodec: string;
-  audio: string;
-  subtitle: string;
 }
 
 export interface PlayerOsdOptions {
@@ -392,8 +386,8 @@ export class PlayerOsd {
     `;
   }
 
-  // The stream-info badges (resolution / HDR / fps / bitrate / codecs / audio / subtitle),
-  // shared by the Live and VOD OSD.
+  // Keep the normal OSD glanceable. Detailed codecs, declared bitrate, frame
+  // rate, buffer and pipeline live in the explicit playback-details panel.
   private renderStreamInfo(info: PlayerOsdStreamInfo | null): Safe | string {
     if (!info) return '';
     return html`
@@ -404,12 +398,6 @@ export class PlayerOsd {
             }</span>`
           : ''}
         ${info.hdr ? html`<span class="si-badge si-badge--hdr">${info.hdr}</span>` : ''}
-        ${info.fps ? html`<span class="si-pill">${info.fps}fps</span>` : ''}
-        ${info.bitrate ? html`<span class="si-pill">${info.bitrate}</span>` : ''}
-        ${info.videoCodec ? html`<span class="si-pill">${info.videoCodec}</span>` : ''}
-        ${info.audioCodec ? html`<span class="si-pill">${info.audioCodec}</span>` : ''}
-        ${info.audio ? html`<span class="si-text">${info.audio}</span>` : ''}
-        ${info.subtitle ? html`<span class="si-text">${t('player.subtitlesTrack', { name: info.subtitle })}</span>` : ''}
       </div>
     `;
   }

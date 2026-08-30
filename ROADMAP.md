@@ -56,10 +56,11 @@ independent reliability gaps:
 
 The audit identified complete result-graph delivery, page-built derived indexes,
 and missing staged device profiles as the highest-impact gaps. The first two
-were addressed by the 2026-08-30 milestones below. Full raw-record residency,
-chunked decoding, 50,000/100,000/200,000 memory budgets, and real webOS 4
-validation remain open; the Chromium 53 project is a compatibility simulation,
-not an engine or memory emulator.
+were addressed by the 2026-08-30 milestones below. Search catalog page
+residency was addressed by the later milestone on the same date. Playlist raw-
+record residency, chunked decoding, 50,000/100,000/200,000 memory budgets, and
+real webOS 4 validation remain open; the Chromium 53 project is a compatibility
+simulation, not an engine or memory emulator.
 
 The production M3U benchmark now separates input delivery, worker parse,
 result clone/delivery, total round trip, and maximum page frame gap. It also
@@ -139,7 +140,68 @@ and the page still hydrates the combined channel graph for merge and playback.
 Chunked decoding, parse-to-persistence source staging, and the staged
 50,000/100,000/200,000 memory profiles remain the next ingestion work.
 
+### Direct Home resume — 2026-08-30
+
+The existing Home Continue Watching action now starts its newest saved item
+directly at the stored position instead of only opening the Movies or Series
+browser. Xtream movies and episodes rebuild their playback URL from the active
+account and saved container extension; M3U movies and episodes resolve the
+current channel through their stable saved identity. Back returns to Home, and
+an item whose configured source identity can no longer be resolved falls back
+to its catalog section.
+
+### Bounded Search catalog residency — 2026-08-30
+
+Search no longer loads or retains the complete Xtream movie and series object
+graphs on the page. The shared app worker migrates the existing credential-
+scoped full-catalog cache into 500-record IndexedDB blocks and retains only a
+compact stable-ID/title index. Ranked queries return compact documents; Search
+hydrates the current virtual rail window on demand and caps its detailed record
+cache at 100 items. A selection that has not been prefetched is hydrated before
+opening its detail view.
+
+The block manifest is published only after every block write succeeds, fresh
+manifests reopen without loading the legacy full-catalog record, stale manifests
+remain a failure fallback, and movie/series failures stay independent. Account
+switches supersede the previous worker session, while deactivation cancels a
+still-running catalog load. Unit coverage includes 50,000-result bounded
+hydration, block-spanning reads, fresh-manifest reuse, partial provider failure,
+account switching, cancellation, and repeated Search opens.
+
+Provider JSON decoding still creates one transient full catalog array inside
+the worker during a cold refresh, and the legacy full-catalog cache remains the
+Movies/Series browse source. Removing that transient peak belongs to large-
+source ingestion; staged heap budgets and real-device qualification remain open.
+
 ## Planned priorities
+
+### Priority 0: webOS 4 cold-start validation
+
+Treat real webOS 4 startup as an immediate compatibility gate, independently
+of later 200,000-item scale qualification. The Chromium 53 simulation checks
+the declared browser surface and legacy fallbacks, but it does not reproduce
+the target TV's V8 heap, IndexedDB implementation, worker scheduling, or native
+media pipeline.
+
+- Cold-install and cold-start the exact release build on representative webOS 4
+  hardware with empty state, a medium provider-shaped playlist, and the staged
+  large-source profiles that fit the device budget.
+- Capture phase timings, renderer RSS, page heap, worker failures, persistence
+  diagnostics, and the last loading-state transition through the existing TV
+  benchmark and diagnostic tooling.
+- Repeat startup from a populated cache and after an upgrade so clean installs
+  and legacy migration paths are both covered.
+- Keep the documented minimum-version claim aligned with measured results; a
+  simulation-only pass is not sufficient evidence for release qualification.
+
+Acceptance criteria:
+
+- Empty, medium-source, cached, and upgraded starts all leave the loading view
+  or surface an actionable error within the bounded startup timeout.
+- Repeated cold starts do not show sustained renderer-memory growth or corrupt
+  the previous complete playlist snapshot after an interrupted refresh.
+- The recorded device, firmware, app version, bundle hash, source scale, and
+  budgets are sufficient to reproduce the result.
 
 ### Priority 1: Large-source ingestion
 
@@ -192,6 +254,10 @@ full record remains resident in JavaScript memory.
 - Keep detailed records partitioned in IndexedDB, a compact navigation/search
   index in memory, and only the visible range plus bounded overscan as hydrated
   UI models. Use block prefetch rather than a cursor read for every D-pad step.
+- Keep the completed worker-owned Search title index and bounded visible-record
+  hydration regression-gated as catalog scale increases.
+- Include Search index construction, query result hydration, account switching,
+  cancellation, and repeated open/close cycles in the catalog heap profiles.
 - Audit full-array copies, sorting, structured-clone payloads, logo lifetime,
   and cache serialization before changing the persistent schema.
 - Promote the 200,000-item profile to a required gate only after it is stable on
@@ -205,6 +271,8 @@ Acceptance criteria:
   worker memory; temporary `map`, `filter`, sort, and serialization copies are
   included in peak-heap review.
 - Repeated open/close cycles show no sustained retained-heap growth.
+- Opening Search never fetches or retains a complete VOD and series object
+  graph on the page, including duplicate name arrays used only for indexing.
 - Search and navigation remain responsive while background cache work runs.
 - The documented supported scale matches measured device results.
 
@@ -245,8 +313,8 @@ Milestone 1 — Home content hub:
 
 - Replace the shortcut-dominant grid with a content-first layout while keeping
   Live as the first and fastest action.
-- Lead with one context-aware Resume action, then bounded rails for Recently
-  Watched, Watchlist, and upcoming reminders when their data exists.
+- Keep the direct context-aware Resume action, then add bounded rails for
+  Recently Watched, Watchlist, and upcoming reminders when their data exists.
 - Keep Live, Movies, Series, and Guide entry points prominent; gracefully omit
   Xtream-only sections for an M3U-only setup.
 - Retain account status, refresh state, and last-refresh time without competing
@@ -256,19 +324,21 @@ Milestone 1 — Home content hub:
 
 Milestone 2 — Three-layer player information architecture:
 
-- Keep the normal OSD lightweight: title, programme timing, progress or live
-  edge, next programme, and a small set of available stream facts. It should
-  auto-hide and remain readable over any video.
-- Keep audio, subtitles, subtitle sync, A/V resync, and channel navigation in
-  the existing quick-menu and sidebar flows. A visual redesign must not remap
-  OK, directional, transport, color, or channel keys.
-- Move detailed resolution, codecs, declared bitrate, buffer range, and active
-  pipeline into an explicit diagnostics panel. Distinguish observed, declared,
-  parsed, provider, and derived values in its labels.
+- The normal OSD now keeps only title, programme timing, progress or live edge,
+  next programme, and restrained resolution / dynamic-range badges. It still
+  auto-hides and detailed stream text no longer crowds the primary overlay.
+- Audio, subtitles, subtitle sync, A/V resync, and channel navigation remain in
+  the existing quick-menu and sidebar flows with the same OK, directional,
+  transport, color, and channel-key mapping.
+- Detailed resolution, codecs, declared bitrate, frame rate, current buffer
+  range, and active pipeline now live in an explicit Playback details view.
+  Every shown value is labelled observed, declared, parsed, or derived; unknown
+  fields are omitted instead of guessed.
 - Do not claim packet loss, server ping, codec profile/level, colorimetry, or
   measured throughput unless the active pipeline supplies that exact value.
-- Preserve native decode and HDR/Dolby passthrough; diagnostics must not add a
-  second media pipeline or sustained high-frequency probing.
+- Native decode and HDR/Dolby passthrough remain untouched. The diagnostics
+  view reads the existing player state only when opened and adds neither a
+  second media pipeline nor sustained high-frequency probing.
 
 Milestone 3 — VOD detail hierarchy:
 
@@ -375,6 +445,19 @@ Acceptance criteria:
 - Version or reported-memory guesses never enable preview automatically; only
   the user setting and successful capability behavior control it.
 - Devices that fail the feasibility gate retain the current information panel.
+
+## Explicit platform constraints
+
+- Native webOS HLS exposes at most one audio track per distinct `LANGUAGE` on
+  affected firmware. Same-language renditions collapse before the HTML5 track
+  list is created and cannot be selected safely without replacing the native
+  playback path.
+- M3U `http-user-agent` and `http-referrer` values cannot be applied as
+  arbitrary per-stream headers by the native `<video>` pipeline. Desktop MSE
+  behavior must not be presented as native-TV header support.
+- DRM license negotiation is not implemented. A DASH manifest with a
+  DRM-specific `ContentProtection` scheme is rejected through the normal
+  bounded playback fallback rather than being advertised as playable.
 
 ## Later candidates
 

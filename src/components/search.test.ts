@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { PlaylistEntry, Programme } from '../types';
-import type { SearchIndexRequest, SearchQueryRequest } from '../workers/tasks';
+import type { PlaylistEntry, Programme, SeriesItem, VodItem } from '../types';
+import type {
+  SearchCatalogHydrateRequest,
+  SearchCatalogLoadRequest,
+  SearchIndexRequest,
+  SearchQueryRequest,
+} from '../workers/tasks';
 
 const {
   catalogMock,
@@ -36,6 +41,8 @@ const {
     run: vi.fn(),
     retain: vi.fn(() => vi.fn()),
     running: false,
+    catalogController: null as AbortController | null,
+    catalogs: new Map<number, { movies: VodItem[]; series: SeriesItem[] }>(),
   },
 }));
 vi.mock('../services/xtream-catalog', () => catalogMock);
@@ -52,6 +59,40 @@ vi.mock('../workers/app-worker-client', async () => {
     workerMock.running = true;
     if (task === 'search.index') return index.index(payload as SearchIndexRequest);
     if (task === 'search.query') return index.query(payload as SearchQueryRequest);
+    if (task === 'search.catalog.load') {
+      const request = payload as SearchCatalogLoadRequest;
+      workerMock.catalogController?.abort();
+      const controller = new AbortController();
+      workerMock.catalogController = controller;
+      const [moviesResult, seriesResult] = await Promise.allSettled([
+        catalogMock.loadAllVodStreams(request.account, controller.signal),
+        catalogMock.loadAllSeries(request.account, controller.signal),
+      ]);
+      if (controller.signal.aborted) {
+        return { accepted: false, movieCount: 0, seriesCount: 0 };
+      }
+      const movies = moviesResult.status === 'fulfilled' ? moviesResult.value as VodItem[] : [];
+      const series = seriesResult.status === 'fulfilled' ? seriesResult.value as SeriesItem[] : [];
+      workerMock.catalogs.set(request.sessionId, { movies, series });
+      const accepted = index.catalog(
+        request.sessionId,
+        movies.map(item => ({ id: item.streamId, name: item.name })),
+        series.map(item => ({ id: item.seriesId, name: item.name })),
+      ).accepted;
+      return { accepted, movieCount: movies.length, seriesCount: series.length };
+    }
+    if (task === 'search.catalog.hydrate') {
+      const request = payload as SearchCatalogHydrateRequest;
+      const catalog = workerMock.catalogs.get(request.sessionId);
+      return {
+        movies: catalog?.movies.filter(item => request.movieIds.includes(item.streamId)) ?? [],
+        series: catalog?.series.filter(item => request.seriesIds.includes(item.seriesId)) ?? [],
+      };
+    }
+    if (task === 'search.catalog.release') {
+      workerMock.catalogController?.abort();
+      return { accepted: true };
+    }
     throw new Error(`Unexpected worker task: ${task}`);
   });
   return {
@@ -84,6 +125,8 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   vi.clearAllMocks();
   workerMock.running = false;
+  workerMock.catalogController = null;
+  workerMock.catalogs.clear();
   playlistMock.channels = [];
   playlistMock.search.mockReturnValue([]);
   playlistMock.searchRanked.mockImplementation((query: string, limit: number) => {
@@ -186,6 +229,10 @@ describe('Search', () => {
     await view.setQuery('movie');
     expect(initial).toBe(200);
     expect(container.querySelectorAll('.catalog-tile[data-stream-id]').length).toBeLessThan(30);
+    const hydration = workerMock.run.mock.calls.find(
+      ([task]) => task === 'search.catalog.hydrate',
+    );
+    expect((hydration?.[1] as SearchCatalogHydrateRequest).movieIds.length).toBeLessThan(30);
     expect(container.querySelector<HTMLElement>(
       '[data-search-virtual="movies"] .search-virtual-rail-spacer',
     )?.style.width).toBe(`${String(initial * 240)}px`);
@@ -201,13 +248,14 @@ describe('Search', () => {
     const rail = container.querySelector<HTMLElement>('[data-search-virtual="movies"]')!;
     rail.scrollLeft = CONFIG.XTREAM.SEARCH_INITIAL_RESULTS * 240;
     rail.dispatchEvent(new Event('scroll', { bubbles: true }));
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    expect(container.querySelector<HTMLElement>(
-      '[data-search-virtual="movies"] .search-virtual-rail-spacer',
-    )?.style.width).toBe(
-      `${String(CONFIG.XTREAM.SEARCH_INITIAL_RESULTS
-        * CONFIG.XTREAM.SEARCH_EXPANSION_FACTOR * 240)}px`,
-    );
+    await vi.waitFor(() => {
+      expect(container.querySelector<HTMLElement>(
+        '[data-search-virtual="movies"] .search-virtual-rail-spacer',
+      )?.style.width).toBe(
+        `${String(CONFIG.XTREAM.SEARCH_INITIAL_RESULTS
+          * CONFIG.XTREAM.SEARCH_EXPANSION_FACTOR * 240)}px`,
+      );
+    });
   });
 
   it('publishes only the newest query scheduled in one frame', async () => {
@@ -215,8 +263,7 @@ describe('Search', () => {
     const { view } = await openWith();
     view.scheduleQuery('alpha');
     view.scheduleQuery('bravo');
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    expect(container.textContent).toContain('Bravo');
+    await vi.waitFor(() => expect(container.textContent).toContain('Bravo'));
     expect(container.textContent).not.toContain('Alpha');
   });
 
@@ -237,8 +284,8 @@ describe('Search', () => {
     resolveAlpha({
       channels: { indices: [0], hasMore: false },
       programmes: { indices: [], hasMore: false },
-      movies: { indices: [], hasMore: false },
-      series: { indices: [], hasMore: false },
+      movies: { documents: [], hasMore: false },
+      series: { documents: [], hasMore: false },
     });
     await alpha;
 
@@ -480,12 +527,25 @@ describe('Search', () => {
   });
 
   it('cancels the catalog request session when deactivated', async () => {
-    const { view } = await openWith();
+    let resolveMovies!: (items: unknown[]) => void;
+    let resolveSeries!: (items: unknown[]) => void;
+    catalogMock.loadAllVodStreams.mockReturnValue(new Promise(resolve => {
+      resolveMovies = resolve;
+    }));
+    catalogMock.loadAllSeries.mockReturnValue(new Promise(resolve => {
+      resolveSeries = resolve;
+    }));
+    const view = new Search(container, mkHandlers());
+    const opening = view.open(account);
+    await vi.waitFor(() => expect(catalogMock.loadAllVodStreams).toHaveBeenCalled());
     const signal = catalogMock.loadAllVodStreams.mock.calls[0][1] as AbortSignal;
 
     view.deactivate();
 
-    expect(signal.aborted).toBe(true);
+    await vi.waitFor(() => expect(signal.aborted).toBe(true));
+    resolveMovies([]);
+    resolveSeries([]);
+    await opening;
   });
 
   it('a superseded a1 load cannot clobber a2 catalog (account-switch race)', async () => {
@@ -508,8 +568,10 @@ describe('Search', () => {
 
     // Start both opens concurrently; neither load has resolved yet.
     const p1 = view.open(a1);
+    await vi.waitFor(() => expect(catalogMock.loadAllVodStreams).toHaveBeenCalledTimes(1));
     const a1Signal = catalogMock.loadAllVodStreams.mock.calls[0][1] as AbortSignal;
     const p2 = view.open(a2);
+    await vi.waitFor(() => expect(catalogMock.loadAllVodStreams).toHaveBeenCalledTimes(2));
     expect(a1Signal.aborted).toBe(true);
     expect(catalogMock.loadAllVodStreams.mock.calls[1][1]).toBeInstanceOf(AbortSignal);
 

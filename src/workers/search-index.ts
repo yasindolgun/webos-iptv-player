@@ -9,13 +9,15 @@ import {
 import type {
   SearchIndexRequest,
   SearchIndexResponse,
+  SearchCatalogDocument,
   SearchQueryRequest,
   SearchQueryResponse,
+  SearchRankedDocuments,
   SearchRankedIndices,
 } from './tasks';
 
 interface IndexedName {
-  index: number;
+  id: string;
   name: string;
 }
 
@@ -39,8 +41,17 @@ export class SearchWorkerIndex {
 
     if (request.channels) this.channels = prepareFields(request.channels);
     if (request.programmes) this.programmes = prepareFields(request.programmes);
-    if (request.movies) this.movies = prepareNames(request.movies);
-    if (request.series) this.series = prepareNames(request.series);
+    return { accepted: true };
+  }
+
+  catalog(
+    sessionId: number,
+    movies: SearchCatalogDocument[],
+    series: SearchCatalogDocument[],
+  ): SearchIndexResponse {
+    if (sessionId !== this.sessionId) return { accepted: false };
+    this.movies = prepareNames(movies);
+    this.series = prepareNames(series);
     return { accepted: true };
   }
 
@@ -63,8 +74,8 @@ function prepareFields(documents: string[][]): PreparedSearchItem<number>[] {
   return documents.map((fields, index) => prepareSearchItem(index, () => fields));
 }
 
-function prepareNames(names: string[]): PreparedNameSearchIndex<IndexedName> {
-  return prepareNameSearchItems(names.map((name, index) => ({ index, name })));
+function prepareNames(documents: SearchCatalogDocument[]): PreparedNameSearchIndex<IndexedName> {
+  return prepareNameSearchItems(documents);
 }
 
 function rankedFields(
@@ -80,14 +91,14 @@ function rankedNames(
   index: PreparedNameSearchIndex<IndexedName>,
   query: string,
   limit: number,
-): SearchRankedIndices {
+): SearchRankedDocuments {
   const result = rankPreparedNamesTopK(index, query, limit);
   return {
-    indices: result.items.map(item => item.index),
+    documents: result.items.map(item => ({ id: item.id, name: item.name })),
     hasMore: result.hasMore,
   };
 }
 
-function emptyResult(): SearchRankedIndices {
-  return { indices: [], hasMore: false };
+function emptyResult(): SearchRankedDocuments {
+  return { documents: [], hasMore: false };
 }

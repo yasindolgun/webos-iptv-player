@@ -125,12 +125,6 @@ describe('PlayerOsd', () => {
       streamInfo: {
         resolution: { tier: 'hd', label: 'Info 1' },
         hdr: 'HDR',
-        fps: '30',
-        bitrate: '4.5 Mbps',
-        videoCodec: 'Codec 1',
-        audioCodec: 'Codec 2',
-        audio: 'Track 1',
-        subtitle: 'Track 2',
       },
     });
     osd.show();
@@ -139,9 +133,8 @@ describe('PlayerOsd', () => {
     expect(container.textContent).toContain('Programme 2');
     expect(container.textContent).toContain('Info 1');
     expect(container.textContent).toContain('HDR');
-    expect(container.textContent).toContain('30fps');
-    expect(container.textContent).toContain('4.5 Mbps');
-    expect(container.textContent).toContain('Codec 1');
+    expect(container.textContent).not.toContain('4.5 Mbps');
+    expect(container.textContent).not.toContain('Codec 1');
 
     state = snapshot({
       playback: playback(120, 30),

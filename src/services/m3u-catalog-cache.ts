@@ -57,5 +57,5 @@ export function setCachedM3uCatalog(
     sourceSignature: m3uSourceSignature(source),
     kind,
     channels: catalog,
-  } satisfies StoredM3uCatalog, CONFIG.PLAYLIST_REFRESH_INTERVAL);
+  } satisfies StoredM3uCatalog, CONFIG.PLAYLIST_REFRESH_INTERVAL).then(() => undefined);
 }

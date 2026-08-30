@@ -961,9 +961,9 @@ export async function setCachedCatalog(
   key: string,
   data: unknown,
   ttlMs: number | null = CONFIG.XTREAM.CATALOG_TTL_MS,
-): Promise<void> {
+): Promise<boolean> {
   const timestamp = Date.now();
-  await putRaw(CATALOG_STORE, {
+  return putRaw(CATALOG_STORE, {
     key,
     timestamp,
     data,

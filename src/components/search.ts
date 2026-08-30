@@ -7,11 +7,8 @@ import { EpgService } from '../services/epg-service';
 import { ReminderService } from '../services/reminder-service';
 import { StorageService } from '../services/storage-service';
 import { XtreamArchiveService } from '../services/xtream-archive';
-import { loadAllVodStreams, loadAllSeries } from '../services/xtream-catalog';
 import {
-  prepareNameSearchItems,
   prepareSearchItems,
-  rankPreparedNamesTopK,
   rankPreparedTopK,
 } from '../utils/channel-search';
 import { channelKey, legacyChannelKey } from '../utils/channel';
@@ -29,7 +26,11 @@ import {
   retainAppWorker,
   runAppWorkerTask,
 } from '../workers/app-worker-client';
-import type { SearchIndexRequest, SearchQueryResponse } from '../workers/tasks';
+import type {
+  SearchCatalogDocument,
+  SearchIndexRequest,
+  SearchQueryResponse,
+} from '../workers/tasks';
 
 const log = createLogger('Search');
 const SEARCH_LIST_VIEWPORT = 420;
@@ -51,20 +52,10 @@ interface ProgramResult {
   programme: Programme;
 }
 
-type CatalogLoadResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: unknown };
-
-function captureCatalogLoad<T>(promise: Promise<T>): Promise<CatalogLoadResult<T>> {
-  return promise.then(
-    (data) => ({ ok: true, data }),
-    (error: unknown) => ({ ok: false, error }),
-  );
-}
-
 // The Search section: one query box over Channels / Programs / Movies / Series.
 // Results are relevance-ranked and capped; movies and series match the account's
-// full catalogs, loaded once on open and cached.
+// compact worker index. Full catalog records stay partitioned in IndexedDB and
+// only the current virtual window is hydrated into the page.
 // Up from the box reveals the tab bar; Back returns to Live. The global key
 // handler ignores INPUT keydowns, so the box owns its own text input + focus-out
 // keys.
@@ -72,16 +63,16 @@ export class Search {
   private nav: SpatialNav;
   private account: PlaylistEntry | null = null;
   private query = '';
-  private allVod: VodItem[] = [];
-  private allSeries: SeriesItem[] = [];
   private programIndex: ProgramResult[] = [];
   private indexedChannels: Channel[] | null = null;
   private indexedProgrammes: Record<string, Programme[]> | null = null;
-  private loadedFor: string | null = null;
+  private catalogReadyFor: string | null = null;
   private visibleChannels: Channel[] = [];
   private visiblePrograms: ProgramResult[] = [];
-  private visibleMovies: VodItem[] = [];
-  private visibleSeries: SeriesItem[] = [];
+  private visibleMovies: SearchCatalogDocument[] = [];
+  private visibleSeries: SearchCatalogDocument[] = [];
+  private readonly movieDetails = new Map<string, VodItem>();
+  private readonly seriesDetails = new Map<string, SeriesItem>();
   private resumePrompt = new CatchupResumePrompt();
   private readonly channelListVirtualizer = this.createVirtualizer(88, SEARCH_ROW_OVERSCAN, SEARCH_LIST_VIEWPORT);
   private readonly programVirtualizer = this.createVirtualizer(109, SEARCH_ROW_OVERSCAN, SEARCH_LIST_VIEWPORT);
@@ -93,7 +84,6 @@ export class Search {
   private queryGeneration = 0;
   private queryPromise: Promise<void> | null = null;
   private queryPending = false;
-  private catalogController: AbortController | null = null;
   private active = false;
   private programIndexGeneration = 0;
   private resultLimit: number = CONFIG.XTREAM.SEARCH_INITIAL_RESULTS;
@@ -103,8 +93,9 @@ export class Search {
   private workerIndexedChannels: Channel[] | null = null;
   private workerIndexedProgrammes: Record<string, Programme[]> | null = null;
   private workerIndexedAccountId: string | null = null;
-  private workerIndexedVod: VodItem[] | null = null;
-  private workerIndexedSeries: SeriesItem[] | null = null;
+  private catalogMovieCount = 0;
+  private catalogSeriesCount = 0;
+  private catalogLoadPendingSession: number | null = null;
   private releaseWorker: (() => void) | null = null;
   private readonly scrollGuard = new VirtualScrollGuard();
 
@@ -132,12 +123,12 @@ export class Search {
     const reuseWorkerIndex = this.canReuseWorkerIndex(account);
     if (!this.releaseWorker) this.releaseWorker = retainAppWorker();
     this.cancelScheduledQuery();
-    this.catalogController?.abort();
-    this.catalogController = null;
-    if (this.loadedFor !== account?.id) {
-      this.allVod = [];
-      this.allSeries = [];
-      this.loadedFor = null;
+    if (this.catalogReadyFor !== account?.id) {
+      this.catalogReadyFor = null;
+      this.catalogMovieCount = 0;
+      this.catalogSeriesCount = 0;
+      this.movieDetails.clear();
+      this.seriesDetails.clear();
     }
     this.account = account;
     this.query = '';
@@ -158,13 +149,7 @@ export class Search {
     });
     let catalogLoad: Promise<void> | null = null;
     if (account) {
-      this.catalogController = new AbortController();
-      catalogLoad = this.loadCatalog(
-        account,
-        this.catalogController.signal,
-        sessionId,
-        workerReset,
-      );
+      catalogLoad = this.loadCatalog(account, sessionId, workerReset);
     }
     const reset = await workerReset;
     if (!reset || !this.active || sessionId !== this.workerSession) return;
@@ -185,7 +170,7 @@ export class Search {
     if (!this.active
         || sessionId !== this.workerSession
         || completedProgramGeneration !== this.programIndexGeneration) return;
-    if (!account || this.loadedFor === account.id) this.markWorkerIndexReady(account);
+    if (!account || this.catalogReadyFor === account.id) this.markWorkerIndexReady(account);
   }
 
   /** The tab bar's search box drives the query; re-render the results for it. */
@@ -237,8 +222,12 @@ export class Search {
   deactivate(): void {
     this.active = false;
     this.programIndexGeneration++;
-    this.catalogController?.abort();
-    this.catalogController = null;
+    const pendingSession = this.catalogLoadPendingSession;
+    if (pendingSession !== null) {
+      this.catalogLoadPendingSession = null;
+      void runAppWorkerTask('search.catalog.release', { sessionId: pendingSession });
+      this.invalidateWorkerIndex();
+    }
     this.releaseWorker?.();
     this.releaseWorker = null;
     this.queryPending = false;
@@ -271,69 +260,45 @@ export class Search {
     }
   }
 
-  // Load the whole catalogs once per account (cached in IndexedDB), guarding
-  // against account-switch races so a stale in-flight load can't clobber the
-  // current account's catalog. Non-blocking: open() already rendered the box.
+  // Build the catalog's compact index inside the worker. The worker migrates the
+  // existing whole-catalog cache into bounded IndexedDB blocks and never sends
+  // the full catalog records to this page.
   private async loadCatalog(
     account: PlaylistEntry,
-    signal: AbortSignal,
     sessionId: number,
     workerReset: Promise<boolean>,
   ): Promise<void> {
-    if (this.loadedFor === account.id) {
-      if (!await workerReset) return;
-      await this.indexWorker({
-        sessionId,
-        movies: this.allVod.map(item => item.name),
-        series: this.allSeries.map(item => item.name),
-      });
-      return;
-    }
-    const [vod, series] = await Promise.all([
-      captureCatalogLoad(loadAllVodStreams(account, signal)),
-      captureCatalogLoad(loadAllSeries(account, signal)),
-    ]);
-    // A newer open() (account switch) superseded this load — discard the stale
-    // result instead of clobbering the current account's catalog.
-    if (signal.aborted || this.account?.id !== account.id) return;
-    if (vod.ok) {
-      this.allVod = vod.data;
-    } else {
-      log.error(
-        'Movie search catalog load failed',
-        'event=xtream.search.load.failed',
-        'resource=movies',
-        vod.error,
-      );
-    }
-    if (series.ok) {
-      this.allSeries = series.data;
-    } else {
-      log.error(
-        'Series search catalog load failed',
-        'event=xtream.search.load.failed',
-        'resource=series',
-        series.error,
-      );
-    }
-    if (vod.ok && series.ok) {
-      this.loadedFor = account.id;
+    if (!await workerReset) return;
+    this.catalogLoadPendingSession = sessionId;
+    try {
+      const response = await runAppWorkerTask('search.catalog.load', { sessionId, account });
+      if (!response.accepted
+          || !this.active
+          || sessionId !== this.workerSession
+          || this.account?.id !== account.id) return;
+      this.catalogReadyFor = account.id;
+      this.catalogMovieCount = response.movieCount;
+      this.catalogSeriesCount = response.seriesCount;
       log.debug(
-        'catalog loaded',
-        vod.data.length,
+        'catalog index loaded',
+        response.movieCount,
         'movies,',
-        series.data.length,
+        response.seriesCount,
         'series',
       );
+      if (this.query.trim()) await this.startQuery(++this.queryGeneration);
+    } catch (error) {
+      if (!this.active || sessionId !== this.workerSession) return;
+      log.error(
+        'Search catalog load failed',
+        'event=xtream.search.load.failed',
+        error,
+      );
+    } finally {
+      if (this.catalogLoadPendingSession === sessionId) {
+        this.catalogLoadPendingSession = null;
+      }
     }
-    if (!await workerReset) return;
-    const indexed = await this.indexWorker({
-      sessionId,
-      ...(vod.ok ? { movies: vod.data.map(item => item.name) } : {}),
-      ...(series.ok ? { series: series.data.map(item => item.name) } : {}),
-    });
-    if (!indexed || signal.aborted || this.account?.id !== account.id) return;
-    if (this.query.trim()) await this.startQuery(++this.queryGeneration);
   }
 
   private onSelect(): void {
@@ -348,11 +313,9 @@ export class Search {
     } else if (el.dataset.programIndex !== undefined) {
       void this.activateProgram(parseInt(el.dataset.programIndex, 10));
     } else if (this.account && el.dataset.streamId !== undefined) {
-      const v = this.allVod.find((x) => x.streamId === el.dataset.streamId);
-      if (v) this.handlers.onOpenMovie(this.account, v);
+      void this.activateMovie(el.dataset.streamId);
     } else if (this.account && el.dataset.seriesId !== undefined) {
-      const s = this.allSeries.find((x) => x.seriesId === el.dataset.seriesId);
-      if (s) this.handlers.onOpenSeries(this.account, s);
+      void this.activateSeries(el.dataset.seriesId);
     }
   }
 
@@ -482,22 +445,123 @@ export class Search {
     `;
   }
 
-  private movieTile(v: VodItem): ReturnType<typeof html> {
+  private movieTile(document: SearchCatalogDocument): ReturnType<typeof html> {
+    const v = this.movieDetails.get(document.id);
     return html`
-      <div class="catalog-tile" data-focusable data-key="v:${v.streamId}" data-stream-id="${v.streamId}">
-        <div class="catalog-poster-wrap">${this.posterCell(v.name, v.poster)}</div>
-        <div class="catalog-tile-name">${v.name}</div>
+      <div class="catalog-tile" data-focusable data-key="v:${document.id}" data-stream-id="${document.id}">
+        <div class="catalog-poster-wrap">${this.posterCell(document.name, v?.poster ?? '')}</div>
+        <div class="catalog-tile-name">${document.name}</div>
       </div>
     `;
   }
 
-  private seriesTile(s: SeriesItem): ReturnType<typeof html> {
+  private seriesTile(document: SearchCatalogDocument): ReturnType<typeof html> {
+    const s = this.seriesDetails.get(document.id);
     return html`
-      <div class="catalog-tile" data-focusable data-key="s:${s.seriesId}" data-series-id="${s.seriesId}">
-        <div class="catalog-poster-wrap">${this.posterCell(s.name, s.poster)}</div>
-        <div class="catalog-tile-name">${s.name}</div>
+      <div class="catalog-tile" data-focusable data-key="s:${document.id}" data-series-id="${document.id}">
+        <div class="catalog-poster-wrap">${this.posterCell(document.name, s?.poster ?? '')}</div>
+        <div class="catalog-tile-name">${document.name}</div>
       </div>
     `;
+  }
+
+  private async activateMovie(id: string): Promise<void> {
+    const account = this.account;
+    if (!account) return;
+    if (!this.movieDetails.has(id)) {
+      await this.hydrateCatalogIds([id], [], this.workerSession);
+    }
+    const item = this.movieDetails.get(id);
+    if (item && this.account?.id === account.id) this.handlers.onOpenMovie(account, item);
+  }
+
+  private async activateSeries(id: string): Promise<void> {
+    const account = this.account;
+    if (!account) return;
+    if (!this.seriesDetails.has(id)) {
+      await this.hydrateCatalogIds([], [id], this.workerSession);
+    }
+    const item = this.seriesDetails.get(id);
+    if (item && this.account?.id === account.id) this.handlers.onOpenSeries(account, item);
+  }
+
+  private async hydrateVisibleCatalog(sessionId: number, generation: number): Promise<void> {
+    const movieIds = this.catalogWindow(
+      'movies',
+      this.visibleMovies,
+      this.movieVirtualizer,
+    ).map(document => document.id).filter(id => !this.movieDetails.has(id));
+    const seriesIds = this.catalogWindow(
+      'series',
+      this.visibleSeries,
+      this.seriesVirtualizer,
+    ).map(document => document.id).filter(id => !this.seriesDetails.has(id));
+    if (!movieIds.length && !seriesIds.length) return;
+    try {
+      await this.hydrateCatalogIds(movieIds, seriesIds, sessionId);
+    } catch (error) {
+      if (sessionId === this.workerSession && generation === this.queryGeneration) {
+        log.warn(
+          'Search catalog detail hydration failed',
+          'event=xtream.search.hydrate.failed',
+          error,
+        );
+      }
+    }
+  }
+
+  private async hydrateCatalogIds(
+    movieIds: string[],
+    seriesIds: string[],
+    sessionId: number,
+  ): Promise<void> {
+    if (!movieIds.length && !seriesIds.length) return;
+    const response = await runAppWorkerTask('search.catalog.hydrate', {
+      sessionId,
+      movieIds,
+      seriesIds,
+    });
+    if (sessionId !== this.workerSession || !this.active) return;
+    for (const item of response.movies) this.movieDetails.set(item.streamId, item);
+    for (const item of response.series) this.seriesDetails.set(item.seriesId, item);
+    this.pruneDetailCache(this.movieDetails, this.visibleMovieWindowIds());
+    this.pruneDetailCache(this.seriesDetails, this.visibleSeriesWindowIds());
+  }
+
+  private catalogWindow(
+    key: 'movies' | 'series',
+    documents: SearchCatalogDocument[],
+    virtualizer: VirtualList,
+  ): SearchCatalogDocument[] {
+    const viewport = this.container.querySelector<HTMLElement>(
+      `[data-search-virtual="${key}"]`,
+    )?.clientWidth || SEARCH_RAIL_VIEWPORT;
+    const range = virtualizer.getRange(documents.length, viewport);
+    return documents.slice(range.start, range.end);
+  }
+
+  private visibleMovieWindowIds(): Set<string> {
+    return new Set(this.catalogWindow(
+      'movies',
+      this.visibleMovies,
+      this.movieVirtualizer,
+    ).map(document => document.id));
+  }
+
+  private visibleSeriesWindowIds(): Set<string> {
+    return new Set(this.catalogWindow(
+      'series',
+      this.visibleSeries,
+      this.seriesVirtualizer,
+    ).map(document => document.id));
+  }
+
+  private pruneDetailCache<T>(cache: Map<string, T>, retained: Set<string>): void {
+    if (cache.size <= CONFIG.XTREAM.SEARCH_DETAIL_CACHE_SIZE) return;
+    for (const id of cache.keys()) {
+      if (cache.size <= CONFIG.XTREAM.SEARCH_DETAIL_CACHE_SIZE) break;
+      if (!retained.has(id)) cache.delete(id);
+    }
   }
 
   private async buildProgramIndex(force: boolean, sessionId: number): Promise<void> {
@@ -616,7 +680,7 @@ export class Search {
     }
     if (!response) {
       log.warn(
-        'Worker search failed; using main-thread fallback',
+        'Worker search failed; using channel/program fallback',
         'event=search.worker.fallback.used',
         'scope=unified',
         `session=${String(sessionId)}`,
@@ -624,8 +688,12 @@ export class Search {
       response = this.queryLocally(query);
     }
     this.applyQueryResponse(response);
-    this.queryPending = false;
     if (!preserveOffsets) this.resetVirtualOffsets();
+    await this.hydrateVisibleCatalog(sessionId, generation);
+    if (generation !== this.queryGeneration || sessionId !== this.workerSession || !this.active) {
+      return;
+    }
+    this.queryPending = false;
     this.render();
   }
 
@@ -642,12 +710,6 @@ export class Search {
       query,
       this.resultLimit,
     );
-    const movies = this.account
-      ? rankPreparedNamesTopK(prepareNameSearchItems(this.allVod), query, this.resultLimit)
-      : { items: [], hasMore: false };
-    const series = this.account
-      ? rankPreparedNamesTopK(prepareNameSearchItems(this.allSeries), query, this.resultLimit)
-      : { items: [], hasMore: false };
     return {
       channels: {
         indices: channels.items.map(channel => PlaylistService.indexOf(channel)),
@@ -658,12 +720,12 @@ export class Search {
         hasMore: programmes.hasMore,
       },
       movies: {
-        indices: indicesOf(this.allVod, movies.items),
-        hasMore: movies.hasMore,
+        documents: [],
+        hasMore: false,
       },
       series: {
-        indices: indicesOf(this.allSeries, series.items),
-        hasMore: series.hasMore,
+        documents: [],
+        hasMore: false,
       },
     };
   }
@@ -688,10 +750,18 @@ export class Search {
           result.channel.name,
           result.channel.group,
         ]),
-        movies: this.allVod.map(item => item.name),
-        series: this.allSeries.map(item => item.name),
       });
       if (!indexed) return null;
+      if (this.account) {
+        const catalog = await runAppWorkerTask('search.catalog.load', {
+          sessionId,
+          account: this.account,
+        });
+        if (!catalog.accepted) return null;
+        this.catalogReadyFor = this.account.id;
+        this.catalogMovieCount = catalog.movieCount;
+        this.catalogSeriesCount = catalog.seriesCount;
+      }
       this.markWorkerIndexReady(this.account);
       const response = await runAppWorkerTask('search.query', {
         sessionId,
@@ -723,8 +793,8 @@ export class Search {
   private applyQueryResponse(response: SearchQueryResponse): void {
     this.visibleChannels = itemsAt(PlaylistService.channels, response.channels.indices);
     this.visiblePrograms = itemsAt(this.programIndex, response.programmes.indices);
-    this.visibleMovies = itemsAt(this.allVod, response.movies.indices);
-    this.visibleSeries = itemsAt(this.allSeries, response.series.indices);
+    this.visibleMovies = response.movies.documents;
+    this.visibleSeries = response.series.documents;
     this.hasMoreResults = response.channels.hasMore || response.programmes.hasMore
       || response.movies.hasMore || response.series.hasMore;
   }
@@ -744,10 +814,7 @@ export class Search {
       && this.workerIndexedChannels === PlaylistService.channels
       && this.workerIndexedProgrammes === EpgService.programmes
       && this.workerIndexedAccountId === (account?.id ?? null)
-      && (!account
-        || (this.loadedFor === account.id
-          && this.workerIndexedVod === this.allVod
-          && this.workerIndexedSeries === this.allSeries));
+      && (!account || this.catalogReadyFor === account.id);
   }
 
   private markWorkerIndexReady(account: PlaylistEntry | null): void {
@@ -755,8 +822,6 @@ export class Search {
     this.workerIndexedChannels = PlaylistService.channels;
     this.workerIndexedProgrammes = EpgService.programmes;
     this.workerIndexedAccountId = account?.id ?? null;
-    this.workerIndexedVod = this.allVod;
-    this.workerIndexedSeries = this.allSeries;
     log.info(
       'Search worker index ready',
       'event=search.worker.index.ready',
@@ -764,8 +829,8 @@ export class Search {
       `session=${String(this.workerSession)}`,
       `channels=${String(PlaylistService.channels.length)}`,
       `programmes=${String(this.programIndex.length)}`,
-      `movies=${String(this.allVod.length)}`,
-      `series=${String(this.allSeries.length)}`,
+      `movies=${String(this.catalogMovieCount)}`,
+      `series=${String(this.catalogSeriesCount)}`,
     );
   }
 
@@ -775,8 +840,7 @@ export class Search {
     this.workerIndexedChannels = null;
     this.workerIndexedProgrammes = null;
     this.workerIndexedAccountId = null;
-    this.workerIndexedVod = null;
-    this.workerIndexedSeries = null;
+    this.catalogReadyFor = null;
     if (wasReady) {
       log.debug(
         'Search worker index invalidated',
@@ -1038,6 +1102,13 @@ export class Search {
         this.expandResults();
       }
       this.render();
+      const sessionId = this.workerSession;
+      const generation = this.queryGeneration;
+      void this.hydrateVisibleCatalog(sessionId, generation).then(() => {
+        if (this.active
+            && sessionId === this.workerSession
+            && generation === this.queryGeneration) this.render();
+      });
     });
   }
 
@@ -1079,6 +1150,13 @@ export class Search {
         : scroll?.clientHeight || SEARCH_LIST_VIEWPORT,
     );
     this.render();
+    const sessionId = this.workerSession;
+    const generation = this.queryGeneration;
+    void this.hydrateVisibleCatalog(sessionId, generation).then(() => {
+      if (this.active
+          && sessionId === this.workerSession
+          && generation === this.queryGeneration) this.render();
+    });
     this.nav.focus(
       this.container.querySelector<HTMLElement>(
         `[data-search-section="${key}"][data-search-index="${next}"] [data-focusable]`,

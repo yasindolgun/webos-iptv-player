@@ -35,6 +35,7 @@ import { initTheme, applyTheme, applyOverlayStyle, applyTextSize } from './servi
 import { channelKey } from './utils/channel';
 import { m3uAccountId, m3uItemKey } from './utils/m3u-item';
 import { isSourceEnabled } from './utils/playlist';
+import { xtreamEpisodeUrl, xtreamVodUrl } from './utils/xtream-url';
 import {
   availableCatalogSources,
   catalogSourceKey,
@@ -46,7 +47,15 @@ import {
 import { truncate } from './utils/text';
 import { $, show, hide } from './utils/dom';
 import { createLogger, installGlobalErrorHandlers, logEnvironment } from './utils/logger';
-import type { Action, ActionEvent, CatchupInfo, Channel, EpgSource, PlaylistEntry } from './types';
+import type {
+  Action,
+  ActionEvent,
+  CatchupInfo,
+  Channel,
+  EpgSource,
+  PlaylistEntry,
+  ResumeEntry,
+} from './types';
 import { getLocale, initLocale, resolveLocale, setLocale, t, tp } from './i18n';
 import {
   refreshXtreamAccountStatus,
@@ -187,6 +196,7 @@ class App {
       (index) => this.player.selectSubtitleTrack(index),
       () => this.player.subtitleOffsetState(),
       () => this.player.openSubtitleOffset(),
+      () => this.player.getPlaybackDiagnostics(),
     );
 
     this.movies = new Movies(this.views.movies, {
@@ -878,7 +888,9 @@ class App {
     if (action === 'settings') { this.switchSection('settings'); return; }
     if (action === 'continue') {
       const resume = this.homeState().resume;
-      if (resume) this.switchSection(resume.kind === 'vod' ? 'movies' : 'series');
+      if (resume && !this.playHomeResume(resume)) {
+        this.switchSection(resume.kind === 'vod' ? 'movies' : 'series');
+      }
       return;
     }
     if (action === 'refresh') void this.refreshDataFromHome();
@@ -1073,7 +1085,56 @@ class App {
     }
   }
 
-  private playM3uVod(channel: Channel, resume: boolean, origin: 'movies' | 'series'): void {
+  private playHomeResume(resume: ResumeEntry): boolean {
+    const account = StorageService.getPlaylists().find(entry =>
+      entry.id === resume.accountId
+      && entry.source === 'xtream'
+      && entry.xtream
+      && isSourceEnabled(entry));
+    if (account?.xtream) {
+      const credentials = {
+        baseUrl: account.url,
+        username: account.xtream.username,
+        password: account.xtream.password,
+      };
+      const extension = resume.ext || 'mp4';
+      const url = resume.kind === 'vod'
+        ? xtreamVodUrl(credentials, resume.itemId, extension)
+        : xtreamEpisodeUrl(credentials, resume.itemId, extension);
+      this.tabBar.blur();
+      this.navigateTo('player');
+      this.player.playVod({
+        url,
+        title: resume.name,
+        poster: resume.poster,
+        accountId: resume.accountId,
+        itemId: resume.itemId,
+        kind: resume.kind,
+        seriesId: resume.seriesId,
+        resumeSecs: resume.position,
+        subtitles: [],
+        episodeQueue: resume.episodeQueue,
+        watchlistOwner: resume.watchlistOwner,
+        onBack: () => this.goHome(),
+      });
+      return true;
+    }
+
+    const section = resume.kind === 'vod' ? 'movies' : 'series';
+    const contentKind = resume.kind === 'vod' ? 'movie' : 'series';
+    const channel = PlaylistService.getByContentKind(contentKind).find(item =>
+      m3uAccountId(item) === resume.accountId && m3uItemKey(item) === resume.itemId);
+    if (!channel) return false;
+    this.playM3uVod(channel, true, section, true);
+    return true;
+  }
+
+  private playM3uVod(
+    channel: Channel,
+    resume: boolean,
+    origin: 'movies' | 'series',
+    returnHome = false,
+  ): void {
     const accountId = m3uAccountId(channel);
     const kind = origin === 'series' ? 'episode' : 'vod';
     const itemId = m3uItemKey(channel);
@@ -1090,6 +1151,10 @@ class App {
       resumeSecs: resume && saved ? saved.position : 0,
       subtitles: [],
       onBack: () => {
+        if (returnHome) {
+          this.goHome();
+          return;
+        }
         this.goBack(origin);
         if (origin === 'movies') this.m3uMovies.refreshPlaybackState();
         else this.m3uSeries.refreshPlaybackState();

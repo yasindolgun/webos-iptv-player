@@ -962,7 +962,26 @@ describe('Player VOD mode', () => {
     expect(osd.querySelector('.osd-progress[data-seekbar]')).not.toBeNull();
   });
 
-  it('merges probed codec/fps/HDR into the VOD OSD when the probe resolves', async () => {
+  it('reports the active path and observed buffer only in playback details', () => {
+    const video = fakeVideo(3600);
+    Object.defineProperty(video, 'buffered', {
+      value: {
+        length: 2,
+        start: (index: number) => index === 0 ? 0 : 120,
+        end: (index: number) => index === 0 ? 40 : 180,
+      },
+    });
+    player.init(video);
+    player.playVod(req());
+    video.currentTime = 15;
+
+    const details = player.getPlaybackDiagnostics();
+    expect(details.pipeline).toEqual({ value: 'HTML5 direct', source: 'derived' });
+    expect(details.bufferRange).toEqual({ value: '0:00 - 0:40', source: 'observed' });
+    expect(container.querySelector('.osd-stream-info')?.textContent ?? '').not.toContain('direct');
+  });
+
+  it('moves parsed VOD codec, frame-rate and HDR facts into playback details', async () => {
     vi.mocked(probeMedia).mockResolvedValue({ videoCodec: 'hvc1', audioCodec: 'ec-3', width: 3840, height: 2160, fps: 24, hdr: 'PQ' });
     const video = fakeVideo(3600);
     (video as unknown as { videoHeight: number }).videoHeight = 2160;
@@ -970,12 +989,16 @@ describe('Player VOD mode', () => {
     player.playVod(req());
     video.dispatchEvent(new Event('loadedmetadata'));
     await flush(); // let the probe promise resolve and re-render the OSD
-    const info = container.querySelector('.osd-stream-info')?.textContent ?? '';
+    const osdInfo = container.querySelector('.osd-stream-info')?.textContent ?? '';
+    const details = player.getPlaybackDiagnostics();
     expect(probeMedia).toHaveBeenCalledWith('http://host:8080/movie/u/p/10.mp4', 'x1|media_probe|vod|10');
-    expect(info).toContain('4K');
-    expect(info).toContain('HEVC');
-    expect(info).toContain('24fps');
-    expect(info).toContain('HDR');
+    expect(osdInfo).toContain('4K');
+    expect(osdInfo).toContain('HDR');
+    expect(osdInfo).not.toContain('HEVC');
+    expect(details.videoCodec).toEqual({ value: 'HEVC', source: 'parsed' });
+    expect(details.audioCodec).toEqual({ value: 'Dolby Digital+', source: 'parsed' });
+    expect(details.frameRate).toEqual({ value: '24 fps', source: 'parsed' });
+    expect(details.hdr).toEqual({ value: 'HDR', source: 'parsed' });
   });
 
   it('saves the resume point and calls onBack on Back', () => {

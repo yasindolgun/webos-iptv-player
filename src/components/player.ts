@@ -18,7 +18,8 @@ import { StorageService } from '../services/storage-service';
 import { CONFIG } from '../config';
 import { StallWatchdog, type StallProbe, type StallRecovery } from '../utils/stall-watchdog';
 import { StartupWatchdog, type StartupFailure, type StartupProbe } from '../utils/startup-watchdog';
-import { resolutionBadge, hdrLabel, frameRateLabel, bitrateLabel, pickVariant, codecName, audioSummary, subtitleSummary, type StreamVariant, type MediaInfo } from '../utils/stream-info';
+import { resolutionBadge, hdrLabel, frameRateLabel, bitrateLabel, pickVariant, codecName, type StreamVariant, type MediaInfo, type ResolutionBadge } from '../utils/stream-info';
+import { formatPosition } from '../utils/time';
 import { containerMime, extFromUrl, diagnosticStreamUrl } from '../utils/url';
 import { probeMedia } from '../services/media-probe';
 import { ChannelHealthService } from '../services/channel-health';
@@ -32,11 +33,26 @@ import {
   type PlayerOsdStreamInfo,
 } from './player-osd';
 import { PlayerTracks } from './player-tracks';
+import type {
+  PlayerDiagnosticsSnapshot,
+  PlayerDiagnosticSource,
+  PlayerDiagnosticValue,
+} from './player-menu';
 
 const log = createLogger('Player');
 
 // True on the TV's webOS WebView; false in desktop preview / tests.
 const isWebOS = /webOS|Web0S/i.test(navigator.userAgent);
+
+interface PlayerStreamFacts {
+  osdResolution: ResolutionBadge | null;
+  resolution: PlayerDiagnosticValue | null;
+  hdr: PlayerDiagnosticValue | null;
+  frameRate: PlayerDiagnosticValue | null;
+  bitrate: PlayerDiagnosticValue | null;
+  videoCodec: PlayerDiagnosticValue | null;
+  audioCodec: PlayerDiagnosticValue | null;
+}
 
 export class Player {
   private container: HTMLElement;
@@ -1117,39 +1133,137 @@ export class Player {
     this.stopDvrPauseTick();
   }
 
-  // Stream-info values for the OSD. Resolution comes from the video element; the
-  // rest from the HLS manifest (empty for a direct-played VOD).
-  private streamInfo(): PlayerOsdStreamInfo | null {
+  private streamFacts(): PlayerStreamFacts {
     const v = this.videoEl;
     const lvl = this.pipeline.streamInfo();
-    const info = this.vod ? this.vodInfo : null; // container-header readout for VOD; null on the Live path
-    const badge = resolutionBadge((v ? v.videoHeight : 0) || info?.height || 0);
+    const info = this.vod ? this.vodInfo : null;
     const variant = !this.pipeline.isMseActive() && v
       ? pickVariant(this.manifestVariants, v.videoWidth, v.videoHeight)
       : null;
-    const vCodec = codecName(lvl?.videoCodec ?? variant?.videoCodec ?? info?.videoCodec ?? '');
-    const aCodecName = codecName(lvl?.audioCodec ?? variant?.audioCodec ?? info?.audioCodec ?? '');
-    // Atmos (JOC): native path from the manifest variant's audio group; hls.js from
-    // the active audio track's channel layout — loadLevelObj carries no channels.
-    const hlsChannels = lvl?.audioChannels ?? '';
-    const atmos = variant?.atmos || /\bJOC\b/i.test(hlsChannels);
-    const aCodec = aCodecName && atmos ? `${aCodecName} Atmos` : aCodecName;
-    const hdr = hdrLabel(lvl?.videoRange ?? variant?.videoRange ?? info?.hdr ?? '');
-    const fps = frameRateLabel(lvl?.frameRate ?? variant?.frameRate ?? info?.fps ?? 0);
-    const bitrate = bitrateLabel(lvl?.bitrate ?? variant?.bitrate ?? 0);
-    const audio = audioSummary(this.tracks.getAudioTracks());
-    const subtitle = subtitleSummary(this.tracks.getSubtitleTracks());
-    if (!(badge || hdr || fps || bitrate || vCodec || aCodec || audio || subtitle)) return null;
+    const observedHeight = v?.videoHeight || 0;
+    const resolutionSource: PlayerDiagnosticSource = observedHeight ? 'observed' : 'parsed';
+    const width = observedHeight ? v?.videoWidth || 0 : info?.width || 0;
+    const height = observedHeight || info?.height || 0;
+    const osdResolution = resolutionBadge(height);
+    const resolution = osdResolution
+      ? this.diagnosticValue(
+        width && height ? `${width}x${height} (${osdResolution.label})` : osdResolution.label,
+        resolutionSource,
+      )
+      : null;
+    const videoCodec = this.firstDiagnostic([
+      [codecName(lvl?.videoCodec ?? ''), 'declared'],
+      [codecName(variant?.videoCodec ?? ''), 'declared'],
+      [codecName(info?.videoCodec ?? ''), 'parsed'],
+    ]);
+    const levelAudioCodec = codecName(lvl?.audioCodec ?? '');
+    const variantAudioCodec = codecName(variant?.audioCodec ?? '');
+    const audioCodec = this.firstDiagnostic([
+      [levelAudioCodec && /\bJOC\b/i.test(lvl?.audioChannels ?? '')
+        ? `${levelAudioCodec} Atmos`
+        : levelAudioCodec, 'declared'],
+      [variantAudioCodec && variant?.atmos
+        ? `${variantAudioCodec} Atmos`
+        : variantAudioCodec, 'declared'],
+      [codecName(info?.audioCodec ?? ''), 'parsed'],
+    ]);
+    const hdr = this.firstDiagnostic([
+      [hdrLabel(lvl?.videoRange ?? ''), 'declared'],
+      [hdrLabel(variant?.videoRange ?? ''), 'declared'],
+      [hdrLabel(info?.hdr ?? ''), 'parsed'],
+    ]);
+    const frameRate = this.firstDiagnostic([
+      [this.frameRateValue(lvl?.frameRate ?? 0), 'declared'],
+      [this.frameRateValue(variant?.frameRate ?? 0), 'declared'],
+      [this.frameRateValue(info?.fps ?? 0), 'parsed'],
+    ]);
+    const bitrate = this.firstDiagnostic([
+      [bitrateLabel(lvl?.bitrate ?? 0), 'declared'],
+      [bitrateLabel(variant?.bitrate ?? 0), 'declared'],
+    ]);
     return {
-      resolution: badge,
+      osdResolution,
+      resolution,
       hdr,
-      fps,
+      frameRate,
       bitrate,
-      videoCodec: vCodec,
-      audioCodec: aCodec,
-      audio,
-      subtitle,
+      videoCodec,
+      audioCodec,
     };
+  }
+
+  private streamInfo(): PlayerOsdStreamInfo | null {
+    const facts = this.streamFacts();
+    if (!(facts.osdResolution || facts.hdr)) return null;
+    return {
+      resolution: facts.osdResolution,
+      hdr: facts.hdr?.value ?? '',
+    };
+  }
+
+  getPlaybackDiagnostics(): PlayerDiagnosticsSnapshot {
+    const facts = this.streamFacts();
+    const path = this.pipeline.activePath();
+    return {
+      resolution: facts.resolution,
+      hdr: facts.hdr,
+      frameRate: facts.frameRate,
+      bitrate: facts.bitrate,
+      videoCodec: facts.videoCodec,
+      audioCodec: facts.audioCodec,
+      bufferRange: this.bufferRange(),
+      pipeline: path === 'none'
+        ? null
+        : this.diagnosticValue(
+          path === 'native' ? 'webOS native'
+            : path === 'pending' ? t('common.loading')
+              : path === 'direct' ? 'HTML5 direct'
+                : path,
+          'derived',
+        ),
+    };
+  }
+
+  private bufferRange(): PlayerDiagnosticValue | null {
+    const video = this.videoEl;
+    const ranges = video?.buffered;
+    if (!video || !ranges?.length) return null;
+    let index = ranges.length - 1;
+    for (let i = 0; i < ranges.length; i++) {
+      if (video.currentTime >= ranges.start(i) && video.currentTime <= ranges.end(i)) {
+        index = i;
+        break;
+      }
+    }
+    const start = ranges.start(index);
+    const end = ranges.end(index);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+    return this.diagnosticValue(
+      `${formatPosition(start)} - ${formatPosition(end)}`,
+      'observed',
+    );
+  }
+
+  private firstDiagnostic(
+    candidates: Array<[string, PlayerDiagnosticSource]>,
+  ): PlayerDiagnosticValue | null {
+    for (const [value, source] of candidates) {
+      const result = this.diagnosticValue(value, source);
+      if (result) return result;
+    }
+    return null;
+  }
+
+  private frameRateValue(value: number): string {
+    const label = frameRateLabel(value);
+    return label ? `${label} fps` : '';
+  }
+
+  private diagnosticValue(
+    value: string,
+    source: PlayerDiagnosticSource,
+  ): PlayerDiagnosticValue | null {
+    return value ? { value, source } : null;
   }
 
   private osdSnapshot(): PlayerOsdSnapshot {

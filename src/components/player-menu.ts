@@ -25,6 +25,25 @@ const PICK_AUDIO = '__audio_track__';
 const OPEN_SUBS = '__subs_open__';
 const PICK_SUB = '__subs_track__';
 const OPEN_OFFSET = '__subs_offset__';
+const OPEN_DIAGNOSTICS = '__diagnostics_open__';
+
+export type PlayerDiagnosticSource = 'observed' | 'declared' | 'parsed' | 'derived';
+
+export interface PlayerDiagnosticValue {
+  value: string;
+  source: PlayerDiagnosticSource;
+}
+
+export interface PlayerDiagnosticsSnapshot {
+  resolution: PlayerDiagnosticValue | null;
+  hdr: PlayerDiagnosticValue | null;
+  frameRate: PlayerDiagnosticValue | null;
+  bitrate: PlayerDiagnosticValue | null;
+  videoCodec: PlayerDiagnosticValue | null;
+  audioCodec: PlayerDiagnosticValue | null;
+  bufferRange: PlayerDiagnosticValue | null;
+  pipeline: PlayerDiagnosticValue | null;
+}
 
 /**
  * The action overlay shown on the right edge during playback. Owns its own
@@ -45,10 +64,11 @@ export class PlayerMenu {
   private selectSubtitleTrack: (index: number) => void;
   private getSubtitleOffsetState: () => { available: boolean; label: string };
   private openSubtitleOffset: () => void;
+  private getDiagnostics: () => PlayerDiagnosticsSnapshot;
   private isVisible = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private focusIdx = 0;
-  private mode: 'main' | 'audio' | 'subtitles' = 'main';
+  private mode: 'main' | 'audio' | 'subtitles' | 'diagnostics' = 'main';
 
   constructor(
     container: HTMLElement,
@@ -60,6 +80,7 @@ export class PlayerMenu {
     selectSubtitleTrack: (index: number) => void,
     getSubtitleOffsetState: () => { available: boolean; label: string },
     openSubtitleOffset: () => void,
+    getDiagnostics: () => PlayerDiagnosticsSnapshot,
   ) {
     this.getCurrentChannel = getCurrentChannel;
     this.onAction = onAction;
@@ -69,6 +90,7 @@ export class PlayerMenu {
     this.selectSubtitleTrack = selectSubtitleTrack;
     this.getSubtitleOffsetState = getSubtitleOffsetState;
     this.openSubtitleOffset = openSubtitleOffset;
+    this.getDiagnostics = getDiagnostics;
     this.el = $('#player-menu', container);
     this.bindEvents();
   }
@@ -176,6 +198,8 @@ export class PlayerMenu {
       this.openAudio();
     } else if (action === OPEN_SUBS) {
       this.openSubtitles();
+    } else if (action === OPEN_DIAGNOSTICS) {
+      this.openDiagnostics();
     } else if (action === BACK) {
       this.openMain();
     } else if (action === PICK_AUDIO) {
@@ -221,9 +245,17 @@ export class PlayerMenu {
     this.resetTimer();
   }
 
+  private openDiagnostics(): void {
+    this.mode = 'diagnostics';
+    this.focusIdx = 0;
+    this.render();
+    this.resetTimer();
+  }
+
   private render(): void {
     if (this.mode === 'audio') this.renderAudio();
     else if (this.mode === 'subtitles') this.renderSubtitles();
+    else if (this.mode === 'diagnostics') this.renderDiagnostics();
     else this.renderMain();
     this.scrollFocusedIntoView();
   }
@@ -243,6 +275,7 @@ export class PlayerMenu {
     const audioShown = tracks.length >= 2;
     const audioRowIdx = rows.length;
     const subsRowIdx = rows.length + (audioShown ? 1 : 0);
+    const diagnosticsRowIdx = subsRowIdx + (subtitles.length >= 1 ? 1 : 0);
 
     morph(el, html`
       <div class="menu-header">
@@ -274,6 +307,11 @@ export class PlayerMenu {
             <span class="menu-item-value">${activeSub?.label || t('common.off')}</span>
           </div>
         ` : ''}
+        <div class="menu-item ${diagnosticsRowIdx === this.focusIdx ? 'focused' : ''}"
+             data-focusable data-menu-action="${OPEN_DIAGNOSTICS}">
+          <span class="menu-icon diagnostics">i</span>
+          <span class="menu-item-label">${t('player.playbackDetails')}</span>
+        </div>
       </div>
     `);
   }
@@ -346,6 +384,54 @@ export class PlayerMenu {
         })()}
       </div>
     `);
+  }
+
+  private renderDiagnostics(): void {
+    const el = this.el;
+    if (!el) return;
+    const info = this.getDiagnostics();
+    const rows = [
+      { label: t('player.diagnosticPipeline'), item: info.pipeline },
+      { label: t('player.diagnosticResolution'), item: info.resolution },
+      { label: t('player.diagnosticHdr'), item: info.hdr },
+      { label: t('player.diagnosticFrameRate'), item: info.frameRate },
+      { label: t('player.diagnosticBitrate'), item: info.bitrate },
+      { label: t('player.diagnosticVideoCodec'), item: info.videoCodec },
+      { label: t('player.diagnosticAudioCodec'), item: info.audioCodec },
+      { label: t('player.diagnosticBuffer'), item: info.bufferRange },
+    ];
+
+    morph(el, html`
+      <div class="menu-header">
+        <h2>${t('player.playbackDetails')}</h2>
+      </div>
+      <div class="menu-items menu-diagnostics">
+        <div class="menu-item ${this.focusIdx === 0 ? 'focused' : ''}"
+             data-focusable data-menu-action="${BACK}">
+          <span class="menu-check menu-back">‹</span>
+          <span class="menu-item-label">${t('common.back')}</span>
+        </div>
+        ${rows.map(row => row.item ? html`
+          <div class="diagnostic-row" data-key="diagnostic:${row.label}">
+            <div class="diagnostic-label">${row.label}</div>
+            <div class="diagnostic-value">${row.item.value}</div>
+            <div class="diagnostic-source source-${row.item.source}">${
+              this.diagnosticSourceLabel(row.item.source)
+            }</div>
+          </div>
+        ` : '')}
+      </div>
+    `);
+  }
+
+  private diagnosticSourceLabel(source: PlayerDiagnosticSource): string {
+    const labels: Record<PlayerDiagnosticSource, string> = {
+      observed: t('player.diagnosticObserved'),
+      declared: t('player.diagnosticDeclared'),
+      parsed: t('player.diagnosticParsed'),
+      derived: t('player.diagnosticDerived'),
+    };
+    return labels[source];
   }
 
   private bindEvents(): void {

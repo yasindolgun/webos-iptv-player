@@ -9,9 +9,14 @@ describe('SearchWorkerIndex', () => {
       reset: true,
       channels: [['XAlpha', 'News'], ['Alpha', 'Drama']],
       programmes: [['Evening Report', 'News'], ['Alpha Report', 'Drama']],
-      movies: ['XAlpha Movie', 'Alpha Movie'],
-      series: ['XAlpha Series', 'Alpha Series'],
     })).toEqual({ accepted: true });
+    expect(index.catalog(1, [
+      { id: 'm0', name: 'XAlpha Movie' },
+      { id: 'm1', name: 'Alpha Movie' },
+    ], [
+      { id: 's0', name: 'XAlpha Series' },
+      { id: 's1', name: 'Alpha Series' },
+    ])).toEqual({ accepted: true });
 
     expect(index.query({
       sessionId: 1,
@@ -21,8 +26,14 @@ describe('SearchWorkerIndex', () => {
     })).toEqual({
       channels: { indices: [1, 0], hasMore: false },
       programmes: { indices: [1], hasMore: false },
-      movies: { indices: [1, 0], hasMore: false },
-      series: { indices: [1, 0], hasMore: false },
+      movies: {
+        documents: [{ id: 'm1', name: 'Alpha Movie' }, { id: 'm0', name: 'XAlpha Movie' }],
+        hasMore: false,
+      },
+      series: {
+        documents: [{ id: 's1', name: 'Alpha Series' }, { id: 's0', name: 'XAlpha Series' }],
+        hasMore: false,
+      },
     });
   });
 
@@ -48,17 +59,21 @@ describe('SearchWorkerIndex', () => {
 
   it('caps results and reports additional matches', () => {
     const index = new SearchWorkerIndex();
-    index.index({
-      sessionId: 1,
-      reset: true,
-      movies: ['Alpha 1', 'Alpha 2', 'Alpha 3'],
-    });
+    index.index({ sessionId: 1, reset: true });
+    index.catalog(1, [
+      { id: 'm1', name: 'Alpha 1' },
+      { id: 'm2', name: 'Alpha 2' },
+      { id: 'm3', name: 'Alpha 3' },
+    ], []);
 
     expect(index.query({
       sessionId: 1,
       query: 'alpha',
       limit: 2,
       includeCatalog: true,
-    })?.movies).toEqual({ indices: [0, 1], hasMore: true });
+    })?.movies).toEqual({
+      documents: [{ id: 'm1', name: 'Alpha 1' }, { id: 'm2', name: 'Alpha 2' }],
+      hasMore: true,
+    });
   });
 });

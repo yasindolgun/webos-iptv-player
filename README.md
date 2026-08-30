@@ -59,7 +59,8 @@
 - **Channel health** — check live streams and mark them as healthy, suspect, or unavailable
 - **Reminders** — flag an upcoming program and get notified at air time, even with the app closed, to tune straight in
 - **Recently Watched** — return to recent live channels or resume partially watched catch-up programs
-- **Movies & Series** — browse an Xtream account's VOD catalogs, with Continue Watching, account-scoped Watchlist rails, and Watched / In Progress episode states
+- **Movies & Series** — browse Xtream or M3U on-demand catalogs, with Continue Watching, account-scoped Watchlist rails, and Watched / In Progress episode states
+- **Direct Home resume** — Continue Watching on Home starts the newest Xtream or M3U movie/episode at its saved position instead of making you browse back to it
 - **Automatic VOD queues** — continue through series episodes or remaining Watchlist movies, removing completed titles from the Watchlist
 - **Catch-up & Live DVR** — replay past programs, and pause / rewind / return to the live edge on live streams
 
@@ -68,12 +69,13 @@
 - **Native HDR & Dolby passthrough** — the stream goes straight to the TV's decoder, so HDR10, HLG, Dolby Vision®, and Dolby Atmos® pass through untouched — **[Why native instead of hls.js? See the on-device comparison](docs/native-vs-hls.js.md)**
 - **MPEG-DASH playback** — play `.mpd` channels through the native webOS pipeline or dash.js in the desktop preview, with MPD track metadata, live DVR, self-rendered raw WebVTT, and native IMSC/`stpp` and `wvtt` subtitles ([details](docs/mpeg-dash.md))
 - **Audio & subtitle tracks** — pick from the player menu, remembered per channel or VOD item; subtitles cover in-manifest WebVTT and CEA-608/708 (live), in-container / sidecar SRT/WebVTT/ASS (VOD), and online search (SubDL, OpenSubtitles, and Assrt) with a manual title box; online search remains available when bundled tracks exist, and subtitle timing can be adjusted live
-- **On-screen display** — program title, progress, and a live stream-info readout (resolution, HDR, frame rate, codec, audio channels)
+- **OSD & playback details** — a lightweight playback overlay keeps title, timing, progress, resolution, and dynamic range readable; an explicit diagnostics view holds codecs, declared bitrate/frame rate, buffer range, and the active pipeline with source labels
 - **Automatic playback recovery** — detect streams that fail to start or stall, reload transient failures, and advance to the next live channel when recovery is exhausted
 - **Resync A/V** (🔄) — one tap on the playback bar re-locks audio and video that drift apart during a long catch-up or on-demand stream
 
 **Navigation**
 
+- **Home hub** — the root, Back-accessible launch surface for Live, Guide, Movies, Series, refresh, Settings, and the newest resumable item; Live remains the first focus
 - **Search** — across channels, EPG programs, movies, and series, with direct live, catch-up, and reminder actions
 - **Channel sidebar** — switch channels over the video with current-program info, organized by group
 - **Channel customization** — reorder, hide, rename, regroup, manage favorites, and correct per-channel EPG matching or timing
@@ -81,7 +83,7 @@
 - **Full remote & Magic Remote** — spatial D-pad navigation and pointer control across every view
 - **Color themes** — choose from light and dark app-wide themes with live previews, plus Dark or Frosted player overlays; selections persist across launches
 - **Adjustable text size** — scale text from 80%–150% without resizing controls
-- **Multilingual interface** — available in English, Deutsch, Español, Français, Italiano, Português (Brasil), Русский, Українська, and 简体中文; follows the TV language by default or can be selected explicitly in Settings
+- **Multilingual interface** — available in English, Deutsch, Español, Français, Italiano, Português (Brasil), Türkçe, Русский, Українська, and 简体中文; follows the TV language by default or can be selected explicitly in Settings
 
 **Development**
 
@@ -95,6 +97,9 @@ The app runs on **webOS 4.0 (2018) and newer**. Its baseline is the Chromium 53
 engine on webOS 4; every later release ships a newer Chromium, so the app is
 forward-compatible. Features only newer engines support natively (flex `gap`,
 `backdrop-filter`, …) get feature-detected fallbacks on the older ones.
+The Chromium 53 simulation guards browser/API compatibility, while real webOS 4
+cold-start and memory qualification remains an explicit release gate in the
+[`ROADMAP.md`](ROADMAP.md); the simulation is not treated as a device emulator.
 
 | webOS version | Released | Chromium engine | Bundled service Node.js | Supported |
 | --- | --- | --- | --- | --- |
