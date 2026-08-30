@@ -592,6 +592,7 @@
       },
       "derivedIndexes": {
         "durationMs": 635,
+        "maxFrameGapMs": 16.8,
         "channels": 50000,
         "groups": 100
       },

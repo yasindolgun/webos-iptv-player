@@ -9,6 +9,12 @@ import {
 } from '../types';
 import { fetchPlaylistBytes } from '../utils/fetch-helper';
 import { parseM3UOffThread } from '../workers/m3u-parser-client';
+import { preparePlaylistIndexesOffThread } from '../workers/playlist-index-client';
+import {
+  buildPlaylistIndexPlan,
+  type CompactChannelKeyIndex,
+  type PlaylistIndexPlan,
+} from '../workers/playlist-index';
 import {
   xtreamPlaylistUrl,
   xtreamEpgUrl,
@@ -21,7 +27,6 @@ import {
 } from '../utils/xtream-url';
 import {
   channelKey,
-  legacyChannelKey,
   stableStreamUrl,
 } from '../utils/channel';
 import {
@@ -32,7 +37,7 @@ import {
 } from '../utils/channel-search';
 import { createLogger } from '../utils/logger';
 import { StorageService } from './storage-service';
-import { ChannelCustomizationService, groupKeyOf } from './channel-customization';
+import { ChannelCustomizationService } from './channel-customization';
 import {
   createXtreamClient,
   type XtreamLiveCategory,
@@ -123,15 +128,15 @@ class PlaylistServiceImpl {
   groupsRevision = 0;
   playlistTabs: PlaylistTab[] = [];
   epgSources: EpgSource[] = [];
-  private indexMap = new Map<Channel, number>(); // channel -> global index, O(1) indexOf
-  private channelsByGroup = new Map<string, Channel[]>();
-  private channelsByContentKind = new Map<M3uContentKind, Channel[]>();
-  private channelsByPlaylist = new Map<string, Channel[]>();
-  private channelsByPlaylistGroup = new Map<string, Map<string, Channel[]>>();
+  private channelKeys: CompactChannelKeyIndex = emptyChannelKeyIndex();
+  private legacyChannelKeys: CompactChannelKeyIndex = emptyChannelKeyIndex();
+  private channelIndicesByGroup = new Map<string, Uint32Array>();
+  private channelIndicesByContentKind = new Map<M3uContentKind, Uint32Array>();
+  private channelIndicesByPlaylist = new Map<string, Uint32Array>();
+  private channelIndicesByPlaylistGroup = new Map<string, Map<string, Uint32Array>>();
   private groupsByPlaylist = new Map<string, string[]>();
   private groupKeyByDisplay = new Map<string, string>();
-  private channelByKey = new Map<string, Channel>();
-  private channelByLegacyKey = new Map<string, Channel | null>();
+  private resolvedChannelLists = new WeakMap<Uint32Array, Channel[]>();
   private channelSearchIndex: PreparedSearchItem<Channel>[] = [];
   private channelSearchByPlaylist = new Map<string, PreparedSearchItem<Channel>[]>();
   private indexedChannels: Channel[] | null = null;
@@ -157,15 +162,15 @@ class PlaylistServiceImpl {
     this.groupsRevision++;
     this.playlistTabs = [];
     this.epgSources = [];
-    this.indexMap = new Map();
-    this.channelsByGroup = new Map();
-    this.channelsByContentKind = new Map();
-    this.channelsByPlaylist = new Map();
-    this.channelsByPlaylistGroup = new Map();
+    this.channelKeys = emptyChannelKeyIndex();
+    this.legacyChannelKeys = emptyChannelKeyIndex();
+    this.channelIndicesByGroup = new Map();
+    this.channelIndicesByContentKind = new Map();
+    this.channelIndicesByPlaylist = new Map();
+    this.channelIndicesByPlaylistGroup = new Map();
     this.groupsByPlaylist = new Map();
     this.groupKeyByDisplay = new Map();
-    this.channelByKey = new Map();
-    this.channelByLegacyKey = new Map();
+    this.resolvedChannelLists = new WeakMap();
     this.channelSearchIndex = [];
     this.channelSearchByPlaylist = new Map();
     this.indexedChannels = null;
@@ -228,7 +233,7 @@ class PlaylistServiceImpl {
         );
         scheduleCachedPlaylist(this.allChannels, this.epgSources);
       }
-      this.applyCustomization();
+      await this.applyCustomizationOffThread();
       this.buildPlaylistTabs();
       StorageService.migrateFavoriteKeys(this.channels);
       this.logLoadCompleted('cache', enabledIds.size, 0);
@@ -597,7 +602,7 @@ class PlaylistServiceImpl {
     } else {
       log.warn('Skipping cache write because one or more playlists failed');
     }
-    this.applyCustomization();
+    await this.applyCustomizationOffThread();
     this.buildPlaylistTabs();
     StorageService.migrateFavoriteKeys(this.channels);
     log.info('Refresh complete:', allChannels.length, 'total channels,', epgSources.length, 'epg sources');
@@ -711,6 +716,19 @@ class PlaylistServiceImpl {
     this.buildDerivedIndexes();
   }
 
+  private async applyCustomizationOffThread(): Promise<void> {
+    const includeHidden = this.includeHidden || StorageService.getShowHiddenChannels();
+    const channels = ChannelCustomizationService.applyTo(this.allChannels, includeHidden);
+    this.channels = channels;
+    const customGroups = this.customGroupEntries();
+    const plan = await preparePlaylistIndexesOffThread(channels, customGroups);
+    if (this.channels !== channels) {
+      this.buildDerivedIndexes();
+      return;
+    }
+    this.installDerivedIndexes(plan, channels);
+  }
+
   /** Edit mode reveals hidden channels so they can be un-hidden again. */
   setIncludeHidden(include: boolean): void {
     if (this.includeHidden === include) return;
@@ -719,74 +737,56 @@ class PlaylistServiceImpl {
   }
 
   private buildDerivedIndexes(): void {
-    const groupSet = new Set<string>();
-    const groupSetsByPlaylist = new Map<string, Set<string>>();
-    this.indexMap = new Map();
-    this.channelsByGroup = new Map();
-    this.channelsByContentKind = new Map();
-    this.channelsByPlaylist = new Map();
-    this.channelsByPlaylistGroup = new Map();
-    this.groupKeyByDisplay = new Map();
-    this.channelByKey = new Map();
-    this.channelByLegacyKey = new Map();
+    this.installDerivedIndexes(
+      buildPlaylistIndexPlan(this.channels, this.customGroupEntries()),
+      this.channels,
+    );
+  }
+
+  private installDerivedIndexes(plan: PlaylistIndexPlan, channels: Channel[]): void {
+    if (plan.channelCount !== channels.length) {
+      throw new Error('Playlist index plan does not match the active channel list');
+    }
+    this.channelKeys = plan.channelKeys;
+    this.legacyChannelKeys = plan.legacyChannelKeys;
+    this.channelIndicesByGroup = plan.channelIndicesByGroup;
+    this.channelIndicesByContentKind = plan.channelIndicesByContentKind;
+    this.channelIndicesByPlaylist = plan.channelIndicesByPlaylist;
+    this.channelIndicesByPlaylistGroup = plan.channelIndicesByPlaylistGroup;
+    this.groupKeyByDisplay = plan.groupKeyByDisplay;
+    this.resolvedChannelLists = new WeakMap();
+    this.groups = this.orderGroups(plan.groups);
+    this.groupsByPlaylist = new Map();
+    plan.groupsByPlaylist.forEach((playlistGroups, playlistId) => {
+      this.groupsByPlaylist.set(playlistId, this.orderGroups(playlistGroups));
+    });
     this.channelSearchIndex = [];
     this.channelSearchByPlaylist = new Map();
     this.searchIndexedChannels = null;
     this.searchIndexedChannelCount = -1;
-
-    for (const key of ChannelCustomizationService.customGroups) {
-      this.groupKeyByDisplay.set(ChannelCustomizationService.groupLabel(key), key);
-    }
-
-    for (let i = 0; i < this.channels.length; i++) {
-      const ch = this.channels[i];
-      this.indexMap.set(ch, i);
-      this.channelByKey.set(channelKey(ch), ch);
-      const legacyKey = legacyChannelKey(ch);
-      this.channelByLegacyKey.set(
-        legacyKey,
-        this.channelByLegacyKey.has(legacyKey) ? null : ch,
-      );
-      if (ch.group) {
-        groupSet.add(ch.group);
-        if (!this.groupKeyByDisplay.has(ch.group)) {
-          this.groupKeyByDisplay.set(ch.group, groupKeyOf(ch));
-        }
-        this.appendIndexed(this.channelsByGroup, ch.group, ch);
-      }
-      const contentKind = ch.contentKind ?? m3uContentKind(ch.sourceGroup ?? ch.group);
-      ch.contentKind = contentKind;
-      this.appendIndexed(this.channelsByContentKind, contentKind, ch);
-      for (const playlistId of ch.playlistIds) {
-        this.appendIndexed(this.channelsByPlaylist, playlistId, ch);
-        if (!ch.group) continue;
-        let byGroup = this.channelsByPlaylistGroup.get(playlistId);
-        if (!byGroup) {
-          byGroup = new Map();
-          this.channelsByPlaylistGroup.set(playlistId, byGroup);
-        }
-        this.appendIndexed(byGroup, ch.group, ch);
-        let playlistGroups = groupSetsByPlaylist.get(playlistId);
-        if (!playlistGroups) {
-          playlistGroups = new Set();
-          groupSetsByPlaylist.set(playlistId, playlistGroups);
-        }
-        playlistGroups.add(ch.group);
-      }
-    }
-    for (const key of ChannelCustomizationService.customGroups) {
-      const label = ChannelCustomizationService.groupLabel(key);
-      groupSet.add(label);
-      this.groupKeyByDisplay.set(label, key);
-    }
-    this.groups = this.orderGroups(Array.from(groupSet));
-    this.groupsByPlaylist = new Map();
-    groupSetsByPlaylist.forEach((playlistGroups, playlistId) => {
-      this.groupsByPlaylist.set(playlistId, this.orderGroups(Array.from(playlistGroups)));
-    });
     this.indexedChannels = this.channels;
     this.indexedChannelCount = this.channels.length;
     this.groupsRevision++;
+  }
+
+  private customGroupEntries(): Array<{ key: string; label: string }> {
+    return ChannelCustomizationService.customGroups.map(key => ({
+      key,
+      label: ChannelCustomizationService.groupLabel(key),
+    }));
+  }
+
+  private resolveChannelIndices(indices: Uint32Array | undefined): Channel[] {
+    if (!indices) return [];
+    const cached = this.resolvedChannelLists.get(indices);
+    if (cached) return cached;
+    const channels: Channel[] = [];
+    for (const index of indices) {
+      const channel = this.channels[index];
+      if (channel) channels.push(channel);
+    }
+    this.resolvedChannelLists.set(indices, channels);
+    return channels;
   }
 
   private appendIndexed<T>(map: Map<string, T[]>, key: string, channel: T): void {
@@ -847,11 +847,14 @@ class PlaylistServiceImpl {
 
   getByGroup(group: ChannelGroupId, playlist?: string): Channel[] {
     this.ensureDerivedIndexes();
-    const all = playlist ? this.channelsByPlaylist.get(playlist) ?? [] : this.channels;
+    const all = playlist
+      ? this.resolveChannelIndices(this.channelIndicesByPlaylist.get(playlist))
+      : this.channels;
     if (group === 'builtin:all' || group === 'builtin:recently-watched') return all;
     if (group === 'builtin:favorites') {
       const favorites = StorageService.getFavorites()
-        .map(key => this.channelByKey.get(key))
+        .map(key => lookupChannelIndex(this.channelKeys, key))
+        .map(index => typeof index === 'number' ? this.channels[index] : undefined)
         .filter((channel): channel is Channel =>
           !!channel && (!playlist || channel.playlistIds.includes(playlist)));
       favorites.sort((a, b) => this.indexOf(a) - this.indexOf(b));
@@ -859,13 +862,18 @@ class PlaylistServiceImpl {
     }
     const sourceGroup = group.slice('source:'.length);
     return playlist
-      ? this.channelsByPlaylistGroup.get(playlist)?.get(sourceGroup) ?? []
-      : this.channelsByGroup.get(sourceGroup) ?? [];
+      ? this.resolveChannelIndices(
+          this.channelIndicesByPlaylistGroup.get(playlist)?.get(sourceGroup),
+        )
+      : this.resolveChannelIndices(this.channelIndicesByGroup.get(sourceGroup));
   }
 
   getByContentKind(kind: M3uContentKind, playlist?: string): Channel[] {
     this.ensureDerivedIndexes();
-    const entries = this.channelsByContentKind.get(kind) ?? [];
+    const entries = this.resolveChannelIndices(this.channelIndicesByContentKind.get(kind));
+    for (const channel of entries) {
+      if (!channel.contentKind) channel.contentKind = kind;
+    }
     return playlist
       ? entries.filter(channel => channel.playlistIds.includes(playlist))
       : entries;
@@ -878,13 +886,15 @@ class PlaylistServiceImpl {
   getGroupCount(group: ChannelGroupId, playlist?: string): number {
     this.ensureDerivedIndexes();
     if (group === 'builtin:all' || group === 'builtin:recently-watched') {
-      return playlist ? this.channelsByPlaylist.get(playlist)?.length ?? 0 : this.channels.length;
+      return playlist
+        ? this.channelIndicesByPlaylist.get(playlist)?.length ?? 0
+        : this.channels.length;
     }
     if (group === 'builtin:favorites') return this.getByGroup(group, playlist).length;
     const sourceGroup = group.slice('source:'.length);
     return playlist
-      ? this.channelsByPlaylistGroup.get(playlist)?.get(sourceGroup)?.length ?? 0
-      : this.channelsByGroup.get(sourceGroup)?.length ?? 0;
+      ? this.channelIndicesByPlaylistGroup.get(playlist)?.get(sourceGroup)?.length ?? 0
+      : this.channelIndicesByGroup.get(sourceGroup)?.length ?? 0;
   }
 
   searchLocalRanked(
@@ -915,41 +925,68 @@ class PlaylistServiceImpl {
   }
 
   indexOf(channel: Channel): number {
-    return this.indexMap.get(channel) ?? -1;
+    this.ensureDerivedIndexes();
+    const index = lookupChannelIndex(this.channelKeys, channelKey(channel));
+    return typeof index === 'number' && this.channels[index] === channel ? index : -1;
   }
 
   resolveChannelKey(key: string): { channel: Channel; channelIndex: number } | null {
-    const channel = this.channelByKey.get(key) ?? this.channelByLegacyKey.get(key);
-    if (!channel) return null;
-    const channelIndex = this.indexOf(channel);
-    return channelIndex < 0 ? null : { channel, channelIndex };
+    this.ensureDerivedIndexes();
+    const stableIndex = lookupChannelIndex(this.channelKeys, key);
+    const legacyIndex = lookupChannelIndex(this.legacyChannelKeys, key);
+    const channelIndex = typeof stableIndex === 'number'
+      ? stableIndex
+      : typeof legacyIndex === 'number' ? legacyIndex : -1;
+    const channel = this.channels[channelIndex];
+    return channel ? { channel, channelIndex } : null;
   }
 
   /** Index of the channel carrying this per-stream key, or -1. Used to re-resolve
    *  the playing channel after a customization changes the ordering. */
   indexOfKey(key: string): number {
     if (!key) return -1;
-    for (let i = 0; i < this.channels.length; i++) {
-      if (channelKey(this.channels[i]) === key) return i;
-    }
-    return -1;
+    this.ensureDerivedIndexes();
+    const index = lookupChannelIndex(this.channelKeys, key);
+    return typeof index === 'number' ? index : -1;
   }
 
   private indexOfUniqueKey(key: string): number {
-    let match = -1;
-    for (let i = 0; i < this.channels.length; i++) {
-      const channel = this.channels[i];
-      if (channelKey(channel) !== key && legacyChannelKey(channel) !== key) continue;
-      if (match >= 0) return -1;
-      match = i;
+    const index = lookupChannelIndex(this.channelKeys, key);
+    if (index !== undefined) {
+      return typeof index === 'number' ? index : -1;
     }
-    return match;
+    const legacyIndex = lookupChannelIndex(this.legacyChannelKeys, key);
+    return typeof legacyIndex === 'number' ? legacyIndex : -1;
   }
 
   resolveLastChannelIndex(stableKey: string, legacyIndex: number): number {
     if (!stableKey) return legacyIndex;
+    this.ensureDerivedIndexes();
     return this.indexOfUniqueKey(stableKey);
   }
 }
 
 export const PlaylistService = new PlaylistServiceImpl();
+
+function emptyChannelKeyIndex(): CompactChannelKeyIndex {
+  return { hashes: new Uint32Array(0), values: new Uint32Array(0) };
+}
+
+function lookupChannelIndex(
+  index: CompactChannelKeyIndex,
+  key: string,
+): number | null | undefined {
+  if (!/^[0-9a-f]{8}$/i.test(key)) return undefined;
+  if (!index.hashes.length) return undefined;
+  const hash = parseInt(key, 16);
+  const mask = index.hashes.length - 1;
+  let slot = hash & mask;
+  while (index.values[slot] !== 0) {
+    if (index.hashes[slot] === hash) {
+      const value = index.values[slot];
+      return value === 0xffffffff ? null : value - 1;
+    }
+    slot = (slot + 1) & mask;
+  }
+  return undefined;
+}

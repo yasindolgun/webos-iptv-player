@@ -32,6 +32,7 @@ const metricPaths = [
   'parsers.m3uPipeline.roundTripMs',
   'parsers.m3uPipeline.maxFrameGapMs',
   'parsers.derivedIndexes.durationMs',
+  ...(!tv ? ['parsers.derivedIndexes.maxFrameGapMs'] : []),
   'channelList.navigation.p95',
   'channelList.navigation.frame.p95',
   'recentlyWatched.navigation.p95',

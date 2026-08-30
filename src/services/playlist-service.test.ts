@@ -929,6 +929,14 @@ describe('PlaylistService.getByGroup', () => {
 });
 
 describe('PlaylistService.getByContentKind', () => {
+  it('restores an inferred kind on legacy cached channels when accessed', () => {
+    const legacy = channel({ group: 'Films', contentKind: undefined });
+    PlaylistService.channels = [legacy];
+
+    expect(PlaylistService.getByContentKind('movie')).toEqual([legacy]);
+    expect(legacy.contentKind).toBe('movie');
+  });
+
   it('indexes mixed M3U entries by their inferred catalog kind', async () => {
     fetchTextMock.mockResolvedValue([
       '#EXTM3U',

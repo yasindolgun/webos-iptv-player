@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { exposeWorkerTasks, WorkerRpcClient } from './worker-rpc';
+import {
+  exposeWorkerTasks,
+  withWorkerResponseTransfers,
+  WorkerRpcClient,
+} from './worker-rpc';
 
 interface TestTasks {
   add: {
@@ -9,6 +13,10 @@ interface TestTasks {
   fail: {
     request: undefined;
     response: never;
+  };
+  makeBuffer: {
+    request: undefined;
+    response: { buffer: ArrayBuffer };
   };
 }
 
@@ -74,6 +82,7 @@ describe('WorkerRpcClient', () => {
       fail: () => {
         throw new Error('failed task');
       },
+      makeBuffer: () => ({ buffer: new ArrayBuffer(0) }),
     });
     const client = new WorkerRpcClient<TestTasks>(clientEndpoint);
 
@@ -89,6 +98,7 @@ describe('WorkerRpcClient', () => {
     exposeWorkerTasks<TestTasks>(workerEndpoint, {
       add: ({ left, right }) => left + right,
       fail: () => { throw new Error('failed task'); },
+      makeBuffer: () => ({ buffer: new ArrayBuffer(0) }),
     });
     const client = new WorkerRpcClient<TestTasks>(clientEndpoint);
     const buffer = new ArrayBuffer(4);
@@ -96,6 +106,20 @@ describe('WorkerRpcClient', () => {
     await expect(client.request('add', { left: 1, right: 2 }, { transfer: [buffer] }))
       .resolves.toBe(3);
     expect(clientEndpoint.lastTransfer).toEqual([buffer]);
+  });
+
+  it('passes marked response transferables back to the client endpoint', async () => {
+    const [clientEndpoint, workerEndpoint] = linkedEndpoints();
+    const buffer = new ArrayBuffer(4);
+    exposeWorkerTasks<TestTasks>(workerEndpoint, {
+      add: ({ left, right }) => left + right,
+      fail: () => { throw new Error('failed task'); },
+      makeBuffer: () => withWorkerResponseTransfers({ buffer }, [buffer]),
+    });
+    const client = new WorkerRpcClient<TestTasks>(clientEndpoint);
+
+    await expect(client.request('makeBuffer', undefined)).resolves.toEqual({ buffer });
+    expect(workerEndpoint.lastTransfer).toEqual([buffer]);
   });
 
   it('terminates a worker that does not settle a bounded request', async () => {
@@ -167,6 +191,7 @@ describe('WorkerRpcClient', () => {
         Object.assign(error, { details: { stage: 'parse' } });
         throw error;
       },
+      makeBuffer: () => ({ buffer: new ArrayBuffer(0) }),
     });
     const client = new WorkerRpcClient<TestTasks>(clientEndpoint);
 

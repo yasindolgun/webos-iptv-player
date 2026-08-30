@@ -749,7 +749,7 @@ export function buildXMLTVPipelineFixture(scale) {
   return { text: parts.join(''), channelIds, channelNames };
 }
 
-export function runRawParserBenchmarks(options) {
+export async function runRawParserBenchmarks(options) {
     const api = window.__IPTV_BENCHMARK__;
     if (!api) throw new Error('Benchmark parser API is unavailable');
     const round = (value) => Math.round(value * 10) / 10;
@@ -772,7 +772,7 @@ export function runRawParserBenchmarks(options) {
     let started = performance.now();
     const m3uResult = api.parseM3U(m3uText);
     const m3uDuration = performance.now() - started;
-    const derivedIndexes = api.profileDerivedIndexes(m3uText);
+    const derivedIndexes = await api.profileDerivedIndexes(m3uText);
 
     const base = Date.now() - 6 * 24 * 60 * 60 * 1000;
     const xmltvParts = [
@@ -800,6 +800,12 @@ export function runRawParserBenchmarks(options) {
       },
       derivedIndexes: {
         durationMs: round(derivedIndexes.durationMs),
+        maxFrameGapMs: round(derivedIndexes.maxFrameGapMs),
+        frames: derivedIndexes.frames,
+        transport: derivedIndexes.transport,
+        startMs: round(derivedIndexes.startMs),
+        batchesMs: round(derivedIndexes.batchesMs),
+        finishMs: round(derivedIndexes.finishMs),
         channels: derivedIndexes.channels,
         groups: derivedIndexes.groups,
       },
@@ -2572,6 +2578,11 @@ export function assertBenchmarkScale(report, scale) {
       || report.parsers.derivedIndexes.channels !== scale
       || report.parsers.xmltv.programmes !== scale) {
     throw new Error('Raw parser benchmark did not produce the requested scale');
+  }
+  if (report.parsers.derivedIndexes.transport !== 'worker'
+      || report.parsers.derivedIndexes.frames < 1
+      || !Number.isFinite(report.parsers.derivedIndexes.maxFrameGapMs)) {
+    throw new Error('Derived indexes did not use the measured worker path');
   }
   closeTo(report.channelList.totalSize, scale * 88);
   if (!report.recentlyWatched.liveRendered || !report.recentlyWatched.catchupRendered) {

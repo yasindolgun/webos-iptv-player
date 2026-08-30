@@ -3,10 +3,18 @@ import { CONFIG } from '../config';
 import { parseM3UBytes } from '../parsers/m3u-parser';
 import type { Channel } from '../types';
 import { fetchAndParseXMLTVInWorker } from '../parsers/xmltv-loader';
-import { exposeWorkerTasks, type WorkerTaskHandlers } from './worker-rpc';
+import {
+  exposeWorkerTasks,
+  withWorkerResponseTransfers,
+  type WorkerTaskHandlers,
+} from './worker-rpc';
 import { SearchWorkerIndex } from './search-index';
 import { ScopedSearchIndex } from './scoped-search-index';
 import type { AppWorkerTasks } from './tasks';
+import {
+  PlaylistIndexBuilder,
+  playlistIndexTransferables,
+} from './playlist-index';
 
 const searchIndex = new SearchWorkerIndex();
 const scopedSearchIndex = new ScopedSearchIndex();
@@ -14,6 +22,10 @@ let m3uSession: {
   id: number;
   channels: Array<Channel | null>;
   cursor: number;
+} | null = null;
+let playlistIndexSession: {
+  id: number;
+  builder: PlaylistIndexBuilder;
 } | null = null;
 const handlers: WorkerTaskHandlers<AppWorkerTasks> = {
   'm3u.parse': request => {
@@ -60,6 +72,30 @@ const handlers: WorkerTaskHandlers<AppWorkerTasks> = {
     const done = end >= session.channels.length;
     if (done) m3uSession = null;
     return { channels, done };
+  },
+  'playlist-index.start': request => {
+    playlistIndexSession = {
+      id: request.sessionId,
+      builder: new PlaylistIndexBuilder(request.customGroups, request.channelCount),
+    };
+    return { accepted: true };
+  },
+  'playlist-index.add': request => {
+    const session = playlistIndexSession;
+    if (!session || session.id !== request.sessionId) {
+      throw new Error('Playlist index session is no longer available');
+    }
+    session.builder.add(request.documents);
+    return { accepted: true };
+  },
+  'playlist-index.finish': request => {
+    const session = playlistIndexSession;
+    if (!session || session.id !== request.sessionId) {
+      throw new Error('Playlist index session is no longer available');
+    }
+    playlistIndexSession = null;
+    const plan = session.builder.finish();
+    return withWorkerResponseTransfers(plan, playlistIndexTransferables(plan));
   },
   'xmltv.load': request => fetchAndParseXMLTVInWorker(request),
   'search.index': request => searchIndex.index(request),

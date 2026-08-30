@@ -90,8 +90,30 @@ responsive batch remains the measured default.
 This milestone bounds cross-thread result cloning, not total catalog residency.
 The worker still constructs the complete parsed graph before delivery and the
 page eventually hydrates every channel. Worker-owned IndexedDB persistence,
-single-writer backpressure, derived-index preparation, and staged device memory
-budgets remain the next Priority 1 work.
+single-writer backpressure, and staged device memory budgets remain the next
+Priority 1 work.
+
+## Derived-index update — 2026-08-30
+
+Derived playlist indexes now run in the existing classic app worker during
+startup and refresh. The page sends only 500-record compact document batches,
+with an explicit rendering yield after every six batches. The worker builds
+group, content-kind, playlist, and playlist-group membership plus stable and
+legacy channel-key lookups. Membership arrays and open-addressed key tables are
+returned as transferable `Uint32Array` buffers, so the final summary does not
+clone large JavaScript maps or channel graphs back to the page.
+
+The page resolves indexed channel lists lazily and caches only the scopes that
+are actually opened. Synchronous customization edits and unavailable or failed
+workers retain the production main-thread builder as a compatibility fallback.
+The 50,000-item benchmark now records worker start, bounded-batch, finish, total,
+and maximum frame-gap timing. In an isolated 4x CPU-throttled run, preparation
+completed in 619.6 ms against the 635 ms baseline, while the maximum frame gap
+was 16.7 ms and the final transferable-summary phase took 7.4 ms.
+
+This moves initial derived-index preparation off the page, but does not yet move
+the raw channel records or cache writer into the worker. Worker-owned IndexedDB
+persistence and single-writer backpressure remain the next ingestion milestone.
 
 ## Priority 1: Large-source ingestion
 
@@ -102,7 +124,6 @@ the worker fails before taking ownership of the input buffer.
 Move the remaining expensive playlist work off the UI thread while preserving
 the tolerant production parser and current cache format.
 
-- Run derived-index preparation in the existing classic app worker.
 - Keep the production-path M3U pipeline benchmark regression-gating worker
   round-trip duration and maximum page frame gap while retaining input transfer,
   parse, result clone/delivery, idle cleanup, and failure-timeout diagnostics.

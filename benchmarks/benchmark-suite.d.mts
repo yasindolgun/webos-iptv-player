@@ -73,15 +73,25 @@ export function runBenchmarkSuites(
 
 export function runRawParserBenchmarks(
   options: RawParserBenchmarkOptions,
-): {
+): Promise<{
   m3u: { durationMs: number; bytes: number; channels: number; groups: number };
-  derivedIndexes: { durationMs: number; channels: number; groups: number };
+  derivedIndexes: {
+    durationMs: number;
+    maxFrameGapMs: number;
+    frames: number;
+    transport: 'worker' | 'fallback';
+    startMs: number;
+    batchesMs: number;
+    finishMs: number;
+    channels: number;
+    groups: number;
+  };
   xmltv: { durationMs: number; bytes: number; channels: number; programmes: number };
   xmltvCatalog?: XMLTVCatalogBenchmark;
   xmltvPipeline?: XMLTVPipelineBenchmark;
   xmltvPipelineBuffered?: XMLTVPipelineBenchmark;
   m3uPipeline?: M3UPipelineBenchmark;
-};
+}>;
 
 export interface M3UPipelineBenchmark {
   inputBytes: number;

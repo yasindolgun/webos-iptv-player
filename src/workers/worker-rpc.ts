@@ -42,7 +42,7 @@ interface WorkerLike {
 }
 
 interface WorkerEndpoint {
-  postMessage(message: unknown): void;
+  postMessage(message: unknown, transfer?: Transferable[]): void;
   addEventListener(type: 'message', listener: (event: MessageEvent<unknown>) => void): void;
 }
 
@@ -72,6 +72,16 @@ export type WorkerTaskHandlers<Tasks extends WorkerTaskMap<Tasks>> = {
     payload: Tasks[TaskName]['request'],
   ) => Promise<Tasks[TaskName]['response']> | Tasks[TaskName]['response'];
 };
+
+const responseTransfers = new WeakMap<object, Transferable[]>();
+
+export function withWorkerResponseTransfers<Response extends object>(
+  response: Response,
+  transfer: Transferable[],
+): Response {
+  if (transfer.length) responseTransfers.set(response, transfer);
+  return response;
+}
 
 export class WorkerRpcClient<Tasks extends WorkerTaskMap<Tasks>> {
   private nextId = 1;
@@ -207,7 +217,11 @@ export function exposeWorkerTasks<Tasks extends WorkerTaskMap<Tasks>>(
           result,
         };
         try {
-          endpoint.postMessage(response);
+          const transfer = result && typeof result === 'object'
+            ? responseTransfers.get(result)
+            : undefined;
+          if (transfer?.length) endpoint.postMessage(response, transfer);
+          else endpoint.postMessage(response);
         } catch (error) {
           postFailure(endpoint, request.id, asError(error));
         }

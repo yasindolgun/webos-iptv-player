@@ -1,5 +1,9 @@
 import type { Channel, ParsedEpg, ParsedPlaylist } from '../types';
 import type { XMLTVParseStats } from '../parsers/xmltv-parser';
+import type {
+  PlaylistIndexDocument,
+  PlaylistIndexPlan,
+} from './playlist-index';
 
 export interface XMLTVWorkerRequest {
   url: string;
@@ -98,6 +102,21 @@ export interface M3UParseBatchResponse {
   done: boolean;
 }
 
+export interface PlaylistIndexStartRequest {
+  sessionId: number;
+  channelCount: number;
+  customGroups: Array<{ key: string; label: string }>;
+}
+
+export interface PlaylistIndexAddRequest {
+  sessionId: number;
+  documents: PlaylistIndexDocument[];
+}
+
+export interface PlaylistIndexSessionRequest {
+  sessionId: number;
+}
+
 export interface ScopedSearchReleaseRequest {
   owner: string;
   sessionId: number;
@@ -132,6 +151,18 @@ export interface AppWorkerTasks {
   'm3u.parse.next': {
     request: M3UParseBatchRequest;
     response: M3UParseBatchResponse;
+  };
+  'playlist-index.start': {
+    request: PlaylistIndexStartRequest;
+    response: { accepted: boolean };
+  };
+  'playlist-index.add': {
+    request: PlaylistIndexAddRequest;
+    response: { accepted: boolean };
+  };
+  'playlist-index.finish': {
+    request: PlaylistIndexSessionRequest;
+    response: PlaylistIndexPlan;
   };
   'xmltv.load': {
     request: XMLTVWorkerRequest;

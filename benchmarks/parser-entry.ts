@@ -7,7 +7,9 @@ import {
   terminateAppWorker,
 } from '../src/workers/app-worker-client';
 import { runM3UParseWorker } from '../src/workers/m3u-parser-client';
-import { PlaylistService } from '../src/services/playlist-service';
+import { preparePlaylistIndexesOffThread } from '../src/workers/playlist-index-client';
+import type { PlaylistIndexPreparationMetrics } from '../src/workers/playlist-index-client';
+import type { PlaylistIndexPlan } from '../src/workers/playlist-index';
 
 interface BenchmarkParseResult {
   channels: number;
@@ -32,7 +34,7 @@ interface BenchmarkParserApi {
     buffer: ArrayBuffer,
     timeoutMs: number,
   ): Promise<BenchmarkM3UTimeoutResult>;
-  profileDerivedIndexes(text: string): BenchmarkDerivedIndexResult;
+  profileDerivedIndexes(text: string): Promise<BenchmarkDerivedIndexResult>;
   parseXMLTV(text: string, options?: BenchmarkXMLTVOptions): BenchmarkParseResult;
   loadXMLTV(url: string, options?: BenchmarkXMLTVOptions): Promise<BenchmarkXMLTVLoadResult>;
   profileXMLTV(url: string, options?: BenchmarkXMLTVOptions): Promise<BenchmarkParseResult>;
@@ -45,6 +47,12 @@ interface BenchmarkParserApi {
 
 interface BenchmarkDerivedIndexResult {
   durationMs: number;
+  maxFrameGapMs: number;
+  frames: number;
+  transport: PlaylistIndexPreparationMetrics['transport'];
+  startMs: number;
+  batchesMs: number;
+  finishMs: number;
   channels: number;
   groups: number;
 }
@@ -127,23 +135,47 @@ window.__IPTV_BENCHMARK__ = {
       workerTerminated: !isAppWorkerRunning(),
     };
   },
-  profileDerivedIndexes(text) {
+  async profileDerivedIndexes(text) {
     const parsed = parseM3U(text, 'http://host/list.m3u');
     for (const channel of parsed.channels) channel.playlistIds = ['benchmark'];
-    const target = PlaylistService as unknown as {
-      channels: typeof parsed.channels;
-      groups: string[];
-      reset(): void;
-      buildDerivedIndexes(): void;
+    terminateAppWorker('benchmark-derived-index-cold-start');
+    let active = true;
+    let frameRequest = 0;
+    let previousFrame = performance.now();
+    let maxFrameGapMs = 0;
+    let frames = 0;
+    const observeFrame = (timestamp: number): void => {
+      frames++;
+      maxFrameGapMs = Math.max(maxFrameGapMs, timestamp - previousFrame);
+      previousFrame = timestamp;
+      if (active) frameRequest = requestAnimationFrame(observeFrame);
     };
-    target.reset();
-    target.channels = parsed.channels;
+    frameRequest = requestAnimationFrame(observeFrame);
     const started = performance.now();
-    target.buildDerivedIndexes();
+    let plan: PlaylistIndexPlan;
+    const measurement: { value?: PlaylistIndexPreparationMetrics } = {};
+    try {
+      plan = await preparePlaylistIndexesOffThread(
+        parsed.channels,
+        [],
+        undefined,
+        value => { measurement.value = value; },
+      );
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    } finally {
+      active = false;
+      cancelAnimationFrame(frameRequest);
+    }
     return {
       durationMs: performance.now() - started,
-      channels: target.channels.length,
-      groups: target.groups.length,
+      maxFrameGapMs,
+      frames,
+      transport: measurement.value?.transport ?? 'fallback',
+      startMs: measurement.value?.startMs ?? 0,
+      batchesMs: measurement.value?.batchesMs ?? 0,
+      finishMs: measurement.value?.finishMs ?? 0,
+      channels: plan.channelCount,
+      groups: plan.groups.length,
     };
   },
   parseXMLTV(text, options) {

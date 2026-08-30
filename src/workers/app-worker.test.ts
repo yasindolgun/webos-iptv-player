@@ -4,7 +4,10 @@ import type { AppWorkerTasks } from './tasks';
 
 const { exposeMock } = vi.hoisted(() => ({ exposeMock: vi.fn() }));
 
-vi.mock('./worker-rpc', () => ({ exposeWorkerTasks: exposeMock }));
+vi.mock('./worker-rpc', () => ({
+  exposeWorkerTasks: exposeMock,
+  withWorkerResponseTransfers: <Response>(response: Response) => response,
+}));
 
 let handlers: WorkerTaskHandlers<AppWorkerTasks>;
 
@@ -71,5 +74,49 @@ describe('app worker M3U task', () => {
     expect(second.done).toBe(true);
     expect(() => handlers['m3u.parse.next']({ sessionId: 7 }))
       .toThrow('M3U parse session is no longer available');
+  });
+});
+
+describe('app worker playlist index task', () => {
+  it('prepares compact indices over a bounded document session', () => {
+    const documents = [
+      {
+        url: 'http://host/a',
+        group: 'News',
+        groupKey: '',
+        sourceGroup: '',
+        contentKind: '' as const,
+        playlistIds: ['p1'],
+      },
+      {
+        url: 'http://host/b',
+        group: 'Movies',
+        groupKey: 'custom',
+        sourceGroup: 'News',
+        contentKind: 'movie' as const,
+        playlistIds: ['p1', 'p2'],
+      },
+    ];
+
+    expect(handlers['playlist-index.start']({
+      sessionId: 11,
+      channelCount: 2,
+      customGroups: [{ key: 'empty', label: 'Empty' }],
+    })).toEqual({ accepted: true });
+    expect(handlers['playlist-index.add']({ sessionId: 11, documents }))
+      .toEqual({ accepted: true });
+    const plan = handlers['playlist-index.finish']({ sessionId: 11 });
+
+    expect(plan.channelCount).toBe(2);
+    expect(plan.groups).toEqual(['News', 'Movies', 'Empty']);
+    expect(Array.from(plan.channelIndicesByGroup.get('News') ?? [])).toEqual([0]);
+    expect(Array.from(plan.channelIndicesByContentKind.get('movie') ?? [])).toEqual([1]);
+    expect(Array.from(plan.channelIndicesByPlaylist.get('p1') ?? [])).toEqual([0, 1]);
+    expect(Array.from(plan.channelIndicesByPlaylistGroup.get('p2')?.get('Movies') ?? []))
+      .toEqual([1]);
+    expect(plan.groupsByPlaylist.get('p1')).toEqual(['News', 'Movies']);
+    expect(plan.groupKeyByDisplay.get('Movies')).toBe('custom');
+    expect(() => handlers['playlist-index.finish']({ sessionId: 11 }))
+      .toThrow('Playlist index session is no longer available');
   });
 });
