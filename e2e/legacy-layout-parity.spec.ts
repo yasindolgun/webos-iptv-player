@@ -259,7 +259,9 @@ const M3U_SCREENS: Screen[] = [
     budget: 0,
     go: async (p) => {
       await enterTab(p, 'live');
-      await p.locator('[data-edit-channels]').click();
+      await p.evaluate(() => document.dispatchEvent(
+        new KeyboardEvent('keydown', { keyCode: 405, bubbles: true }),
+      ));
       await expect(p.locator('.channel-view.editing .edit-hints')).toBeVisible();
     },
   },

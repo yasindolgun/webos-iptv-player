@@ -243,7 +243,6 @@ describe('ChannelList edit mode', () => {
     expect(list.isEditing).toBe(true);
     expect(container.querySelector('.edit-hints')).not.toBeNull();
     expect(container.querySelector('.channel-edit-btn')).toBeNull();
-    expect(container.querySelector('.channel-edit-btn-spacer')).not.toBeNull();
     list.handleAction('yellow');
     expect(list.isEditing).toBe(false);
     expect(container.querySelector('.favorite-hints')).toBeNull();
@@ -378,14 +377,10 @@ describe('ChannelList edit mode', () => {
       }
     });
 
-    it('keeps the pencil for channel editing', () => {
+    it('keeps channel editing out of the Live header', () => {
       openFavorites();
-      const pencil = container.querySelector<HTMLElement>('.channel-edit-btn');
-      expect(pencil).not.toBeNull();
-      hover(pencil!);
-      list.handleAction('select');
-      expect(container.querySelector('.favorite-hints')).toBeNull();
-      expect(container.querySelector('.edit-hints')).not.toBeNull();
+      expect(container.querySelector('.channel-edit-btn')).toBeNull();
+      expect(container.querySelector('[data-edit-channels]')).toBeNull();
     });
 
     it('keeps the yellow-key channel editor shortcut in Favorites', () => {

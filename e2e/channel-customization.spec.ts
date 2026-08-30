@@ -498,6 +498,7 @@ test('Settings enters edit mode, reveals hidden channels, and resets everything'
 
 test('the Settings edit-channel-list button jumps to the Live list in edit mode', async ({ page }) => {
   await boot(page);
+  await expect(page.locator('[data-edit-channels]')).toHaveCount(0);
   await enterTab(page, 'settings');
   await page.locator('[data-settings-target="sources"]').click();
   await page.locator('#edit-channel-list').click();

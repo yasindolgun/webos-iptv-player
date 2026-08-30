@@ -230,7 +230,9 @@ test('no flex-gap container separates an element from loose text', async ({ page
   await page.keyboard.press('Escape');
 
   await enterTab(page, 'live');
-  await page.locator('[data-edit-channels]').click();
+  await page.evaluate(() => document.dispatchEvent(
+    new KeyboardEvent('keydown', { keyCode: 405, bubbles: true }),
+  ));
   await expect(page.locator('.channel-view.editing .edit-hints')).toBeVisible();
   await collect();
   await page.keyboard.press('Escape');

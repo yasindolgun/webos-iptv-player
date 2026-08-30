@@ -180,11 +180,7 @@ function hover(el: HTMLElement): void {
 }
 
 describe('ChannelList.render', () => {
-  // With no channels the entry point falls through to the first focusable,
-  // taken in DOM order with no geometry to fall back on — so measurement is
-  // the only thing keeping focus off an invisible control. Rects are stubbed
-  // because jsdom has no layout.
-  it('an empty list falls back to the first visible focusable', () => {
+  it('an empty list falls back to the first group', () => {
     const savedChannels = data.channels.slice();
     const savedByGroup = playlistMock.getByGroup;
     const savedCount = playlistMock.getGroupCount;
@@ -192,22 +188,14 @@ describe('ChannelList.render', () => {
     playlistMock.getGroupCount = () => 0;
     data.channels.length = 0;
 
-    const original = Element.prototype.getBoundingClientRect;
-    Element.prototype.getBoundingClientRect = function stub(this: Element): DOMRect {
-      const collapsed = this.classList.contains('channel-edit-btn');
-      const size = collapsed ? 0 : 100;
-      return { width: size, height: size, top: 0, left: 0, bottom: size, right: size } as DOMRect;
-    };
     try {
       list.render();
     } finally {
-      Element.prototype.getBoundingClientRect = original;
       playlistMock.getByGroup = savedByGroup;
       playlistMock.getGroupCount = savedCount;
       data.channels.push(...savedChannels);
     }
 
-    expect(container.querySelector('.channel-edit-btn')!.classList.contains('focused')).toBe(false);
     expect(container.querySelector('.group-item')!.classList.contains('focused')).toBe(true);
   });
 
@@ -249,14 +237,10 @@ describe('ChannelList.render', () => {
     expect(container.querySelector('.edit-text-input')).toBeNull();
   });
 
-  it('opens channel editing from the pencil button', () => {
+  it('does not render channel editing controls in the Live header', () => {
     list.render();
-    const edit = container.querySelector<HTMLElement>('.channel-edit-btn');
-    expect(edit?.querySelector('img')?.getAttribute('src')).toBe('assets/icons/pencil.svg');
-    hover(edit!);
-    list.handleAction('select');
-    expect(list.isEditing).toBe(true);
     expect(container.querySelector('.channel-edit-btn')).toBeNull();
+    expect(container.querySelector('[data-edit-channels]')).toBeNull();
   });
 
   it('uses the singular channel count for a one-channel playlist', () => {
@@ -454,7 +438,6 @@ describe('ChannelList.render', () => {
     hover(container.querySelector<HTMLElement>('[data-group="builtin:recently-watched"]')!);
     list.handleAction('select');
     expect(container.querySelector('.channel-edit-btn')).toBeNull();
-    expect(container.querySelector('.channel-edit-btn-spacer')).not.toBeNull();
     list.handleAction('yellow');
     expect(list.isEditing).toBe(false);
     expect(container.querySelector('.edit-hints')).toBeNull();
