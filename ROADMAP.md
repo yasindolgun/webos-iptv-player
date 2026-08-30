@@ -89,9 +89,9 @@ responsive batch remains the measured default.
 
 This milestone bounds cross-thread result cloning, not total catalog residency.
 The worker still constructs the complete parsed graph before delivery and the
-page eventually hydrates every channel. Worker-owned IndexedDB persistence,
-single-writer backpressure, and staged device memory budgets remain the next
-Priority 1 work.
+page eventually hydrates every channel. Worker-owned IndexedDB persistence and
+single-writer backpressure are covered by the later update below; staged device
+memory budgets remain Priority 1 work.
 
 ## Derived-index update — 2026-08-30
 
@@ -112,8 +112,32 @@ completed in 619.6 ms against the 635 ms baseline, while the maximum frame gap
 was 16.7 ms and the final transferable-summary phase took 7.4 ms.
 
 This moves initial derived-index preparation off the page, but does not yet move
-the raw channel records or cache writer into the worker. Worker-owned IndexedDB
-persistence and single-writer backpressure remain the next ingestion milestone.
+the raw channel records into worker-owned storage. The later persistence update
+moves the cache writer and adds explicit backpressure without changing that raw
+channel residency boundary.
+
+## Playlist persistence update — 2026-08-30
+
+Playlist cache persistence now runs in the existing classic app worker after
+source merge and catch-up enrichment. The page sends at most 500 final channel
+records per request and waits for the worker to commit each IndexedDB batch
+before sending the next one, so slow storage cannot grow an unbounded worker
+queue. Only one scheduled playlist write drains at a time, with at most one
+newer snapshot retained for coalescing.
+
+The cache now stages versioned batch records behind a compact version 3
+`combined` manifest. The worker publishes that manifest only after every batch
+has been written and re-read successfully, so startup observes either the old
+complete snapshot or the new one. Failed sessions remove their staging records;
+orphan cleanup also runs at the next session. Existing inline version 2 caches
+remain readable, and unavailable or failed workers retain the page writer as a
+compatibility fallback.
+
+This bounds page-to-worker persistence cloning and makes IndexedDB backpressure
+explicit. Parsing still constructs the complete source graph in the worker,
+and the page still hydrates the combined channel graph for merge and playback.
+Chunked decoding, parse-to-persistence source staging, and the staged
+50,000/100,000/200,000 memory profiles remain the next ingestion work.
 
 ## Priority 1: Large-source ingestion
 

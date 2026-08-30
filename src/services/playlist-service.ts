@@ -43,7 +43,8 @@ import {
   type XtreamLiveCategory,
   type XtreamLiveStream,
 } from './xtream-client';
-import { getCachedPlaylist, scheduleCachedPlaylist } from './idb-cache';
+import { getCachedPlaylist } from './idb-cache';
+import { scheduleCachedPlaylistOffThread } from '../workers/playlist-cache-client';
 import { isSourceEnabled } from '../utils/playlist';
 import { m3uContentKind, type M3uContentKind } from '../utils/m3u-content-kind';
 import { getCachedM3uCatalog, setCachedM3uCatalog } from './m3u-catalog-cache';
@@ -231,7 +232,7 @@ class PlaylistServiceImpl {
           'event=xtream.playlist.cache.compacted',
           `entries=${compactedXtreamEntries}`,
         );
-        scheduleCachedPlaylist(this.allChannels, this.epgSources);
+        scheduleCachedPlaylistOffThread(this.allChannels, this.epgSources);
       }
       await this.applyCustomizationOffThread();
       this.buildPlaylistTabs();
@@ -598,7 +599,7 @@ class PlaylistServiceImpl {
     reportProgress('cache');
     if (!failedPlaylists
         || (restoredPlaylists === failedPlaylists && !catalogCacheRestoredIds.size)) {
-      scheduleCachedPlaylist(allChannels, epgSources);
+      scheduleCachedPlaylistOffThread(allChannels, epgSources);
     } else {
       log.warn('Skipping cache write because one or more playlists failed');
     }

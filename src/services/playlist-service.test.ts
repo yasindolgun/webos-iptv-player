@@ -26,6 +26,9 @@ const { storageMock, cacheMock, m3uCacheMock, fetchTextMock } = vi.hoisted(() =>
 
 vi.mock('./storage-service', () => ({ StorageService: storageMock }));
 vi.mock('./idb-cache', () => cacheMock);
+vi.mock('../workers/playlist-cache-client', () => ({
+  scheduleCachedPlaylistOffThread: cacheMock.scheduleCachedPlaylist,
+}));
 vi.mock('./m3u-catalog-cache', () => m3uCacheMock);
 vi.mock('../utils/fetch-helper', async (importOriginal) => ({
   ...await importOriginal<typeof import('../utils/fetch-helper')>(),

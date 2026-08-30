@@ -2,11 +2,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkerTaskHandlers } from './worker-rpc';
 import type { AppWorkerTasks } from './tasks';
 
-const { exposeMock } = vi.hoisted(() => ({ exposeMock: vi.fn() }));
+const {
+  cacheWriterAbortMock,
+  cacheWriterAddMock,
+  cacheWriterBeginMock,
+  cacheWriterFinishMock,
+  exposeMock,
+} = vi.hoisted(() => ({
+  cacheWriterAbortMock: vi.fn(),
+  cacheWriterAddMock: vi.fn(),
+  cacheWriterBeginMock: vi.fn(),
+  cacheWriterFinishMock: vi.fn(),
+  exposeMock: vi.fn(),
+}));
 
 vi.mock('./worker-rpc', () => ({
   exposeWorkerTasks: exposeMock,
   withWorkerResponseTransfers: <Response>(response: Response) => response,
+}));
+vi.mock('../services/idb-cache', () => ({
+  CachedPlaylistBatchWriter: {
+    begin: cacheWriterBeginMock,
+  },
 }));
 
 let handlers: WorkerTaskHandlers<AppWorkerTasks>;
@@ -20,6 +37,11 @@ beforeEach(async () => {
   ) => {
     handlers = registered;
   });
+  cacheWriterBeginMock.mockResolvedValue({
+    abort: cacheWriterAbortMock,
+    add: cacheWriterAddMock,
+    finish: cacheWriterFinishMock,
+  });
   await import('./app-worker');
 });
 
@@ -27,6 +49,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   exposeMock.mockReset();
+  cacheWriterAbortMock.mockReset();
+  cacheWriterAddMock.mockReset();
+  cacheWriterBeginMock.mockReset();
+  cacheWriterFinishMock.mockReset();
 });
 
 describe('app worker M3U task', () => {
@@ -118,5 +144,41 @@ describe('app worker playlist index task', () => {
     expect(plan.groupKeyByDisplay.get('Movies')).toBe('custom');
     expect(() => handlers['playlist-index.finish']({ sessionId: 11 }))
       .toThrow('Playlist index session is no longer available');
+  });
+});
+
+describe('app worker playlist cache task', () => {
+  it('keeps one backpressured writer session through manifest commit', async () => {
+    expect(await handlers['playlist-cache.start']({
+      sessionId: 13,
+      writeId: 'write-1',
+      sourceSignature: 'signature',
+      epgSources: [],
+      timestamp: 1000,
+      channelCount: 1,
+    })).toEqual({ accepted: true });
+    expect(await handlers['playlist-cache.add']({
+      sessionId: 13,
+      channels: [{
+        id: 'ch1',
+        name: 'Alpha',
+        logo: '',
+        group: '',
+        url: 'http://host/a',
+        extras: null,
+        playlistIds: ['p1'],
+        catchup: '',
+        catchupSource: '',
+        catchupDays: 0,
+      }],
+    })).toEqual({ accepted: true });
+    expect(await handlers['playlist-cache.finish']({ sessionId: 13 }))
+      .toEqual({ accepted: true });
+
+    expect(cacheWriterBeginMock).toHaveBeenCalledOnce();
+    expect(cacheWriterAddMock).toHaveBeenCalledOnce();
+    expect(cacheWriterFinishMock).toHaveBeenCalledOnce();
+    await expect(handlers['playlist-cache.add']({ sessionId: 13, channels: [] }))
+      .rejects.toThrow('Playlist cache session is no longer available');
   });
 });

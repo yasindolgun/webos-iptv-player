@@ -2,6 +2,7 @@ import '../polyfills';
 import { CONFIG } from '../config';
 import { parseM3UBytes } from '../parsers/m3u-parser';
 import type { Channel } from '../types';
+import { CachedPlaylistBatchWriter } from '../services/idb-cache';
 import { fetchAndParseXMLTVInWorker } from '../parsers/xmltv-loader';
 import {
   exposeWorkerTasks,
@@ -26,6 +27,10 @@ let m3uSession: {
 let playlistIndexSession: {
   id: number;
   builder: PlaylistIndexBuilder;
+} | null = null;
+let playlistCacheSession: {
+  id: number;
+  writer: CachedPlaylistBatchWriter;
 } | null = null;
 const handlers: WorkerTaskHandlers<AppWorkerTasks> = {
   'm3u.parse': request => {
@@ -96,6 +101,44 @@ const handlers: WorkerTaskHandlers<AppWorkerTasks> = {
     playlistIndexSession = null;
     const plan = session.builder.finish();
     return withWorkerResponseTransfers(plan, playlistIndexTransferables(plan));
+  },
+  'playlist-cache.start': async request => {
+    if (playlistCacheSession) await playlistCacheSession.writer.abort();
+    const writer = await CachedPlaylistBatchWriter.begin({
+      writeId: request.writeId,
+      sourceSignature: request.sourceSignature,
+      epgSources: request.epgSources,
+      timestamp: request.timestamp,
+      channelCount: request.channelCount,
+    });
+    playlistCacheSession = { id: request.sessionId, writer };
+    return { accepted: true };
+  },
+  'playlist-cache.add': async request => {
+    const session = playlistCacheSession;
+    if (!session || session.id !== request.sessionId) {
+      throw new Error('Playlist cache session is no longer available');
+    }
+    await session.writer.add(request.channels);
+    return { accepted: true };
+  },
+  'playlist-cache.finish': async request => {
+    const session = playlistCacheSession;
+    if (!session || session.id !== request.sessionId) {
+      throw new Error('Playlist cache session is no longer available');
+    }
+    await session.writer.finish();
+    playlistCacheSession = null;
+    return { accepted: true };
+  },
+  'playlist-cache.abort': async request => {
+    const session = playlistCacheSession;
+    if (!session || session.id !== request.sessionId) {
+      return { accepted: false };
+    }
+    playlistCacheSession = null;
+    await session.writer.abort();
+    return { accepted: true };
   },
   'xmltv.load': request => fetchAndParseXMLTVInWorker(request),
   'search.index': request => searchIndex.index(request),

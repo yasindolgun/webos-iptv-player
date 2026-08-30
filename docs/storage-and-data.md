@@ -156,7 +156,7 @@ eviction algorithm.
 
 | Object store | Key path | Indexes | Contents |
 | --- | --- | --- | --- |
-| `playlist-cache` | `key` | `expiresAt`, `lastAccessedAt` | Key `combined`; payload version, playlist-source signature, full parsed `Channel[]` including playback URLs/headers/catch-up metadata, derived EPG sources, and timestamp |
+| `playlist-cache` | `key` | `expiresAt`, `lastAccessedAt` | Key `combined`; payload version, playlist-source signature, ordered batch keys, channel count, derived EPG sources, and timestamp. Bounded `playlist-batch:*` records hold parsed `Channel[]` slices, including playback URLs/headers/catch-up metadata. |
 | `epg-cache` | `url` | `expiresAt`, `lastAccessedAt` | Parsed XMLTV channels, aliases/icons, program start/stop/title/description/category/icon, feed offset, optional channel filter, and timestamp |
 | `catalog-cache` | `key` | `expiresAt`, `lastAccessedAt` | Xtream categories, VOD/series lists and details, and media-container probes |
 | `stream-mime-cache` | `key` | `expiresAt`, `lastAccessedAt` | Normalized provider route mapped to detected MIME and probe time; accounted and evicted in the `catalog` category |
@@ -207,9 +207,21 @@ concurrent updates cannot apply byte deltas to stale metadata. If metadata is
 missing or predates this envelope, the app scans all cache stores and rebuilds
 it.
 
-The combined playlist uses the fixed key `combined`, payload version 2, and an
-FNV-1a signature of the configured playlist JSON. A source edit therefore
-invalidates a structurally valid but now unrelated parsed playlist.
+The combined playlist manifest uses the fixed key `combined`, payload version
+3, and an FNV-1a signature of the configured playlist JSON. A source edit
+therefore invalidates a structurally valid but now unrelated parsed playlist.
+Version 2 records with an inline `Channel[]` remain readable as a compatibility
+and migration fallback.
+
+Playlist refresh sends at most 500 final merged channels per request to the
+classic app worker. The worker waits for each IndexedDB batch transaction before
+accepting the next batch, so a slow writer cannot build an unbounded in-memory
+queue. Batch records are staged under a unique write id; `combined` is replaced
+only after every batch has been written and verified. Reads therefore see either
+the previous complete cache or the new complete cache, never a partial refresh.
+Aborted and superseded staging records are removed without invalidating the last
+committed manifest. If workers are unavailable, the version 2 page writer
+remains the compatibility fallback.
 
 ### Cache freshness
 

@@ -1,4 +1,4 @@
-import type { Channel, ParsedEpg, ParsedPlaylist } from '../types';
+import type { Channel, EpgSource, ParsedEpg, ParsedPlaylist } from '../types';
 import type { XMLTVParseStats } from '../parsers/xmltv-parser';
 import type {
   PlaylistIndexDocument,
@@ -117,6 +117,24 @@ export interface PlaylistIndexSessionRequest {
   sessionId: number;
 }
 
+export interface PlaylistCacheStartRequest {
+  sessionId: number;
+  writeId: string;
+  sourceSignature: string;
+  epgSources: EpgSource[];
+  timestamp: number;
+  channelCount: number;
+}
+
+export interface PlaylistCacheAddRequest {
+  sessionId: number;
+  channels: Channel[];
+}
+
+export interface PlaylistCacheSessionRequest {
+  sessionId: number;
+}
+
 export interface ScopedSearchReleaseRequest {
   owner: string;
   sessionId: number;
@@ -163,6 +181,22 @@ export interface AppWorkerTasks {
   'playlist-index.finish': {
     request: PlaylistIndexSessionRequest;
     response: PlaylistIndexPlan;
+  };
+  'playlist-cache.start': {
+    request: PlaylistCacheStartRequest;
+    response: { accepted: boolean };
+  };
+  'playlist-cache.add': {
+    request: PlaylistCacheAddRequest;
+    response: { accepted: boolean };
+  };
+  'playlist-cache.finish': {
+    request: PlaylistCacheSessionRequest;
+    response: { accepted: boolean };
+  };
+  'playlist-cache.abort': {
+    request: PlaylistCacheSessionRequest;
+    response: { accepted: boolean };
   };
   'xmltv.load': {
     request: XMLTVWorkerRequest;

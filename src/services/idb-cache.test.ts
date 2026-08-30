@@ -15,6 +15,8 @@ import {
   getCachedChannelHealth,
   getCachedSubtitle,
   migrateLegacyStreamMimeCache,
+  playlistSourceSignature,
+  CachedPlaylistBatchWriter,
   scheduleCachedPlaylist,
   setCachedCatalog,
   setCachedEpg,
@@ -204,6 +206,45 @@ describe('idb-cache', () => {
 
     expect(await getCachedPlaylist()).toEqual({ channels, epgSources: sources });
     expect(localStorage.getItem('iptv_cached_playlist')).toBeNull();
+  });
+
+  it('commits bounded playlist batches without exposing a partial cache', async () => {
+    const previous = [channel('old')];
+    await setCachedPlaylist(previous);
+    const channels = Array.from({ length: 501 }, (_, index) => channel(`ch${String(index)}`));
+    const writer = await CachedPlaylistBatchWriter.begin({
+      writeId: 'write-1',
+      sourceSignature: playlistSourceSignature(),
+      epgSources: [],
+      timestamp: Date.now(),
+      channelCount: channels.length,
+    });
+
+    await writer.add(channels.slice(0, 500));
+    expect((await getCachedPlaylist())?.channels).toEqual(previous);
+    await writer.add(channels.slice(500));
+    await writer.finish();
+
+    expect((await getCachedPlaylist())?.channels.map(entry => entry.id))
+      .toEqual(channels.map(entry => entry.id));
+    expect((await getCacheUsage()).categories.playlist.entries).toBe(3);
+  });
+
+  it('discards an aborted staged playlist and retains the committed cache', async () => {
+    const previous = [channel('old')];
+    await setCachedPlaylist(previous);
+    const writer = await CachedPlaylistBatchWriter.begin({
+      writeId: 'write-2',
+      sourceSignature: playlistSourceSignature(),
+      epgSources: [],
+      timestamp: Date.now(),
+      channelCount: 1,
+    });
+    await writer.add([channel('new')]);
+    await writer.abort();
+
+    expect((await getCachedPlaylist())?.channels).toEqual(previous);
+    expect((await getCacheUsage()).categories.playlist.entries).toBe(1);
   });
 
   it('defers playlist persistence until after the next painted frame', async () => {

@@ -25,7 +25,9 @@ const MAX_BUDGET_BYTES = 1024 * 1024 * 1024;
 const SUBTITLE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CLEANUP_MARGIN_BYTES = 4 * 1024 * 1024;
 const PLAYLIST_CACHE_KEY = 'combined';
-const PLAYLIST_CACHE_VERSION = 2;
+const LEGACY_PLAYLIST_CACHE_VERSION = 2;
+const PLAYLIST_CACHE_VERSION = 3;
+const PLAYLIST_BATCH_KEY_PREFIX = 'playlist-batch:';
 const ENTRY_META_PREFIX = 'entry:';
 const ENTRY_META_INDEX_KEY = 'entry-index';
 const ENTRY_META_VERSION = 1;
@@ -106,12 +108,26 @@ interface StreamMimeEntry {
   updatedAt: number;
 }
 
-interface CachedPlaylistPayload {
+interface LegacyCachedPlaylistPayload {
   version: number;
   sourceSignature: string;
   channels: Channel[];
   epgSources: EpgSource[];
   timestamp: number;
+}
+
+interface CachedPlaylistManifest {
+  version: number;
+  sourceSignature: string;
+  epgSources: EpgSource[];
+  timestamp: number;
+  channelCount: number;
+  batchKeys: string[];
+}
+
+interface CachedPlaylistBatch {
+  version: number;
+  channels: Channel[];
 }
 
 type StoredRecord = Record<string, unknown> & CacheFields;
@@ -879,7 +895,7 @@ function clearStore(store: CacheStore): Promise<void> {
   return enqueueMutation(() => clearStoreNow(store));
 }
 
-function playlistSourceSignature(): string {
+export function playlistSourceSignature(): string {
   let source = '[]';
   try {
     source = localStorage.getItem(CONFIG.STORAGE_PREFIX + 'playlists') ?? '[]';
@@ -1109,14 +1125,36 @@ export async function getCachedPlaylist(allowStale = false): Promise<{
 } | null> {
   const raw = await readRaw(PLAYLIST_STORE, PLAYLIST_CACHE_KEY);
   if (raw) {
-    const payload = raw.data as CachedPlaylistPayload | undefined;
+    const payload = raw.data as
+      | CachedPlaylistManifest
+      | LegacyCachedPlaylistPayload
+      | undefined;
     if (
-      payload?.version === PLAYLIST_CACHE_VERSION
+      payload?.version === LEGACY_PLAYLIST_CACHE_VERSION
       && payload.sourceSignature === playlistSourceSignature()
-      && payload.channels?.length
+      && 'channels' in payload
+      && payload.channels.length
       && (allowStale || raw.expiresAt === null || raw.expiresAt > Date.now())
     ) {
       return { channels: payload.channels, epgSources: payload.epgSources ?? [] };
+    }
+    if (
+      payload?.version === PLAYLIST_CACHE_VERSION
+      && payload.sourceSignature === playlistSourceSignature()
+      && 'batchKeys' in payload
+      && payload.channelCount > 0
+      && payload.batchKeys.length > 0
+      && (allowStale || raw.expiresAt === null || raw.expiresAt > Date.now())
+    ) {
+      const channels: Channel[] = [];
+      for (const key of payload.batchKeys) {
+        const batchRaw = await readRawWithoutTouch(PLAYLIST_STORE, key);
+        const batch = batchRaw?.data as CachedPlaylistBatch | undefined;
+        if (batch?.version !== PLAYLIST_CACHE_VERSION || !batch.channels.length) return null;
+        channels.push(...batch.channels);
+      }
+      if (channels.length !== payload.channelCount) return null;
+      return { channels, epgSources: payload.epgSources ?? [] };
     }
   }
 
@@ -1125,9 +1163,9 @@ export async function getCachedPlaylist(allowStale = false): Promise<{
   try {
     const legacyRaw = localStorage.getItem(legacyKey);
     if (!legacyRaw) return null;
-    const legacy = JSON.parse(legacyRaw) as CachedPlaylistPayload;
+    const legacy = JSON.parse(legacyRaw) as LegacyCachedPlaylistPayload;
     if (
-      legacy.version !== PLAYLIST_CACHE_VERSION
+      legacy.version !== LEGACY_PLAYLIST_CACHE_VERSION
       || !legacy.channels?.length
       || Date.now() - legacy.timestamp > CONFIG.PLAYLIST_REFRESH_INTERVAL
     ) {
@@ -1153,20 +1191,152 @@ export async function setCachedPlaylist(
   channels: Channel[],
   epgSources: EpgSource[] = [],
   timestamp = Date.now(),
+  sourceSignature = playlistSourceSignature(),
 ): Promise<boolean> {
   if (!channels.length) return false;
-  return putRaw(PLAYLIST_STORE, {
+  const stored = await putRaw(PLAYLIST_STORE, {
     key: PLAYLIST_CACHE_KEY,
     timestamp,
     data: {
-      version: PLAYLIST_CACHE_VERSION,
-      sourceSignature: playlistSourceSignature(),
+      version: LEGACY_PLAYLIST_CACHE_VERSION,
+      sourceSignature,
       channels,
       epgSources,
       timestamp,
-    } satisfies CachedPlaylistPayload,
+    } satisfies LegacyCachedPlaylistPayload,
     expiresAt: timestamp + CONFIG.PLAYLIST_REFRESH_INTERVAL,
   });
+  if (stored) await removePlaylistBatchRecords(new Set());
+  return stored;
+}
+
+export interface CachedPlaylistBatchWriteOptions {
+  writeId: string;
+  sourceSignature: string;
+  epgSources: EpgSource[];
+  timestamp: number;
+  channelCount: number;
+}
+
+export class CachedPlaylistBatchWriter {
+  private readonly batchKeys: string[] = [];
+  private writtenChannels = 0;
+  private active = true;
+
+  private constructor(private readonly options: CachedPlaylistBatchWriteOptions) {}
+
+  static async begin(
+    options: CachedPlaylistBatchWriteOptions,
+  ): Promise<CachedPlaylistBatchWriter> {
+    if (!options.writeId || options.channelCount <= 0) {
+      throw new Error('Playlist cache write requires a non-empty session');
+    }
+    const writer = new CachedPlaylistBatchWriter(options);
+    const current = await readRawWithoutTouch(PLAYLIST_STORE, PLAYLIST_CACHE_KEY);
+    const payload = current?.data as CachedPlaylistManifest | undefined;
+    const retained = payload?.version === PLAYLIST_CACHE_VERSION
+      && Array.isArray(payload.batchKeys)
+      ? new Set(payload.batchKeys)
+      : new Set<string>();
+    await removePlaylistBatchRecords(retained);
+    return writer;
+  }
+
+  async add(channels: Channel[]): Promise<void> {
+    this.assertActive();
+    if (!channels.length || channels.length > CONFIG.M3U.RESULT_BATCH_SIZE) {
+      throw new Error('Playlist cache batch size is outside the configured bound');
+    }
+    if (this.writtenChannels + channels.length > this.options.channelCount) {
+      throw new Error('Playlist cache write exceeded its declared channel count');
+    }
+    const key = `${PLAYLIST_BATCH_KEY_PREFIX}${this.options.writeId}:`
+      + String(this.batchKeys.length);
+    const stored = await putRaw(PLAYLIST_STORE, {
+      key,
+      timestamp: this.options.timestamp,
+      data: {
+        version: PLAYLIST_CACHE_VERSION,
+        channels,
+      } satisfies CachedPlaylistBatch,
+      expiresAt: this.options.timestamp + CONFIG.PLAYLIST_REFRESH_INTERVAL,
+    });
+    if (!stored) throw new Error('Playlist cache batch was not accepted');
+    this.batchKeys.push(key);
+    this.writtenChannels += channels.length;
+  }
+
+  async finish(): Promise<void> {
+    this.assertActive();
+    if (this.writtenChannels !== this.options.channelCount || !this.batchKeys.length) {
+      throw new Error('Playlist cache write is incomplete');
+    }
+    let verifiedChannels = 0;
+    for (const key of this.batchKeys) {
+      const raw = await readRawWithoutTouch(PLAYLIST_STORE, key);
+      const batch = raw?.data as CachedPlaylistBatch | undefined;
+      if (batch?.version !== PLAYLIST_CACHE_VERSION || !batch.channels.length) {
+        throw new Error('Playlist cache batch disappeared before commit');
+      }
+      verifiedChannels += batch.channels.length;
+    }
+    if (verifiedChannels !== this.options.channelCount) {
+      throw new Error('Playlist cache batch count changed before commit');
+    }
+    const stored = await putRaw(PLAYLIST_STORE, {
+      key: PLAYLIST_CACHE_KEY,
+      timestamp: this.options.timestamp,
+      data: {
+        version: PLAYLIST_CACHE_VERSION,
+        sourceSignature: this.options.sourceSignature,
+        epgSources: this.options.epgSources,
+        timestamp: this.options.timestamp,
+        channelCount: this.options.channelCount,
+        batchKeys: this.batchKeys.slice(),
+      } satisfies CachedPlaylistManifest,
+      expiresAt: this.options.timestamp + CONFIG.PLAYLIST_REFRESH_INTERVAL,
+    });
+    if (!stored) throw new Error('Playlist cache manifest was not accepted');
+    this.active = false;
+    await removePlaylistBatchRecords(new Set(this.batchKeys));
+  }
+
+  async abort(): Promise<void> {
+    if (!this.active) return;
+    this.active = false;
+    await removePlaylistRecords(this.batchKeys);
+  }
+
+  private assertActive(): void {
+    if (!this.active) throw new Error('Playlist cache write session is closed');
+  }
+}
+
+async function removePlaylistBatchRecords(retained: Set<string>): Promise<void> {
+  const tx = await openPersistenceTransaction(PLAYLIST_STORE, 'readonly');
+  if (!tx) return;
+  const keys = await requestResult(tx.objectStore(PLAYLIST_STORE).getAllKeys());
+  await removePlaylistRecords(keys.filter((key): key is string =>
+    typeof key === 'string'
+    && key.indexOf(PLAYLIST_BATCH_KEY_PREFIX) === 0
+    && !retained.has(key)));
+}
+
+async function removePlaylistRecords(keys: readonly string[]): Promise<void> {
+  const candidates: CacheCandidate[] = [];
+  for (const key of keys) {
+    const record = await readRawWithoutTouch(PLAYLIST_STORE, key);
+    if (!record) continue;
+    candidates.push({
+      store: PLAYLIST_STORE,
+      key,
+      category: 'playlist',
+      byteSize: record.byteSize,
+      expiresAt: record.expiresAt,
+      lastAccessedAt: record.lastAccessedAt,
+    });
+  }
+  await deleteCandidates(candidates);
 }
 
 export async function clearCachedPlaylist(): Promise<void> {
