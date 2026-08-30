@@ -8,6 +8,7 @@ import { CatalogView } from './catalog-view';
 import { PLAY_ICON, watchlistIcon } from './icons';
 import { showToast } from './toast';
 import { t } from '../i18n';
+import { formatSourceDate } from '../utils/time';
 
 // The Movies section: browse (Continue rail + per-category rails + an "all
 // categories" drill-in) → per-category poster grid → a detail screen with
@@ -231,11 +232,11 @@ export class Movies extends CatalogView<VodCategory, VodItem> {
     const info = this.currentInfo;
     const saved = StorageService.getResume(a.id, 'vod', vod.streamId);
     const poster = info?.poster || vod.poster;
-    const year = info ? (info.releaseDate.match(/\d{4}/) || [''])[0] : '';
+    const releaseDate = info ? formatSourceDate(info.releaseDate) : '';
     const mins = info && info.durationSecs > 0
       ? t('catalog.minutes', { count: Math.floor(info.durationSecs / 60) })
       : '';
-    const meta = [year, mins, info?.genre, vod.rating].filter((s) => !!s);
+    const meta = [releaseDate, mins, info?.genre, vod.rating].filter((s) => !!s);
     const watchlisted = StorageService.isWatchlisted(a.id, 'vod', vod.streamId);
 
     const prevKey = this.nav.focused?.getAttribute('data-key') ?? null;

@@ -91,6 +91,7 @@ describe('M3uCatalog', () => {
 
     expect(container.querySelector('[data-key="resume"]')?.textContent).toContain('Resume');
     expect(container.querySelector('.m3u-detail-history')?.textContent).toContain('2:00 / 10:00');
+    expect(container.querySelector('.m3u-resume-date')?.textContent).toMatch(/^\d{2}\/\d{2}\/2026$/);
     expect(container.querySelector('.m3u-resume-fill')?.getAttribute('style')).toContain('20%');
     (container.querySelector('[data-key="resume"]') as HTMLElement).click();
     (container.querySelector('[data-key="play"]') as HTMLElement).click();

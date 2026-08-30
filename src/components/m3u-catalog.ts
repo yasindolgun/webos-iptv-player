@@ -24,7 +24,7 @@ import { WorkerListSearch } from '../workers/list-search-client';
 import { CONFIG } from '../config';
 import { createLogger } from '../utils/logger';
 import { runInFrameSlices } from '../utils/frame-slices';
-import { formatPosition } from '../utils/time';
+import { formatLocalDate, formatPosition } from '../utils/time';
 import { t } from '../i18n';
 
 const CARD_HEIGHT = 128;
@@ -768,7 +768,7 @@ export class M3uCatalog {
     const position = Math.max(0, saved.position || 0);
     const percent = duration ? Math.min(100, Math.round((position / duration) * 100)) : 0;
     const updatedAt = Number.isFinite(saved.updatedAt) && saved.updatedAt > 0
-      ? new Date(saved.updatedAt).toLocaleDateString()
+      ? formatLocalDate(new Date(saved.updatedAt))
       : '';
     return html`
       <span class="${className}">

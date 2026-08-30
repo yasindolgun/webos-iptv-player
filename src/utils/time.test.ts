@@ -4,6 +4,9 @@ import {
   parseXmltvOffsetMinutes,
   formatTime,
   formatLocalTime,
+  formatLocalDate,
+  formatUtcDate,
+  formatSourceDate,
   formatLocalDateTime,
   formatDayLabel,
   displayDayKey,
@@ -71,7 +74,7 @@ describe('feed time mode', () => {
   it('formatDayLabel and displayDayKey use the feed day', () => {
     setDisplayTz('feed', 60);
     expect(displayDayKey(d)).toBe('2024-03-10');
-    expect(formatDayLabel(d)).toEqual({ weekday: 'Sun', date: '03/10' });
+    expect(formatDayLabel(d)).toEqual({ weekday: 'Sun', date: '10/03/2024' });
   });
 
   it('startOfDisplayDay floors to feed midnight and addDisplayDays steps 24h', () => {
@@ -110,6 +113,21 @@ describe('formatTime', () => {
 });
 
 describe('local wall-clock formatting', () => {
+  it('always renders dates in day/month/year order', () => {
+    const date = new Date(2024, 0, 2, 9, 5, 7);
+
+    expect(formatLocalDate(date)).toBe('02/01/2024');
+    expect(formatLocalDateTime(date)).toBe('02/01/2024 09:05:07');
+    expect(formatUtcDate(new Date(Date.UTC(2024, 10, 3)))).toBe('03/11/2024');
+  });
+
+  it('normalizes source dates and preserves year-only metadata', () => {
+    expect(formatSourceDate('2020-05-01')).toBe('01/05/2020');
+    expect(formatSourceDate('1.5.2020')).toBe('01/05/2020');
+    expect(formatSourceDate('Released in 2020')).toBe('2020');
+    expect(formatSourceDate('')).toBe('');
+  });
+
   it('always renders local clock values in 24-hour form', () => {
     const morning = new Date(2024, 0, 2, 9, 5, 7);
     const evening = new Date(2024, 0, 2, 21, 45, 9);

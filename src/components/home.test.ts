@@ -144,4 +144,21 @@ describe('Home', () => {
     expect(status?.textContent).toContain('1/2 connections');
     expect(status?.textContent).toContain('Checked');
   });
+
+  it('shows account dates in day/month/year order', () => {
+    open({
+      accountName: 'Alpha',
+      accountStatus: {
+        state: 'active',
+        expiresAt: Date.UTC(2026, 0, 2) / 1000,
+        maxConnections: 2,
+        activeConnections: 1,
+        checkedAt: new Date(2026, 10, 3, 4, 5, 6).getTime(),
+      },
+    });
+
+    const status = container.querySelector('.home-account-status');
+    expect(status?.textContent).toContain('02/01/2026');
+    expect(status?.textContent).toContain('03/11/2026 04:05:06');
+  });
 });

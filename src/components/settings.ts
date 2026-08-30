@@ -31,7 +31,7 @@ import { ConfirmationPrompt } from './confirmation-prompt';
 import qrcode from 'qrcode-generator';
 import { createLogger } from '../utils/logger';
 import { localeOptions, t, tp, type LocalePreference, type TextMessageKey } from '../i18n';
-import { formatLocalDateTime } from '../utils/time';
+import { formatLocalDateTime, formatUtcDate } from '../utils/time';
 import {
   APPEARANCE_ICON,
   CAPTIONS_ICON,
@@ -363,13 +363,11 @@ function xtreamCard(pl: Partial<PlaylistEntry>) {
     </div>`;
 }
 
-/** "expires 2026-08-01" (UTC) or "never expires" for a unix-seconds expiry. */
+/** "expires 01/08/2026" (UTC) or "never expires" for a unix-seconds expiry. */
 function formatExpiry(expiresAt: number | null): string {
   if (expiresAt === null) return t('settings.neverExpires');
-  const d = new Date(expiresAt * 1000);
-  const p = (n: number) => String(n).padStart(2, '0');
   return t('settings.expires', {
-    date: `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`,
+    date: formatUtcDate(new Date(expiresAt * 1000)),
   });
 }
 

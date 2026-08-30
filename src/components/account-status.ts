@@ -1,6 +1,6 @@
 import type { XtreamAccountStatusSnapshot } from '../types';
 import { t } from '../i18n';
-import { formatLocalDateTime } from '../utils/time';
+import { formatLocalDateTime, formatUtcDate } from '../utils/time';
 
 export interface AccountStatusDisplay {
   summary: string;
@@ -23,7 +23,7 @@ export function accountStatusDisplay(
   const expiry = status.expiresAt === null
     ? t('settings.neverExpires')
     : t('settings.expires', {
-      date: new Intl.DateTimeFormat().format(new Date(status.expiresAt * 1000)),
+      date: formatUtcDate(new Date(status.expiresAt * 1000)),
     });
   const connections = status.maxConnections > 0
     ? t('settings.connections', {

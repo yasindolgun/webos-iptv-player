@@ -322,7 +322,7 @@ describe('Movies detail', () => {
 
     expect(container.querySelector('.detail-plot')?.textContent).toContain('A plot.');
     expect(container.textContent).toContain('Drama');
-    expect(container.textContent).toContain('2020');
+    expect(container.querySelector('.detail-meta')?.textContent).toContain('01/05/2020');
 
     const play = container.querySelector('[data-action="play"]') as HTMLElement;
     play.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));

@@ -190,9 +190,9 @@ test.describe('EPG time zone', () => {
     await expect(page.locator('#view-channels')).toBeVisible();
     await openEpg(page);
 
-    // Today in the feed zone is Sun 03/10 — highlighted and selected.
-    await expect(todayDay(page)).toHaveText(/Sun\s+03\/10/);
-    await expect(selectedDay(page)).toHaveText(/Sun\s+03\/10/);
+    // Today in the feed zone is Sun 10/03/2024 — highlighted and selected.
+    await expect(todayDay(page)).toHaveText(/Sun\s+10\/03\/2024/);
+    await expect(selectedDay(page)).toHaveText(/Sun\s+10\/03\/2024/);
     // The 23:41 program belongs to 03/09, so 03/10 starts at 00:30 — not 23:41.
     await expect(page.locator('#epg-programmes .epg-prog-time').first()).toHaveText('00:30');
     // A program ending exactly at midnight must not create an empty 03/11 column.
@@ -205,7 +205,7 @@ test.describe('EPG time zone', () => {
     await expect(page.locator('#view-channels')).toBeVisible();
 
     await openEpg(page);
-    await expect(selectedDay(page)).toHaveText(/Sat\s+03\/09/); // device-local today
+    await expect(selectedDay(page)).toHaveText(/Sat\s+09\/03\/2024/); // device-local today
 
     // Back to channels, open settings, switch to Feed, save.
     await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 461, bubbles: true })));
@@ -218,6 +218,6 @@ test.describe('EPG time zone', () => {
 
     await openEpg(page);
     // Selection must follow "today" into the new timezone, not stick on 03/09.
-    await expect(selectedDay(page)).toHaveText(/Sun\s+03\/10/);
+    await expect(selectedDay(page)).toHaveText(/Sun\s+10\/03\/2024/);
   });
 });

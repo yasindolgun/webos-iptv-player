@@ -1799,7 +1799,7 @@ describe('Settings Xtream section', () => {
     const status = container.querySelector('#xtream-entries .xtream-status')!;
     expect(status.classList.contains('ok')).toBe(true);
     expect(status.textContent).toContain('Active');
-    expect(status.textContent).toMatch(/expires \d{4}-\d{2}-\d{2}/);
+    expect(status.textContent).toContain('expires 06/08/2026');
     expect(status.textContent).toContain('1/2');
   });
 

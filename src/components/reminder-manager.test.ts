@@ -121,7 +121,7 @@ describe('ReminderManager', () => {
     expect(container.querySelector('.reminder-day-label strong')?.textContent)
       .toBe('Sun');
     expect(container.querySelector('.reminder-day-label span')?.textContent)
-      .toBe('01/04');
+      .toBe('04/01/1970');
     expect(container.querySelector('.reminder-manager-time')?.textContent?.trim())
       .toBe('01:05');
   });

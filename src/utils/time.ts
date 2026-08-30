@@ -29,6 +29,9 @@ function activeMode(): TzMode {
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
+const formatDateParts = (year: number, month: number, day: number): string =>
+  `${pad2(day)}/${pad2(month)}/${year}`;
+
 interface DisplayParts {
   year: number;
   month: number; // 0-based
@@ -89,21 +92,45 @@ export function formatLocalTime(date: Date): string {
   return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
-export function formatLocalDateTime(date: Date): string {
-  const day = new Intl.DateTimeFormat(undefined, {
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-  }).format(date);
-  return `${day} ${formatLocalTime(date)}:${pad2(date.getSeconds())}`;
+export function formatLocalDate(date: Date): string {
+  return formatDateParts(date.getFullYear(), date.getMonth() + 1, date.getDate());
 }
 
-// Weekday + MM/DD label for a day, in the active display timezone.
+export function formatUtcDate(date: Date): string {
+  return formatDateParts(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+}
+
+export function formatSourceDate(value: string): string {
+  const trimmed = value.trim();
+  const yearFirst = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:\s|$)/);
+  if (yearFirst) {
+    return formatDateParts(
+      parseInt(yearFirst[1], 10),
+      parseInt(yearFirst[2], 10),
+      parseInt(yearFirst[3], 10),
+    );
+  }
+  const dayFirst = trimmed.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:\s|$)/);
+  if (dayFirst) {
+    return formatDateParts(
+      parseInt(dayFirst[3], 10),
+      parseInt(dayFirst[2], 10),
+      parseInt(dayFirst[1], 10),
+    );
+  }
+  return (trimmed.match(/\d{4}/) || [''])[0];
+}
+
+export function formatLocalDateTime(date: Date): string {
+  return `${formatLocalDate(date)} ${formatLocalTime(date)}:${pad2(date.getSeconds())}`;
+}
+
+// Weekday + DD/MM/YYYY label for a day, in the active display timezone.
 export function formatDayLabel(date: Date): { weekday: string; date: string } {
   const p = displayParts(date);
   return {
     weekday: t(WEEKDAY_KEYS[p.weekday]),
-    date: t('date.monthDay', { month: pad2(p.month + 1), day: pad2(p.day) }),
+    date: formatDateParts(p.year, p.month + 1, p.day),
   };
 }
 
