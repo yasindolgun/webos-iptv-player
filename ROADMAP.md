@@ -3,7 +3,8 @@
 This roadmap lists planned product and engineering work. It builds on the
 existing vanilla TypeScript, native webOS playback, local-first storage, and
 bundled LAN service architecture. Items are ordered by expected user impact and
-implementation risk; they are not release promises or fixed calendar dates.
+implementation risk. Planned priorities are not release promises or fixed
+calendar dates.
 
 ## Current foundation
 
@@ -25,7 +26,9 @@ The app already provides the foundations that a large-catalog TV client needs:
 - remote, Magic Remote, accessibility, localization, and webOS 4 fallbacks
 - a production-path benchmark at 50,000 items under CPU throttling
 
-## Engineering audit update — 2026-08-28
+## Completed engineering milestones
+
+### Engineering audit — 2026-08-28
 
 The project-wide type, compatibility, unit, integration, and browser gates were
 reviewed together with the startup, worker, cache, and large-list lifecycles.
@@ -51,15 +54,12 @@ independent reliability gaps:
 - throttled worker-idle checks now allow scheduler jitter, and the isolated
   benchmark preview server shuts down cleanly after Windows runs
 
-The remaining high-impact gaps found by the audit feed Priority 1 and 2 below:
-
-- parsed channels still return to the page as one complete object graph before
-  merge, indexing, and persistence, so the worker boundary does not yet bound
-  peak memory for 100,000-200,000-item sources
-- derived indexes are still prepared on the page, and the 200,000-item target
-  has no staged 50,000/100,000/200,000 profile or device memory budget yet
-- real webOS 4 validation remains required; the Chromium 53 project is a
-  compatibility simulation, not an engine or memory emulator
+The audit identified complete result-graph delivery, page-built derived indexes,
+and missing staged device profiles as the highest-impact gaps. The first two
+were addressed by the 2026-08-30 milestones below. Full raw-record residency,
+chunked decoding, 50,000/100,000/200,000 memory budgets, and real webOS 4
+validation remain open; the Chromium 53 project is a compatibility simulation,
+not an engine or memory emulator.
 
 The production M3U benchmark now separates input delivery, worker parse,
 result clone/delivery, total round trip, and maximum page frame gap. It also
@@ -68,7 +68,7 @@ checks idle cleanup and the bounded timeout termination path. The first Chrome
 page costs substantially more than parsing it, making bounded result batches or
 worker-owned persistence the next ingestion target.
 
-## Large-source ingestion update — 2026-08-30
+### Bounded result delivery — 2026-08-30
 
 The first bounded-result milestone is complete. The M3U worker now returns
 compact playlist metadata first and retains parsed channels behind a private
@@ -91,9 +91,9 @@ This milestone bounds cross-thread result cloning, not total catalog residency.
 The worker still constructs the complete parsed graph before delivery and the
 page eventually hydrates every channel. Worker-owned IndexedDB persistence and
 single-writer backpressure are covered by the later update below; staged device
-memory budgets remain Priority 1 work.
+memory budgets remain Priority 2 work.
 
-## Derived-index update — 2026-08-30
+### Derived-index preparation — 2026-08-30
 
 Derived playlist indexes now run in the existing classic app worker during
 startup and refresh. The page sends only 500-record compact document batches,
@@ -116,7 +116,7 @@ the raw channel records into worker-owned storage. The later persistence update
 moves the cache writer and adds explicit backpressure without changing that raw
 channel residency boundary.
 
-## Playlist persistence update — 2026-08-30
+### Playlist persistence — 2026-08-30
 
 Playlist cache persistence now runs in the existing classic app worker after
 source merge and catch-up enrichment. The page sends at most 500 final channel
@@ -139,7 +139,9 @@ and the page still hydrates the combined channel graph for merge and playback.
 Chunked decoding, parse-to-persistence source staging, and the staged
 50,000/100,000/200,000 memory profiles remain the next ingestion work.
 
-## Priority 1: Large-source ingestion
+## Planned priorities
+
+### Priority 1: Large-source ingestion
 
 M3U bytes are transferred to the existing classic app worker for decoding and
 parsing, with download, parse, merge, and cache progress reported separately.
@@ -176,7 +178,7 @@ Acceptance criteria:
 - `npm run benchmark:check`, the Chromium 53 simulation, and a real webOS 4
   device remain release gates.
 
-## Priority 2: 200,000-item scale qualification
+### Priority 2: 200,000-item scale qualification
 
 Treat 200,000 items as a measured source-size target, not a promise that every
 full record remains resident in JavaScript memory.
@@ -206,7 +208,121 @@ Acceptance criteria:
 - Search and navigation remain responsive while background cache work runs.
 - The documented supported scale matches measured device results.
 
-## Priority 3: Parental controls
+### Priority 3: Cohesive 10-foot product experience
+
+Evolve the existing Home, catalog, player, and live-TV surfaces into one calm,
+content-first TV experience. This is a presentation and interaction pass over
+capabilities the app already owns, not a replacement navigation model or a new
+playback stack.
+
+Product principles:
+
+- Keep live TV fast: Live remains the first Home focus, channel changes stay
+  explicit, and the compact sidebar remains the primary zapping surface.
+- Keep media facts honest: show only data observed from playback, declared by a
+  manifest, parsed from a container, supplied by a provider, or derived locally;
+  never present those sources as equally authoritative.
+- Keep discovery local-first: build Home and catalog rails from Continue
+  Watching, Recently Watched, Watchlist, reminders, favorites, and EPG data
+  already available on the device. Do not require a recommendation backend.
+- Preserve the current remote grammar, spatial navigation, pointer activation,
+  and view transitions while improving visual hierarchy.
+
+Metadata provenance:
+
+- Treat actual media-element dimensions as observed playback data.
+- Label manifest bandwidth, frame rate, codecs, resolution, and dynamic range as
+  declared stream data rather than measured network throughput.
+- Treat MP4/MKV header results as parsed container data and omit fields the
+  header does not establish; missing HDR data must not be labelled as BT.709.
+- Treat catalog ratings, genres, runtimes, and capability labels as provider
+  claims unless corroborated locally. Provider claims must never upgrade a
+  stream badge shown by the player.
+- Keep EPG progress, live-edge distance, resume state, and completion state as
+  locally derived data with explicit time boundaries.
+
+Milestone 1 — Home content hub:
+
+- Replace the shortcut-dominant grid with a content-first layout while keeping
+  Live as the first and fastest action.
+- Lead with one context-aware Resume action, then bounded rails for Recently
+  Watched, Watchlist, and upcoming reminders when their data exists.
+- Keep Live, Movies, Series, and Guide entry points prominent; gracefully omit
+  Xtream-only sections for an M3U-only setup.
+- Retain account status, refresh state, and last-refresh time without competing
+  with the primary content action.
+- Add per-rail focus memory and stable keyed items. Hydrate only bounded visible
+  ranges and do not make Home fetch or retain a complete catalog.
+
+Milestone 2 — Three-layer player information architecture:
+
+- Keep the normal OSD lightweight: title, programme timing, progress or live
+  edge, next programme, and a small set of available stream facts. It should
+  auto-hide and remain readable over any video.
+- Keep audio, subtitles, subtitle sync, A/V resync, and channel navigation in
+  the existing quick-menu and sidebar flows. A visual redesign must not remap
+  OK, directional, transport, color, or channel keys.
+- Move detailed resolution, codecs, declared bitrate, buffer range, and active
+  pipeline into an explicit diagnostics panel. Distinguish observed, declared,
+  parsed, provider, and derived values in its labels.
+- Do not claim packet loss, server ping, codec profile/level, colorimetry, or
+  measured throughput unless the active pipeline supplies that exact value.
+- Preserve native decode and HDR/Dolby passthrough; diagnostics must not add a
+  second media pipeline or sustained high-frequency probing.
+
+Milestone 3 — VOD detail hierarchy:
+
+- Turn the current joined metadata line into restrained, structured labels for
+  values that are actually present, without inventing capabilities from titles
+  or poster artwork.
+- Use one context-aware primary Play or Resume action and a quieter Watchlist
+  action. Avoid parallel primary buttons for mutually exclusive start modes.
+- Extend the existing hero scrim language to detail backdrops where the provider
+  supplies a safe image URL, with a deterministic poster or theme fallback.
+- Keep cast and crew text usable when structured portraits or identifiers are
+  absent; external enrichment must remain optional rather than gate the detail
+  page.
+
+Milestone 4 — Live-list clarity:
+
+- Add a restrained EPG progress indicator to visible channel rows and update it
+  on a bounded cadence instead of re-rendering the complete list every second.
+- Mark catch-up support with the shared inline SVG icon and keep channel-health
+  state visually distinct from stream capability metadata.
+- Do not auto-tune every focused row. Any video preview remains the separate,
+  opt-in real-device feasibility work described under Priority 5.
+
+Design constraints:
+
+- Keep focused-card scaling around 1.03–1.04 and combine it with an outline or
+  subtle shadow that does not shift neighboring layout.
+- Size primary TV text for viewing distance and respect the existing user font
+  scale. Reserve very small text for nonessential diagnostics only.
+- Use shared inline SVG for functional icons and uncommon symbols; normal
+  localized Unicode text remains supported.
+- Use the selected theme accent instead of extracting dominant poster colors at
+  runtime, avoiding CORS, CPU, and inconsistent-palette costs.
+- Every translucent or blurred surface keeps an opaque legacy fallback in the
+  appropriate generated or hand-written legacy stylesheet.
+- Continue rendering through `html` and `morph()` with stable keys, delegated
+  listeners, bounded collections, and no untrusted raw markup.
+
+Acceptance criteria:
+
+- Home remains useful and fully navigable with M3U-only, Xtream-only, mixed,
+  empty, partially cached, and temporarily unavailable data.
+- Opening Home does not trigger a full-catalog fetch, unbounded DOM rail, or
+  visible focus jump while asynchronous sections arrive.
+- Player remote and Magic Remote behavior stays compatible with the documented
+  mapping across live, DVR, catch-up, and VOD playback.
+- No badge or diagnostics field implies stronger evidence than its data source
+  provides; unknown values are omitted instead of guessed.
+- Focus memory, readable geometry, modern fallback inertness, and webOS 4
+  fallback layout are covered in both Playwright projects.
+- The final OSD, Home, detail, and live-list layouts pass real-TV checks for
+  readability, animation cost, native-video contrast, and repeated navigation.
+
+### Priority 4: Parental controls
 
 Allow users to lock selected groups and channels without relying on unreliable
 provider naming conventions.
@@ -229,7 +345,7 @@ Acceptance criteria:
   stable channel and group identities where possible.
 - Remote, Magic Remote, and pointer entry all use the same prompt and policy.
 
-## Priority 4: Guide preview feasibility
+### Priority 5: Guide preview feasibility
 
 Prototype a small live preview in the EPG detail area, then keep it only if the
 native video plane behaves reliably across supported TVs.
@@ -268,6 +384,12 @@ Acceptance criteria:
   webOS keyboard is inadequate for remote-only source entry.
 - More granular category visibility tools for very large Xtream catalogs,
   building on existing channel and group customization.
+- Provider-backed trick-play thumbnails and intro markers only where the source
+  supplies a trustworthy frame index or timestamp metadata; do not extract
+  frames or analyze complete media streams on the TV.
+- Multi-view feasibility only after real-device decoder, native-video-plane,
+  teardown, thermal, and bandwidth tests. Do not promise simultaneous playback
+  as a baseline webOS 4+ capability.
 
 ## Explicit non-goals
 
@@ -280,5 +402,7 @@ Acceptance criteria:
   unbounded retries that can leave the user waiting on a dead stream.
 - Treating resume entries as permanent watch history; completion data has a
   separate lifecycle and storage purpose.
+- Adding app-level audio normalization that intercepts native decoding or
+  compromises HDR/Dolby passthrough and stable A/V sync.
 - Claiming a catalog scale that has not passed the benchmark and real-device
   memory gates.
