@@ -39,7 +39,7 @@ sample counts instead of comparing incompatible reports.
 |---|---|
 | Startup | Cached playlist, indexes, and EPG restoration through the Home → Live activation until Channels is visible; hover-to-next-frame latency is regression-gated |
 | Cold load | Uncached 50,000-channel M3U fetch, production parse, index build, and first useful render |
-| Raw parsing | Production M3U and XMLTV parsers plus the production playlist derived-index builder over generated 50,000-item data, and a provider-shaped guide parsed twice — whole feed vs. programmes pre-filtered to the 15% of channels a playlist keeps while retaining the lightweight XMLTV channel catalog for manual mapping, each bracketed by a forced GC so `parsers.xmltvCatalog` reports both duration and retained heap; `parsers.xmltvPipelineBuffered` and `parsers.xmltvPipeline` fetch the same gzip guide through the legacy buffered and production worker-streaming paths, with end-to-end timing, maximum animation-frame gap, and separate forced-GC CDP page-heap sampling; derived-index duration, production XMLTV duration, and frame gap are regression-gated |
+| Raw parsing | Production M3U and XMLTV parsers plus the production playlist derived-index builder over generated 50,000-item data, and a provider-shaped guide parsed twice — whole feed vs. programmes pre-filtered to the 15% of channels a playlist keeps while retaining the lightweight XMLTV channel catalog for manual mapping, each bracketed by a forced GC so `parsers.xmltvCatalog` reports both duration and retained heap; `parsers.m3uPipeline` uses the production transferable-buffer worker path and separates input delivery, parse, result clone/delivery, total round trip, maximum animation-frame gap, idle cleanup, and forced timeout termination; `parsers.xmltvPipelineBuffered` and `parsers.xmltvPipeline` fetch the same gzip guide through the legacy buffered and production worker-streaming paths, with end-to-end timing, maximum animation-frame gap, and separate forced-GC CDP page-heap sampling; derived-index duration, production M3U/XMLTV duration, and frame gap are regression-gated |
 | Channel List | Bounded DOM size and D-pad handler p50/p95/max |
 | Recently Watched | Full rendering at the 50-entry product maximum, alternating 88px Live and 100px Catch-up rows |
 | Player Sidebar | Open-to-visible latency, bounded DOM size, D-pad handler distribution, channel-search query handler/frame distributions, and a separately measured frame-paced reveal of pre-decoded logos |
@@ -97,7 +97,10 @@ compares repeated distributions and fails when any is more than 15% slower.
 Single-sample startup-ready and view-load timings remain informational because
 they are sensitive to IndexedDB and host scheduling. The isolated production
 derived-index benchmark is regression-gated because it captures deterministic
-main-thread work without instrumenting the shipped app. Startup hover-to-frame
+main-thread work without instrumenting the shipped app. The production M3U
+worker round trip and maximum frame gap are also gated; its sub-phases remain
+diagnostic because worker startup and cross-realm message scheduling vary.
+Startup hover-to-frame
 and EPG first-frame/Long-Task timings are also gated because they directly
 measure interaction responsiveness. Update the baseline only for an intentional
 performance change and review the JSON diff. Increment the report schema version

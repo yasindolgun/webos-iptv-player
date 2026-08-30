@@ -53,19 +53,20 @@ independent reliability gaps:
 
 The remaining high-impact gaps found by the audit feed Priority 1 and 2 below:
 
-- the M3U benchmark times the synchronous parser and overall cold readiness,
-  but does not yet isolate the production worker round trip, structured-clone
-  result cost, or maximum page frame gap
 - parsed channels still return to the page as one complete object graph before
   merge, indexing, and persistence, so the worker boundary does not yet bound
   peak memory for 100,000-200,000-item sources
 - derived indexes are still prepared on the page, and the 200,000-item target
   has no staged 50,000/100,000/200,000 profile or device memory budget yet
-- the desktop benchmark baseline was recorded with Chrome 149 while the current
-  Playwright runtime is Chrome 151; regenerate it deliberately before using
-  comparative regression results from the new engine
 - real webOS 4 validation remains required; the Chromium 53 project is a
   compatibility simulation, not an engine or memory emulator
+
+The production M3U benchmark now separates input delivery, worker parse,
+result clone/delivery, total round trip, and maximum page frame gap. It also
+checks idle cleanup and the bounded timeout termination path. The first Chrome
+151 baseline confirms that cloning the complete parsed object graph back to the
+page costs substantially more than parsing it, making bounded result batches or
+worker-owned persistence the next ingestion target.
 
 ## Priority 1: Large-source ingestion
 
@@ -77,9 +78,9 @@ Move the remaining expensive playlist work off the UI thread while preserving
 the tolerant production parser and current cache format.
 
 - Run derived-index preparation in the existing classic app worker.
-- Add a production-path M3U pipeline benchmark that records worker round-trip
-  duration, maximum page frame gap, input transfer, result-clone cost, and the
-  failure-timeout path separately from the synchronous raw-parser benchmark.
+- Keep the production-path M3U pipeline benchmark regression-gating worker
+  round-trip duration and maximum page frame gap while retaining input transfer,
+  parse, result clone/delivery, idle cleanup, and failure-timeout diagnostics.
 - Evaluate chunked decoding where the webOS 4 API surface permits it; retain a
   bounded buffered fallback for legacy engines and providers that cannot stream.
 - Avoid cloning multiple full playlist copies or a complete parsed object tree

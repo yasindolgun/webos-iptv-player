@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   assertGroupBenchmarkScale,
   assertColdLoadBenchmark,
+  assertM3UPipelineBenchmark,
   assertM3USearchBenchmark,
   assertPointerBenchmark,
   assertStartupHoverBenchmark,
@@ -20,6 +21,7 @@ import {
   installM3USearchFixture,
   installUniqueGroupFixture,
   inspectPointerBenchmark,
+  measureM3UPipelineBenchmark,
   measureStartupHoverBenchmark,
   preparePointerBenchmark,
   rebuildBenchmarkDatabase,
@@ -113,7 +115,17 @@ test('records 50,000-item application benchmarks', async ({ page, browserName })
     await page.addScriptTag({
       content: await readFile('test-output/benchmarks/parser-bundle.js', 'utf8'),
     });
+    const m3uPipeline = await measureM3UPipelineBenchmark({
+      text: coldPlaylist,
+      timeoutMs: 1,
+    }, {
+      evaluate: (fn, arg) => page.evaluate(fn as never, arg),
+      delay: (milliseconds) =>
+        new Promise<void>(resolve => setTimeout(resolve, milliseconds)),
+    });
+    assertM3UPipelineBenchmark(m3uPipeline, SCALE);
     const parsers = await page.evaluate(runRawParserBenchmarks, { scale: SCALE });
+    parsers.m3uPipeline = m3uPipeline;
     await cdp.send('HeapProfiler.collectGarbage');
     const xmltvPipelineOptions = {
       url: XMLTV_PIPELINE_URL,
@@ -209,7 +221,7 @@ test('records 50,000-item application benchmarks', async ({ page, browserName })
     assertColdLoadBenchmark(coldLoad, SCALE);
     suites.coldLoad = coldLoad;
     const report = {
-      version: 1,
+      version: 2,
       target: 'desktop-chromium',
       generatedAt: new Date().toISOString(),
       scale: SCALE,

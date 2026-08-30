@@ -74,6 +74,17 @@ export interface ListSearchQueryRequest {
 export interface M3UParseWorkerRequest {
   buffer: ArrayBuffer;
   sourceUrl: string;
+  sentAtEpochMs: number;
+}
+
+export interface M3UParseWorkerResponse {
+  data: ParsedPlaylist;
+  metrics: {
+    inputBytes: number;
+    inputTransferMs: number;
+    parseMs: number;
+    completedAtEpochMs: number;
+  };
 }
 
 export interface ScopedSearchReleaseRequest {
@@ -105,7 +116,7 @@ export interface MappingSearchQueryRequest {
 export interface AppWorkerTasks {
   'm3u.parse': {
     request: M3UParseWorkerRequest;
-    response: ParsedPlaylist;
+    response: M3UParseWorkerResponse;
   };
   'xmltv.load': {
     request: XMLTVWorkerRequest;

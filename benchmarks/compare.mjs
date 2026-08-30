@@ -29,6 +29,8 @@ if (!Number.isFinite(absoluteToleranceMs) || absoluteToleranceMs < 0) {
 
 const metricPaths = [
   'startup.hoverFrameMs',
+  'parsers.m3uPipeline.roundTripMs',
+  'parsers.m3uPipeline.maxFrameGapMs',
   'parsers.derivedIndexes.durationMs',
   'channelList.navigation.p95',
   'channelList.navigation.frame.p95',

@@ -2,7 +2,11 @@ import { parseM3U } from '../src/parsers/m3u-parser';
 import { parseXMLTVWithStats, XMLTVStreamParser } from '../src/parsers/xmltv-parser';
 import { fetchAndParseXMLTV } from '../src/parsers/xmltv-loader';
 import { fetchMaybeGzipText } from '../src/utils/fetch-helper';
-import { isAppWorkerRunning } from '../src/workers/app-worker-client';
+import {
+  isAppWorkerRunning,
+  terminateAppWorker,
+} from '../src/workers/app-worker-client';
+import { runM3UParseWorker } from '../src/workers/m3u-parser-client';
 import { PlaylistService } from '../src/services/playlist-service';
 
 interface BenchmarkParseResult {
@@ -23,6 +27,11 @@ interface BenchmarkXMLTVOptions {
 
 interface BenchmarkParserApi {
   parseM3U(text: string): BenchmarkParseResult;
+  profileM3UPipeline(buffer: ArrayBuffer): Promise<BenchmarkM3UPipelineResult>;
+  profileM3UTimeout(
+    buffer: ArrayBuffer,
+    timeoutMs: number,
+  ): Promise<BenchmarkM3UTimeoutResult>;
   profileDerivedIndexes(text: string): BenchmarkDerivedIndexResult;
   parseXMLTV(text: string, options?: BenchmarkXMLTVOptions): BenchmarkParseResult;
   loadXMLTV(url: string, options?: BenchmarkXMLTVOptions): Promise<BenchmarkXMLTVLoadResult>;
@@ -38,6 +47,23 @@ interface BenchmarkDerivedIndexResult {
   durationMs: number;
   channels: number;
   groups: number;
+}
+
+interface BenchmarkM3UPipelineResult {
+  inputBytes: number;
+  inputTransferMs: number;
+  parseMs: number;
+  resultCloneDeliveryMs: number;
+  roundTripMs: number;
+  channels: number;
+  groups: number;
+}
+
+interface BenchmarkM3UTimeoutResult {
+  timeoutMs: number;
+  elapsedMs: number;
+  timedOut: boolean;
+  workerTerminated: boolean;
 }
 
 interface BenchmarkXMLTVLoadResult extends BenchmarkParseResult {
@@ -64,6 +90,37 @@ window.__IPTV_BENCHMARK__ = {
     return {
       channels: parsed.channels.length,
       groups: parsed.groups.length,
+    };
+  },
+  async profileM3UPipeline(buffer) {
+    terminateAppWorker('benchmark-m3u-cold-start');
+    const result = await runM3UParseWorker(buffer, 'http://host/list.m3u');
+    return {
+      inputBytes: result.metrics.inputBytes,
+      inputTransferMs: result.metrics.inputTransferMs,
+      parseMs: result.metrics.parseMs,
+      resultCloneDeliveryMs: result.metrics.resultCloneDeliveryMs,
+      roundTripMs: result.metrics.roundTripMs,
+      channels: result.data.channels.length,
+      groups: result.data.groups.length,
+    };
+  },
+  async profileM3UTimeout(buffer, timeoutMs) {
+    terminateAppWorker('benchmark-m3u-timeout-start');
+    const started = performance.now();
+    let timedOut = false;
+    try {
+      await runM3UParseWorker(buffer, 'http://host/list.m3u', timeoutMs);
+    } catch (error) {
+      timedOut = error instanceof Error
+        && error.message === 'Worker task timed out: m3u.parse';
+      if (!timedOut) throw error;
+    }
+    return {
+      timeoutMs,
+      elapsedMs: performance.now() - started,
+      timedOut,
+      workerTerminated: !isAppWorkerRunning(),
     };
   },
   profileDerivedIndexes(text) {

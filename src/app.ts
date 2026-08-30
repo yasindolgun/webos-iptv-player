@@ -420,6 +420,12 @@ class App {
               finish(false, 'stopped after app hidden');
               return;
             }
+            if (resp && typeof resp === 'object' &&
+                (resp as { running?: unknown }).running === false) {
+              log.warn('Bundled service reported it is not running:', JSON.stringify(resp));
+              finish(false, 'service reported not running');
+              return;
+            }
             if (resp && typeof resp === 'object' && 'port' in resp) {
               const p = (resp as { port?: unknown }).port;
               if (typeof p === 'number') setServicePort(p);

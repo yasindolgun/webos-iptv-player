@@ -27,7 +27,22 @@ export default defineConfig({
     minWorkers: 1,
     // Keep coverage output under the shared test-output/ folder.
     coverage: {
+      provider: 'v8',
       reportsDirectory: 'test-output/coverage',
+      reporter: ['text-summary', 'json-summary'],
+      include: ['src/**/*.ts', 'bundled-service/src/**/*.ts'],
+      exclude: [
+        'src/**/*.test.ts',
+        'src/test/**',
+        'src/globals.d.ts',
+        'bundled-service/src/**/*.test.ts',
+      ],
+      thresholds: {
+        statements: 80,
+        branches: 72,
+        functions: 82,
+        lines: 83,
+      },
     },
   },
 });

@@ -40,8 +40,8 @@ jobs:
       - name: Lint and compatibility gate
         run: npm run lint
 
-      - name: Unit tests
-        run: npx vitest run
+      - name: Unit tests and coverage
+        run: npm run test:coverage
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium

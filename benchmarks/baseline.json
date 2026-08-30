@@ -1,18 +1,18 @@
 {
-  "version": 1,
+  "version": 2,
   "target": "desktop-chromium",
-  "generatedAt": "2026-08-15T09:27:12.129Z",
+  "generatedAt": "2026-08-29T21:25:58.295Z",
   "scale": 50000,
   "keySamples": 30,
   "querySamples": 5,
   "cpuRate": 4,
-  "browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.55 Safari/537.36",
-  "fixtureSetupMs": 2089,
+  "browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.34 Safari/537.36",
+  "fixtureSetupMs": 12472,
   "suites": {
     "startup": {
-      "readyMs": 942,
+      "readyMs": 13331,
       "rendered": 36,
-      "hoverFrameMs": 1.9,
+      "hoverFrameMs": 4.1,
       "focusedSynchronously": true,
       "focusedAtFrame": true
     },
@@ -20,17 +20,17 @@
       "rendered": 36,
       "totalSize": "4_400_000px",
       "navigation": {
-        "p50": 13.9,
-        "p95": 15.8,
-        "max": 24.2,
-        "mean": 12.4,
+        "p50": 59,
+        "p95": 85.9,
+        "max": 167.2,
+        "mean": 60,
         "frame": {
-          "p50": 14.6,
-          "p95": 19.5,
-          "max": 24.3,
-          "mean": 14.8
+          "p50": 64,
+          "p95": 94.1,
+          "max": 181.4,
+          "mean": 64.7
         },
-        "framesOver50Ms": 0
+        "framesOver50Ms": 21
       }
     },
     "recentlyWatched": {
@@ -38,35 +38,35 @@
       "liveRendered": 25,
       "catchupRendered": 25,
       "navigation": {
-        "p50": 21,
-        "p95": 24.9,
-        "max": 26.2,
-        "mean": 21.3,
+        "p50": 10,
+        "p95": 21.9,
+        "max": 97.8,
+        "mean": 13.5,
         "frame": {
-          "p50": 21.4,
-          "p95": 25.1,
-          "max": 26.3,
-          "mean": 21.6
+          "p50": 12.7,
+          "p95": 25,
+          "max": 104.9,
+          "mean": 17.3
         },
-        "framesOver50Ms": 0
+        "framesOver50Ms": 1
       }
     },
     "sidebar": {
-      "openMs": 26.7,
+      "openMs": 261.9,
       "rendered": 34,
       "totalSize": "4_400_000px",
       "navigation": {
-        "p50": 7.7,
-        "p95": 11.7,
-        "max": 11.8,
-        "mean": 6.5,
+        "p50": 47.5,
+        "p95": 74.3,
+        "max": 102,
+        "mean": 42.7,
         "frame": {
-          "p50": 13.8,
-          "p95": 15.6,
-          "max": 16,
-          "mean": 13.8
+          "p50": 53.7,
+          "p95": 86.1,
+          "max": 115,
+          "mean": 55.9
         },
-        "framesOver50Ms": 0
+        "framesOver50Ms": 18
       },
       "logoReveal": {
         "initialSpacers": 12,
@@ -75,133 +75,133 @@
         "revealed": 11,
         "maxPerFrame": 1,
         "frame": {
-          "p50": 16.6,
-          "p95": 19.8,
-          "max": 35.3,
-          "mean": 16.8
+          "p50": 45.6,
+          "p95": 120.6,
+          "max": 160,
+          "mean": 54.9
         }
       },
       "search": {
         "queries": {
           "empty": {
             "handler": {
-              "p50": 9,
-              "p95": 11.4,
-              "max": 11.4,
-              "mean": 9.6
+              "p50": 57.3,
+              "p95": 88.7,
+              "max": 88.7,
+              "mean": 63.3
             },
             "frame": {
-              "p50": 11.1,
-              "p95": 12.6,
-              "max": 12.6,
-              "mean": 11
+              "p50": 65.8,
+              "p95": 104,
+              "max": 104,
+              "mean": 76.5
             }
           },
           "broad": {
             "handler": {
-              "p50": 4.7,
-              "p95": 5,
-              "max": 5,
-              "mean": 4.7
+              "p50": 27.2,
+              "p95": 38.3,
+              "max": 38.3,
+              "mean": 28.2
             },
             "frame": {
-              "p50": 45.1,
-              "p95": 55.6,
-              "max": 55.6,
-              "mean": 47.3
+              "p50": 215.9,
+              "p95": 222.6,
+              "max": 222.6,
+              "mean": 200.8
             }
           },
           "sparse": {
             "handler": {
-              "p50": 4.7,
-              "p95": 5.3,
-              "max": 5.3,
-              "mean": 4.8
+              "p50": 28.3,
+              "p95": 42.6,
+              "max": 42.6,
+              "mean": 32.6
             },
             "frame": {
-              "p50": 24.2,
-              "p95": 26.4,
-              "max": 26.4,
-              "mean": 24.5
+              "p50": 89.6,
+              "p95": 118.3,
+              "max": 118.3,
+              "mean": 92.2
             }
           },
           "noMatch": {
             "handler": {
-              "p50": 4.8,
-              "p95": 5.8,
-              "max": 5.8,
-              "mean": 4.9
+              "p50": 36.9,
+              "p95": 53.2,
+              "max": 53.2,
+              "mean": 36.9
             },
             "frame": {
-              "p50": 40.6,
-              "p95": 40.9,
-              "max": 40.9,
-              "mean": 40.6
+              "p50": 144.6,
+              "p95": 161.8,
+              "max": 161.8,
+              "mean": 147.9
             }
           }
         }
       }
     },
     "epg": {
-      "openMs": 21.7,
-      "firstFrameMs": 69.1,
-      "maxLongTaskMs": 75,
+      "openMs": 119.7,
+      "firstFrameMs": 387.9,
+      "maxLongTaskMs": 581,
       "mapping": {
         "queries": {
           "empty": {
             "handler": {
-              "p50": 0.1,
-              "p95": 0.4,
-              "max": 0.4,
-              "mean": 0.2
+              "p50": 133.1,
+              "p95": 148.5,
+              "max": 148.5,
+              "mean": 126.1
             },
             "frame": {
-              "p50": 41.9,
-              "p95": 52.4,
-              "max": 52.4,
-              "mean": 42.1
+              "p50": 429.3,
+              "p95": 513.5,
+              "max": 513.5,
+              "mean": 436.5
             }
           },
           "broad": {
             "handler": {
-              "p50": 0,
-              "p95": 0.1,
-              "max": 0.1,
-              "mean": 0
+              "p50": 114.9,
+              "p95": 128.6,
+              "max": 128.6,
+              "mean": 112.3
             },
             "frame": {
-              "p50": 37.3,
-              "p95": 55.8,
-              "max": 55.8,
-              "mean": 40.8
+              "p50": 341.1,
+              "p95": 381.7,
+              "max": 381.7,
+              "mean": 348.3
             }
           },
           "sparse": {
             "handler": {
-              "p50": 0,
-              "p95": 0.3,
-              "max": 0.3,
-              "mean": 0.1
+              "p50": 126,
+              "p95": 147,
+              "max": 147,
+              "mean": 132.7
             },
             "frame": {
-              "p50": 34.5,
-              "p95": 40,
-              "max": 40,
-              "mean": 33.9
+              "p50": 402.5,
+              "p95": 407.5,
+              "max": 407.5,
+              "mean": 381.8
             }
           },
           "noMatch": {
             "handler": {
-              "p50": 0,
-              "p95": 0.1,
-              "max": 0.1,
-              "mean": 0
+              "p50": 107.1,
+              "p95": 137.2,
+              "max": 137.2,
+              "mean": 116.9
             },
             "frame": {
-              "p50": 35.4,
-              "p95": 36.5,
-              "max": 36.5,
-              "mean": 35.2
+              "p50": 317.4,
+              "p95": 353.4,
+              "max": 353.4,
+              "mean": 318.6
             }
           }
         }
@@ -210,85 +210,85 @@
         "queries": {
           "empty": {
             "handler": {
-              "p50": 11.6,
-              "p95": 12.1,
-              "max": 12.1,
-              "mean": 11.7
+              "p50": 57.2,
+              "p95": 67.9,
+              "max": 67.9,
+              "mean": 55.5
             },
             "frame": {
-              "p50": 12.4,
-              "p95": 15.7,
-              "max": 15.7,
-              "mean": 13.3
+              "p50": 65.3,
+              "p95": 79,
+              "max": 79,
+              "mean": 63.9
             }
           },
           "broad": {
             "handler": {
-              "p50": 2.4,
-              "p95": 4.2,
-              "max": 4.2,
-              "mean": 2.6
+              "p50": 14.6,
+              "p95": 33.6,
+              "max": 33.6,
+              "mean": 17.3
             },
             "frame": {
-              "p50": 39.4,
-              "p95": 41.6,
-              "max": 41.6,
-              "mean": 39
+              "p50": 138.4,
+              "p95": 278,
+              "max": 278,
+              "mean": 173
             }
           },
           "sparse": {
             "handler": {
-              "p50": 1.1,
-              "p95": 2.7,
-              "max": 2.7,
-              "mean": 1.4
+              "p50": 12.9,
+              "p95": 28.9,
+              "max": 28.9,
+              "mean": 15.8
             },
             "frame": {
-              "p50": 10.7,
-              "p95": 11.1,
-              "max": 11.1,
-              "mean": 10.3
+              "p50": 47,
+              "p95": 88.2,
+              "max": 88.2,
+              "mean": 53.5
             }
           },
           "noMatch": {
             "handler": {
-              "p50": 1.7,
-              "p95": 2.9,
-              "max": 2.9,
-              "mean": 2
+              "p50": 20.2,
+              "p95": 28.6,
+              "max": 28.6,
+              "mean": 21.7
             },
             "frame": {
-              "p50": 21.3,
-              "p95": 23.4,
-              "max": 23.4,
-              "mean": 19.7
+              "p50": 48.6,
+              "p95": 51.1,
+              "max": 51.1,
+              "mean": 47.7
             }
           }
         }
       },
       "channelList": {
-        "p50": 2.6,
-        "p95": 3.5,
-        "max": 3.8,
-        "mean": 2.6,
+        "p50": 15.7,
+        "p95": 26.8,
+        "max": 29.2,
+        "mean": 15.4,
         "frame": {
-          "p50": 15.1,
-          "p95": 16.1,
-          "max": 16.4,
-          "mean": 15.2
+          "p50": 25.7,
+          "p95": 45.4,
+          "max": 51.2,
+          "mean": 26.8
         },
-        "framesOver50Ms": 0
+        "framesOver50Ms": 1
       },
       "programList": {
-        "p50": 0.1,
-        "p95": 1.8,
-        "max": 1.8,
-        "mean": 0.3,
+        "p50": 4.3,
+        "p95": 10.1,
+        "max": 19.1,
+        "mean": 5.2,
         "frame": {
-          "p50": 15.7,
-          "p95": 17.5,
-          "max": 18.1,
-          "mean": 15.8
+          "p50": 17.6,
+          "p95": 35.3,
+          "max": 36.5,
+          "mean": 19.7
         },
         "framesOver50Ms": 0
       },
@@ -298,58 +298,58 @@
       "programTotalSize": "4_000_000px"
     },
     "movies": {
-      "openMs": 96.1,
-      "gridLoadMs": 93,
+      "openMs": 433.8,
+      "gridLoadMs": 634.4,
       "categoryRendered": 14,
       "categoryTotalSize": "15_998_100px",
       "rendered": 49,
       "totalSize": "2_821_480px",
       "navigation": {
-        "p50": 6.4,
-        "p95": 7.9,
-        "max": 8.1,
-        "mean": 6.2,
+        "p50": 23.9,
+        "p95": 41.1,
+        "max": 42.3,
+        "mean": 26.2,
         "frame": {
-          "p50": 13.6,
-          "p95": 14.6,
-          "max": 15.1,
-          "mean": 13.2
+          "p50": 31.4,
+          "p95": 49.3,
+          "max": 52.8,
+          "mean": 30.6
         },
-        "framesOver50Ms": 0
+        "framesOver50Ms": 1
       }
     },
     "series": {
-      "openMs": 82.5,
-      "gridLoadMs": 87.7,
-      "detailLoadMs": 166.9,
+      "openMs": 330.5,
+      "gridLoadMs": 388,
+      "detailLoadMs": 560.6,
       "rendered": 49,
       "totalSize": "2_821_480px",
       "navigation": {
-        "p50": 6,
-        "p95": 6.6,
-        "max": 7.1,
-        "mean": 5.8,
+        "p50": 21.1,
+        "p95": 46.7,
+        "max": 53.8,
+        "mean": 25,
         "frame": {
-          "p50": 13.6,
-          "p95": 15.2,
-          "max": 15.6,
-          "mean": 13.4
+          "p50": 24.4,
+          "p95": 53.9,
+          "max": 62.2,
+          "mean": 29.3
         },
-        "framesOver50Ms": 0
+        "framesOver50Ms": 3
       },
       "episodes": {
         "rendered": 13,
         "totalSize": "6_900_000px",
         "navigation": {
-          "p50": 4.7,
-          "p95": 5.4,
-          "max": 5.4,
-          "mean": 4.3,
+          "p50": 16.8,
+          "p95": 29.6,
+          "max": 36.5,
+          "mean": 18.5,
           "frame": {
-            "p50": 14.4,
-            "p95": 15.3,
-            "max": 16.2,
-            "mean": 14.3
+            "p50": 20.4,
+            "p95": 33.9,
+            "max": 41,
+            "mean": 20.8
           },
           "framesOver50Ms": 0
         }
@@ -357,98 +357,98 @@
     },
     "search": {
       "xtream": {
-        "initialOpenMs": 7.3,
+        "initialOpenMs": 22.7,
         "open": {
-          "p50": 3.5,
-          "p95": 3.9,
-          "max": 3.9,
-          "mean": 3.4
+          "p50": 15.6,
+          "p95": 19.1,
+          "max": 19.1,
+          "mean": 16.1
         },
         "queries": {
           "channelsBroad": {
-            "p50": 31.5,
-            "p95": 48.2,
-            "max": 48.2,
-            "mean": 34.8
+            "p50": 73.9,
+            "p95": 92.6,
+            "max": 92.6,
+            "mean": 78.7
           },
           "channelsSparse": {
-            "p50": 48.5,
-            "p95": 48.9,
-            "max": 48.9,
-            "mean": 48.5
+            "p50": 71.8,
+            "p95": 88.6,
+            "max": 88.6,
+            "mean": 77
           },
           "moviesBroad": {
-            "p50": 81.2,
-            "p95": 82.2,
-            "max": 82.2,
-            "mean": 78.9
+            "p50": 165,
+            "p95": 204.7,
+            "max": 204.7,
+            "mean": 175.5
           },
           "moviesSparse": {
-            "p50": 48.7,
-            "p95": 49.2,
-            "max": 49.2,
-            "mean": 47.7
+            "p50": 85.1,
+            "p95": 98.7,
+            "max": 98.7,
+            "mean": 86.8
           },
           "programsBroad": {
-            "p50": 48.5,
-            "p95": 48.9,
-            "max": 48.9,
-            "mean": 48.5
+            "p50": 107.8,
+            "p95": 143.7,
+            "max": 143.7,
+            "mean": 115.5
           },
           "programsSparse": {
-            "p50": 48.1,
-            "p95": 48.4,
-            "max": 48.4,
-            "mean": 48.1
+            "p50": 106.3,
+            "p95": 112.2,
+            "max": 112.2,
+            "mean": 104.2
           },
           "noMatch": {
-            "p50": 65.3,
-            "p95": 65.8,
-            "max": 65.8,
-            "mean": 65.4
+            "p50": 143.6,
+            "p95": 161.4,
+            "max": 161.4,
+            "mean": 144.8
           }
         },
         "renderedPrograms": 16,
         "programTotalSize": "21_800px"
       },
       "m3u": {
-        "initialOpenMs": 10.1,
+        "initialOpenMs": 21.7,
         "open": {
-          "p50": 3.3,
-          "p95": 3.9,
-          "max": 3.9,
-          "mean": 3.2
+          "p50": 12.6,
+          "p95": 15.9,
+          "max": 15.9,
+          "mean": 12.6
         },
         "queries": {
           "channelsBroad": {
-            "p50": 30.6,
-            "p95": 43.6,
-            "max": 43.6,
-            "mean": 33.1
+            "p50": 62.2,
+            "p95": 94,
+            "max": 94,
+            "mean": 71.6
           },
           "channelsSparse": {
-            "p50": 48.6,
-            "p95": 80.7,
-            "max": 80.7,
-            "mean": 54.6
+            "p50": 70.4,
+            "p95": 88.7,
+            "max": 88.7,
+            "mean": 72.3
           },
           "programsBroad": {
-            "p50": 48.2,
-            "p95": 49.2,
-            "max": 49.2,
-            "mean": 48.4
+            "p50": 78.9,
+            "p95": 85.9,
+            "max": 85.9,
+            "mean": 79.2
           },
           "programsSparse": {
-            "p50": 48.5,
-            "p95": 48.8,
-            "max": 48.8,
-            "mean": 48.4
+            "p50": 66.2,
+            "p95": 70.5,
+            "max": 70.5,
+            "mean": 66.7
           },
           "noMatch": {
-            "p50": 65.5,
-            "p95": 66,
-            "max": 66,
-            "mean": 65.5
+            "p50": 114.7,
+            "p95": 133.9,
+            "max": 133.9,
+            "mean": 110.7
           }
         },
         "renderedChannels": 0,
@@ -466,10 +466,10 @@
         "focusedConnected": true
       },
       "groupSwitching": {
-        "p50": 33.5,
-        "p95": 33.8,
-        "max": 33.8,
-        "mean": 33.4,
+        "p50": 113.8,
+        "p95": 169.6,
+        "max": 169.6,
+        "mean": 110.5,
         "states": [
           {
             "group": "builtin:all",
@@ -566,65 +566,83 @@
         ],
         "activeGroup": true,
         "channels": 500,
-        "rendered": 36,
+        "rendered": 12,
         "documentAlive": true
       }
     },
     "stress": {
       "watchdogIntervalMs": 100,
-      "heartbeats": 90,
-      "maxEventLoopGapMs": 301,
+      "heartbeats": 219,
+      "maxEventLoopGapMs": 829.9,
       "freezeThresholdMs": 5000,
       "documentAlive": true
     },
     "longTasks": {
-      "count": 8,
-      "totalMs": 903,
-      "maxMs": 198
+      "count": 72,
+      "totalMs": 9527,
+      "maxMs": 622
     },
-    "nodes": 1642,
+    "nodes": 1721,
     "parsers": {
       "m3u": {
-        "durationMs": 99.1,
+        "durationMs": 1030.7,
         "bytes": 4111677,
         "channels": 50000,
         "groups": 100
       },
       "derivedIndexes": {
-        "durationMs": 230.9,
+        "durationMs": 635,
         "channels": 50000,
         "groups": 100
       },
       "xmltv": {
-        "durationMs": 297.4,
+        "durationMs": 1475.9,
         "bytes": 7577851,
         "channels": 1,
         "programmes": 50000
       },
+      "m3uPipeline": {
+        "inputBytes": 4111677,
+        "inputTransferMs": 74,
+        "parseMs": 180.6,
+        "resultCloneDeliveryMs": 497,
+        "unattributedMs": 0.3,
+        "roundTripMs": 751.9,
+        "maxFrameGapMs": 33.4,
+        "channels": 50000,
+        "groups": 100,
+        "workerTerminatedAfterIdle": true,
+        "timeout": {
+          "timeoutMs": 1,
+          "elapsedMs": 10.2,
+          "timedOut": true,
+          "workerTerminated": true
+        }
+      },
       "xmltvPipelineBuffered": {
-        "durationMs": 1010.4,
-        "maxFrameGapMs": 349,
+        "durationMs": 3184.9,
+        "maxFrameGapMs": 16.7,
         "channels": 300,
         "catalogChannels": 2000,
         "programmes": 7500,
         "programmesSeen": 50000,
         "memoryScope": "page heap; includes buffered parse and retained result",
         "transientParseHeapIncluded": true,
-        "compressedBytes": 458703,
+        "compressedBytes": 458585,
         "uncompressedBytes": 18057979,
-        "samples": 26,
-        "startMemoryMiB": 61.04,
-        "peakMemoryMiB": 98.75,
-        "averageMemoryMiB": 81.37,
-        "peakMemoryDeltaMiB": 37.71,
-        "averageMemoryDeltaMiB": 20.33,
-        "peakV8HeapMiB": 62.05,
-        "peakEmbedderHeapMiB": 2.31,
-        "peakBackingStorageMiB": 36.97
+        "samples": 32,
+        "startMemoryMiB": 60.28,
+        "peakMemoryMiB": 82.53,
+        "averageMemoryMiB": 79.85,
+        "peakMemoryDeltaMiB": 22.25,
+        "averageMemoryDeltaMiB": 19.57,
+        "peakV8HeapMiB": 59.69,
+        "peakEmbedderHeapMiB": 2.44,
+        "peakBackingStorageMiB": 20.46
       },
       "xmltvPipeline": {
-        "durationMs": 209.2,
-        "maxFrameGapMs": 17.3,
+        "durationMs": 718.6,
+        "maxFrameGapMs": 33.4,
         "channels": 300,
         "catalogChannels": 2000,
         "programmes": 7500,
@@ -632,40 +650,40 @@
         "memoryScope": "page heap; excludes worker transient heap, includes cloned retained result",
         "transientParseHeapIncluded": false,
         "workerTerminatedAfterIdle": true,
-        "compressedBytes": 458703,
+        "compressedBytes": 458585,
         "uncompressedBytes": 18057979,
         "samples": 5,
-        "startMemoryMiB": 61.08,
-        "peakMemoryMiB": 64.3,
-        "averageMemoryMiB": 62.38,
-        "peakMemoryDeltaMiB": 3.22,
-        "averageMemoryDeltaMiB": 1.3,
-        "peakV8HeapMiB": 60.63,
-        "peakEmbedderHeapMiB": 1.88,
-        "peakBackingStorageMiB": 1.79
+        "startMemoryMiB": 60.32,
+        "peakMemoryMiB": 64.98,
+        "averageMemoryMiB": 61.91,
+        "peakMemoryDeltaMiB": 4.66,
+        "averageMemoryDeltaMiB": 1.59,
+        "peakV8HeapMiB": 59.42,
+        "peakEmbedderHeapMiB": 2.36,
+        "peakBackingStorageMiB": 3.2
       },
       "xmltvCatalog": {
         "bytes": 18057979,
         "sourceChannels": 2000,
         "keptChannels": 300,
         "unfiltered": {
-          "durationMs": 467.9,
+          "durationMs": 3063,
           "channels": 2000,
           "catalogChannels": 2000,
           "programmes": 50000,
           "programmesSeen": 50000,
-          "retainedBytes": 22517616
+          "retainedBytes": 22499220
         },
         "filtered": {
-          "durationMs": 247.4,
+          "durationMs": 1490.4,
           "channels": 300,
           "catalogChannels": 2000,
           "programmes": 7500,
           "programmesSeen": 50000,
-          "retainedBytes": 3525780
+          "retainedBytes": 3537792
         },
-        "speedup": 1.8912691996766369,
-        "retainedHeapReductionPct": 84.34212573835525
+        "speedup": 2.0551529790660226,
+        "retainedHeapReductionPct": 84.2759348990765
       }
     },
     "groups": {
@@ -673,72 +691,72 @@
         "rendered": 38,
         "totalSize": "3_400_200px",
         "navigation": {
-          "p50": 22.1,
-          "p95": 26.9,
-          "max": 45.1,
-          "mean": 22.4,
+          "p50": 79.5,
+          "p95": 97.5,
+          "max": 110.5,
+          "mean": 80.2,
           "frame": {
-            "p50": 22.9,
-            "p95": 28.1,
-            "max": 224,
-            "mean": 29.3
+            "p50": 82.4,
+            "p95": 99.8,
+            "max": 116.9,
+            "mean": 83
           },
-          "framesOver50Ms": 1
+          "framesOver50Ms": 30
         }
       },
       "sidebar": {
         "rendered": 40,
         "totalSize": "3_200_190px",
         "navigation": {
-          "p50": 1.5,
-          "p95": 6.9,
-          "max": 9,
-          "mean": 2.1,
+          "p50": 6.1,
+          "p95": 109.9,
+          "max": 111,
+          "mean": 17.2,
           "frame": {
-            "p50": 17.4,
-            "p95": 37.9,
-            "max": 38.3,
-            "mean": 15.1
+            "p50": 64.2,
+            "p95": 120.5,
+            "max": 128.3,
+            "mean": 63.4
           },
-          "framesOver50Ms": 0
+          "framesOver50Ms": 22
         }
       },
       "epg": {
         "rendered": 26,
         "totalSize": "2_200_090px",
         "navigation": {
-          "p50": 4.5,
-          "p95": 6,
-          "max": 6.4,
-          "mean": 4.5,
+          "p50": 37.2,
+          "p95": 56.3,
+          "max": 56.5,
+          "mean": 36.6,
           "frame": {
-            "p50": 14.7,
-            "p95": 21.9,
-            "max": 112.8,
-            "mean": 16.8
+            "p50": 40.7,
+            "p95": 60.9,
+            "max": 75.5,
+            "mean": 41
           },
-          "framesOver50Ms": 1
+          "framesOver50Ms": 6
         }
       },
-      "startupMs": 3739
+      "startupMs": 16011
     },
     "coldLoad": {
-      "readyMs": 1046.4,
-      "rendered": 35,
+      "readyMs": 5026.6,
+      "rendered": 36,
       "channels": 50000
     },
     "memory": {
-      "usedHeapMiB": 86.4,
-      "totalHeapMiB": 87.6,
+      "usedHeapMiB": 84.4,
+      "totalHeapMiB": 85.3,
       "retained": {
         "cycles": 3,
-        "beforeMiB": 107.6,
+        "beforeMiB": 105.5,
         "samplesMiB": [
-          86.4,
-          86.4,
-          86.4
+          84.3,
+          84.3,
+          84.4
         ],
-        "growthMiB": 0
+        "growthMiB": 0.1
       }
     }
   }

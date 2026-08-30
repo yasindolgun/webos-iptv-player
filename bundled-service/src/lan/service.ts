@@ -59,7 +59,9 @@ export function registerLanService(service: LunaService, dataDir: string): void 
   // holds the Luna bus connection, keeping Node's event loop running even after
   // we close the HTTP server and complete the keepAlive activity).
   let keepAliveCreated = false;
-  let bindInProgress = false;
+  let shouldRun = true;
+  let activeBindId: number | null = null;
+  let nextBindId = 1;
 
   function broadcastChange(event: ServiceChangeEvent): void {
     if (subscribers.length === 0) return;
@@ -77,23 +79,44 @@ export function registerLanService(service: LunaService, dataDir: string): void 
   }
 
   function ensureServer(): void {
-    if (server || bindInProgress) return;
-    bindInProgress = true;
+    if (server || activeBindId !== null || !shouldRun) return;
+    const bindId = nextBindId++;
+    activeBindId = bindId;
     console.log('[lan] (re)binding HTTP server');
     startServer(0, dataDir, broadcastChange, setupActions, setupState, backups).then((r) => {
-      bindInProgress = false;
+      if (activeBindId !== bindId || !shouldRun) {
+        r.server.close((err) => {
+          if (err) console.warn('[lan] stale server.close error:', err);
+        });
+        return;
+      }
+      activeBindId = null;
       server = r.server;
       actualPort = r.port;
       console.log('[lan] HTTP server ready on port ' + actualPort);
-      if (!keepAliveCreated) {
-        service.activityManager.create('keepAlive', () => { /* keep service alive */ });
-        keepAliveCreated = true;
+      try {
+        if (!keepAliveCreated) {
+          service.activityManager.create('keepAlive', () => { /* keep service alive */ });
+          keepAliveCreated = true;
+        }
+      } catch (err) {
+        server = null;
+        actualPort = null;
+        r.server.close(() => { /* release a bind with no keepAlive */ });
+        const detail = err instanceof Error ? err.message : String(err);
+        for (const m of pendingStarts) {
+          m.respond({ running: false, error: detail });
+        }
+        pendingStarts.length = 0;
+        console.error('[lan] keepAlive activity creation failed:', err);
+        return;
       }
       // Drain any `start` calls that arrived before this bind finished.
       for (const m of pendingStarts) m.respond({ running: true, port: actualPort });
       pendingStarts.length = 0;
     }).catch((err) => {
-      bindInProgress = false;
+      if (activeBindId !== bindId) return;
+      activeBindId = null;
       console.error('[lan] startServer failed:', err);
       const msg = err instanceof Error ? err.message : String(err);
       for (const m of pendingStarts) m.respond({ running: false, error: msg });
@@ -107,6 +130,7 @@ export function registerLanService(service: LunaService, dataDir: string): void 
 
   service.register('start', (msg) => {
     console.log('[lan] start method invoked');
+    shouldRun = true;
     if (actualPort !== null) {
       msg.respond({ running: true, port: actualPort });
     } else {
@@ -129,6 +153,12 @@ export function registerLanService(service: LunaService, dataDir: string): void 
   // to respawn us.
   service.register('stop', (msg) => {
     console.log('[lan] stop method invoked');
+    shouldRun = false;
+    activeBindId = null;
+    for (const pending of pendingStarts) {
+      pending.respond({ running: false, error: 'Service stopped' });
+    }
+    pendingStarts.length = 0;
     // Drop all push subscribers — their connections are scoped to this
     // service lifetime and would be stale after a restart anyway.
     const droppedSubs = subscribers.length;

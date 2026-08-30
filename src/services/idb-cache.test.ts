@@ -53,7 +53,7 @@ describe('idb-cache', () => {
     await clearAllCachedData();
   });
 
-  it('uses the next schema version after the published v3 database', async () => {
+  it('opens the current schema with the stream MIME store', async () => {
     const db = await openPersistenceDb();
     expect(db?.version).toBe(5);
     expect(db?.objectStoreNames.contains(STREAM_MIME_STORE)).toBe(true);

@@ -9,10 +9,23 @@ import type { AppWorkerTasks } from './tasks';
 const searchIndex = new SearchWorkerIndex();
 const scopedSearchIndex = new ScopedSearchIndex();
 const handlers: WorkerTaskHandlers<AppWorkerTasks> = {
-  'm3u.parse': request => parseM3UBytes(
-    new Uint8Array(request.buffer),
-    request.sourceUrl,
-  ),
+  'm3u.parse': request => {
+    const receivedAtEpochMs = Date.now();
+    const started = performance.now();
+    const data = parseM3UBytes(
+      new Uint8Array(request.buffer),
+      request.sourceUrl,
+    );
+    return {
+      data,
+      metrics: {
+        inputBytes: request.buffer.byteLength,
+        inputTransferMs: Math.max(0, receivedAtEpochMs - request.sentAtEpochMs),
+        parseMs: performance.now() - started,
+        completedAtEpochMs: Date.now(),
+      },
+    };
+  },
   'xmltv.load': request => fetchAndParseXMLTVInWorker(request),
   'search.index': request => searchIndex.index(request),
   'search.query': request => searchIndex.query(request),

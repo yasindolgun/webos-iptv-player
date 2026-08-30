@@ -80,7 +80,47 @@ export function runRawParserBenchmarks(
   xmltvCatalog?: XMLTVCatalogBenchmark;
   xmltvPipeline?: XMLTVPipelineBenchmark;
   xmltvPipelineBuffered?: XMLTVPipelineBenchmark;
+  m3uPipeline?: M3UPipelineBenchmark;
 };
+
+export interface M3UPipelineBenchmark {
+  inputBytes: number;
+  inputTransferMs: number;
+  parseMs: number;
+  resultCloneDeliveryMs: number;
+  unattributedMs: number;
+  roundTripMs: number;
+  maxFrameGapMs: number;
+  channels: number;
+  groups: number;
+  workerTerminatedAfterIdle: boolean;
+  timeout: {
+    timeoutMs: number;
+    elapsedMs: number;
+    timedOut: boolean;
+    workerTerminated: boolean;
+  };
+}
+
+export interface M3UPipelineBenchmarkOptions {
+  text: string;
+  timeoutMs: number;
+}
+
+export interface M3UPipelineBenchmarkIo {
+  evaluate: (fn: unknown, arg?: unknown) => Promise<any>;
+  delay: (milliseconds: number) => Promise<void>;
+}
+
+export function measureM3UPipelineBenchmark(
+  options: M3UPipelineBenchmarkOptions,
+  io: M3UPipelineBenchmarkIo,
+): Promise<M3UPipelineBenchmark>;
+
+export function assertM3UPipelineBenchmark(
+  report: M3UPipelineBenchmark,
+  scale: number,
+): void;
 
 export interface XMLTVPipelineBenchmark {
   durationMs: number;

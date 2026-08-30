@@ -812,6 +812,97 @@ export function runRawParserBenchmarks(options) {
     };
 }
 
+export async function runM3UPipelineTimingBenchmark(options) {
+    const api = window.__IPTV_BENCHMARK__;
+    if (!api) throw new Error('Parser benchmark bundle was not installed');
+    const buffer = new TextEncoder().encode(options.text).buffer;
+    let active = true;
+    let frameRequest = 0;
+    let previousFrame = performance.now();
+    let maxFrameGapMs = 0;
+    const observeFrame = (timestamp) => {
+      maxFrameGapMs = Math.max(maxFrameGapMs, timestamp - previousFrame);
+      previousFrame = timestamp;
+      if (active) frameRequest = requestAnimationFrame(observeFrame);
+    };
+    frameRequest = requestAnimationFrame(observeFrame);
+    let result;
+    try {
+      result = await api.profileM3UPipeline(buffer);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    } finally {
+      active = false;
+      cancelAnimationFrame(frameRequest);
+    }
+    const round = (value) => Math.round(value * 10) / 10;
+    const attributedMs = result.inputTransferMs
+      + result.parseMs
+      + result.resultCloneDeliveryMs;
+    return {
+      inputBytes: result.inputBytes,
+      inputTransferMs: round(result.inputTransferMs),
+      parseMs: round(result.parseMs),
+      resultCloneDeliveryMs: round(result.resultCloneDeliveryMs),
+      unattributedMs: round(Math.max(0, result.roundTripMs - attributedMs)),
+      roundTripMs: round(result.roundTripMs),
+      maxFrameGapMs: round(maxFrameGapMs),
+      channels: result.channels,
+      groups: result.groups,
+    };
+}
+
+export async function runM3UTimeoutBenchmark(options) {
+    const api = window.__IPTV_BENCHMARK__;
+    if (!api) throw new Error('Parser benchmark bundle was not installed');
+    const buffer = new TextEncoder().encode(options.text).buffer;
+    const result = await api.profileM3UTimeout(buffer, options.timeoutMs);
+    return {
+      timeoutMs: result.timeoutMs,
+      elapsedMs: Math.round(result.elapsedMs * 10) / 10,
+      timedOut: result.timedOut,
+      workerTerminated: result.workerTerminated,
+    };
+}
+
+export async function measureM3UPipelineBenchmark(options, io) {
+  const timed = await io.evaluate(runM3UPipelineTimingBenchmark, options);
+  const idleDeadline = Date.now() + 5000;
+  let workerTerminatedAfterIdle;
+  do {
+    await io.delay(100);
+    workerTerminatedAfterIdle = !(await io.evaluate(inspectXMLTVWorkerRunning));
+  } while (!workerTerminatedAfterIdle && Date.now() < idleDeadline);
+  if (!workerTerminatedAfterIdle) {
+    throw new Error('M3U worker remained active after its idle timeout');
+  }
+  const timeout = await io.evaluate(runM3UTimeoutBenchmark, options);
+  if (!timeout.timedOut || !timeout.workerTerminated) {
+    throw new Error('M3U worker timeout did not terminate the production worker');
+  }
+  return {
+    ...timed,
+    workerTerminatedAfterIdle,
+    timeout,
+  };
+}
+
+export function assertM3UPipelineBenchmark(report, scale) {
+  if (report.channels !== scale || report.groups !== Math.min(scale, 100)) {
+    throw new Error(
+      `M3U pipeline returned ${String(report.channels)} channels and `
+      + `${String(report.groups)} groups for scale ${String(scale)}`,
+    );
+  }
+  if (report.inputBytes <= 0 || report.roundTripMs < report.parseMs) {
+    throw new Error('M3U pipeline timing metrics are inconsistent');
+  }
+  if (!report.workerTerminatedAfterIdle
+      || !report.timeout.timedOut
+      || !report.timeout.workerTerminated) {
+    throw new Error('M3U pipeline lifecycle checks did not complete');
+  }
+}
+
 /**
  * Build a provider-shaped guide once: many channels, realistic programme
  * bodies, and the subset of channels a playlist would keep. The feed and the

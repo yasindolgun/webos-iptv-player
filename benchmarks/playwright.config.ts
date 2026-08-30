@@ -7,7 +7,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  timeout: 180_000,
+  timeout: 300_000,
   reporter: [['list']],
   outputDir: '../test-output/benchmark-results',
   use: {

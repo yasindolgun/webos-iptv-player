@@ -15,7 +15,11 @@ interface StartupProbe {
 
 async function installStartupHarness(
   page: Page,
-  options: { visibility?: DocumentVisibilityState; devMode?: boolean } = {},
+  options: {
+    visibility?: DocumentVisibilityState;
+    devMode?: boolean;
+    startResult?: unknown;
+  } = {},
 ): Promise<void> {
   await page.route('http://127.0.0.1:9999/setup-state', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"updated":true}' }));
@@ -37,7 +41,7 @@ async function installStartupHarness(
         pairingCode: '123456',
       }),
     }));
-  await page.addInitScript(({ initialVisibility, devMode }) => {
+  await page.addInitScript(({ initialVisibility, devMode, startResult }) => {
     type Cb = (resp: unknown) => void;
     type LunaOpts = {
       method?: string;
@@ -65,7 +69,7 @@ async function installStartupHarness(
     win.__startupProbe__ = probe;
     win.__releaseServiceStart__ = () => {
       for (const callback of pendingStarts.splice(0)) {
-        callback({ running: true, port: 9999 });
+        callback(startResult);
       }
     };
     win.__showApp__ = () => {
@@ -101,6 +105,7 @@ async function installStartupHarness(
   }, {
     initialVisibility: options.visibility ?? 'visible',
     devMode: options.devMode ?? false,
+    startResult: options.startResult ?? { running: true, port: 9999 },
   });
 }
 
@@ -182,6 +187,28 @@ test('uploaded-only startup keeps Settings open after background reconciliation'
   await expect(page.locator('#view-home')).toBeVisible();
   await page.locator('[data-home-action="live"]').click();
   await expect(page.locator('.channel-item')).toHaveCount(2);
+});
+
+test('does not initialize LAN clients when the service reports a failed start', async ({ page }) => {
+  let uploadLists = 0;
+  await page.route('http://127.0.0.1:9999/uploads', (route) => {
+    uploadLists++;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+  await routePlaylist(page);
+  await seedPlaylist(page);
+  await installStartupHarness(page, {
+    startResult: { running: false, error: 'bind failed' },
+  });
+
+  await page.goto('/');
+  await expect(page.locator('#view-channels')).toBeVisible();
+  await releaseServiceStart(page);
+  await expect.poll(async () => (await startupProbe(page)).starts).toBe(1);
+  await page.waitForTimeout(100);
+
+  expect(await startupProbe(page)).toMatchObject({ starts: 1, subscriptions: 0 });
+  expect(uploadLists).toBe(0);
 });
 
 test('dev-mode query replaces the reminder fallback activity', async ({ page }) => {
