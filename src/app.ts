@@ -760,6 +760,7 @@ class App {
       if (key === name) show(el);
       else hide(el);
     }
+    this.channelList.setActive(name === 'channels');
 
     // The docked tab bar shows on the section views and hides on the full-screen
     // player / EPG (and the loading splash), which render edge-to-edge.

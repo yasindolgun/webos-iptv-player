@@ -117,6 +117,44 @@ test('channel rows fit both text lines in their fixed box', async ({ page }) => 
   expect(fit.needed).toBeLessThanOrEqual(fit.available);
 });
 
+test('visible live rows show EPG progress inside their fixed box', async ({ page }) => {
+  const now = new Date('2024-03-09T12:00:00Z');
+  const m3u = [
+    '#EXTM3U url-tvg="http://host/guide.xml"',
+    '#EXTINF:-1 tvg-id="ch1" group-title="News",Alpha',
+    'http://host/a',
+  ].join('\n');
+  const epg = `<?xml version="1.0" encoding="UTF-8"?><tv>
+<channel id="ch1"><display-name>Alpha</display-name></channel>
+<programme channel="ch1" start="20240309110000 +0000" stop="20240309130000 +0000"><title>Morning Report</title></programme>
+</tv>`;
+  await routePlaylist(page, m3u);
+  await page.route('**/guide.xml', route => route.fulfill({
+    status: 200,
+    contentType: 'application/xml',
+    body: epg,
+  }));
+  await page.clock.setFixedTime(now);
+  await seedPlaylist(page);
+  await page.goto('/');
+
+  const row = page.locator('.channel-main .channel-item').first();
+  const fill = row.locator('.channel-epg-progress-fill');
+  await expect(row.locator('.channel-now')).toHaveText('Morning Report');
+  await expect(fill).toHaveCSS('width', /[1-9][0-9]*px/);
+
+  const bounds = await row.evaluate((element) => {
+    const rowRect = element.getBoundingClientRect();
+    const progressRect = element.querySelector('.channel-epg-progress')!.getBoundingClientRect();
+    return {
+      top: progressRect.top - rowRect.top,
+      bottom: rowRect.bottom - progressRect.bottom,
+    };
+  });
+  expect(bounds.top).toBeGreaterThan(0);
+  expect(bounds.bottom).toBeGreaterThanOrEqual(0);
+});
+
 // Each result section has its own scroll box, so a lone Channels list has to
 // fill the view rather than stop at the height a second section would need.
 test('M3U-only Search fills the view when Channels is the only section', async ({ page }) => {

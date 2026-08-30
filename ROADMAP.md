@@ -285,8 +285,9 @@ Milestone 3 — VOD detail hierarchy:
 
 Milestone 4 — Live-list clarity:
 
-- Add a restrained EPG progress indicator to visible channel rows and update it
-  on a bounded cadence instead of re-rendering the complete list every second.
+- A restrained EPG progress indicator is now shown on visible channel rows. The
+  virtualized range refreshes once per minute only while Live is open, instead
+  of re-rendering the complete list every second.
 - Mark catch-up support with the shared inline SVG icon and keep channel-health
   state visually distinct from stream capability metadata.
 - Do not auto-tune every focused row. Any video preview remains the separate,

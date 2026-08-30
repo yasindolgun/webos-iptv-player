@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { Channel } from '../types';
+import type { Channel, Programme } from '../types';
 import type { RecentlyWatchedItem } from '../services/recently-watched';
 
 const {
   data,
   customization,
   playlistMock,
+  epgData,
   epgMock,
   storageMock,
   recentMock,
@@ -25,6 +26,7 @@ const {
   const raw = channels.slice();
   const data = { channels, raw, favorites: [] as string[], includeHidden: false };
   const customization = { record: null as unknown };
+  const epgData = { programmes: {} as Record<string, Programme> };
 
   return {
     data,
@@ -43,7 +45,11 @@ const {
       applyCustomization: vi.fn(),
       setIncludeHidden: vi.fn(),
     },
-    epgMock: { findChannelId: () => null, getNowPlaying: () => null },
+    epgData,
+    epgMock: {
+      findChannelId: (channel: Channel) => channel.id || null,
+      getNowPlaying: (channelId: string) => epgData.programmes[channelId] ?? null,
+    },
     storageMock: {
       getFavorites: () => data.favorites,
       setFavorites: vi.fn((favorites: string[]) => {
@@ -89,6 +95,7 @@ import { setLocale } from '../i18n';
 import { channelKey } from '../utils/channel';
 import { UNCATEGORIZED_GROUP } from '../types';
 import { ChannelCustomizationService, groupKeyOf } from '../services/channel-customization';
+import { CONFIG } from '../config';
 
 playlistMock.indexOfKey = (key: string) => data.channels
   .findIndex(ch => channelKey(ch) === key);
@@ -159,6 +166,7 @@ beforeEach(() => {
   recentMock.items = [];
   recentMock.getItems.mockClear();
   recentMock.catchupInfo.mockReset();
+  epgData.programmes = {};
   toastMock.showToast.mockClear();
   healthMock.records = {};
   playlistMock.playlistTabs = [];
@@ -241,6 +249,44 @@ describe('ChannelList.render', () => {
     list.render();
     expect(container.querySelector('.channel-edit-btn')).toBeNull();
     expect(container.querySelector('[data-edit-channels]')).toBeNull();
+  });
+
+  it('renders current EPG progress for visible channel rows', () => {
+    const now = Date.now();
+    epgData.programmes.a = {
+      start: new Date(now - 15 * 60 * 1000),
+      stop: new Date(now + 45 * 60 * 1000),
+      title: 'Morning Report',
+      description: '',
+      category: '',
+      icon: '',
+    };
+
+    list.render();
+
+    const alpha = channelItems()[0];
+    expect(alpha.querySelector('.channel-now')?.textContent).toBe('Morning Report');
+    expect(alpha.querySelector<HTMLElement>('.channel-epg-progress-fill')?.style.width)
+      .toBe('25%');
+    expect(channelItems()[1].querySelector('.channel-epg-progress')).toBeNull();
+  });
+
+  it('omits EPG progress for invalid programme times and channel editing', () => {
+    const now = Date.now();
+    epgData.programmes.a = {
+      start: new Date(now),
+      stop: new Date(now),
+      title: 'Morning Report',
+      description: '',
+      category: '',
+      icon: '',
+    };
+    list.render();
+    expect(channelItems()[0].querySelector('.channel-epg-progress')).toBeNull();
+
+    epgData.programmes.a.stop = new Date(now + 60 * 60 * 1000);
+    list.enterEditMode();
+    expect(channelItems()[0].querySelector('.channel-epg-progress')).toBeNull();
   });
 
   it('uses the singular channel count for a one-channel playlist', () => {
@@ -707,6 +753,24 @@ describe('ChannelList interaction', () => {
 });
 
 describe('ChannelList listener lifecycle', () => {
+  it('refreshes EPG progress once per cadence only while active', () => {
+    vi.useFakeTimers();
+    const render = vi.spyOn(list, 'render');
+    try {
+      list.setActive(true);
+      list.setActive(true);
+      vi.advanceTimersByTime(CONFIG.EPG.CHANNEL_LIST_PROGRESS_REFRESH_MS);
+      expect(render).toHaveBeenCalledTimes(1);
+
+      list.setActive(false);
+      vi.advanceTimersByTime(CONFIG.EPG.CHANNEL_LIST_PROGRESS_REFRESH_MS);
+      expect(render).toHaveBeenCalledTimes(1);
+    } finally {
+      list.setActive(false);
+      vi.useRealTimers();
+    }
+  });
+
   it('falls back to the All tab when the selected playlist was removed', () => {
     playlistMock.playlistTabs = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }];
     list.render();

@@ -6,7 +6,9 @@ import type {
   ChannelGroupId,
   ChannelHealthStatus,
   ActionEvent,
+  Programme,
 } from '../types';
+import { CONFIG } from '../config';
 import { SpatialNav } from '../navigation/spatial-nav';
 import { html, raw, type Safe } from '../utils/dom';
 import { morph } from '../utils/morph';
@@ -61,6 +63,7 @@ export class ChannelList {
   private groupEntriesPlaylist = '';
   private groupEntriesRevision = -1;
   private groupEntriesLocale: SupportedLocale | null = null;
+  private epgProgressTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     container: HTMLElement,
@@ -322,6 +325,18 @@ export class ChannelList {
     this.editor.focusTextInput();
   }
 
+  setActive(active: boolean): void {
+    if (!active) {
+      if (this.epgProgressTimer !== null) clearInterval(this.epgProgressTimer);
+      this.epgProgressTimer = null;
+      return;
+    }
+    if (this.epgProgressTimer !== null) return;
+    this.epgProgressTimer = setInterval(() => {
+      if (!document.hidden) this.render(false);
+    }, CONFIG.EPG.CHANNEL_LIST_PROGRESS_REFRESH_MS);
+  }
+
   get isEditing(): boolean {
     return this.editor.isEditing;
   }
@@ -513,10 +528,15 @@ export class ChannelList {
             : html`<div class="channel-name">${
                 showFavoriteStar ? raw('&#9733; ') : ''
               }${ch.name}</div>`}
-          ${this.editor.isChannelEditing && ch.sourceName
-            ? html`<div class="channel-now channel-source-name">${ch.sourceName}</div>`
+          ${this.editor.isChannelEditing
+            ? (ch.sourceName
+                ? html`<div class="channel-now channel-source-name">${ch.sourceName}</div>`
+                : '')
             : (nowPlaying
-                ? html`<div class="channel-now">${nowPlaying.title}</div>`
+                ? html`
+                  <div class="channel-now">${nowPlaying.title}</div>
+                  ${this.renderEpgProgress(nowPlaying)}
+                `
                 : '')}
         </div>
         ${this.editor.renderChannelEditStatus(ch)}
@@ -545,7 +565,10 @@ export class ChannelList {
           ${this.renderLogo(item.channel)}
           <div class="channel-info">
             <div class="channel-name">${isFav ? raw('&#9733; ') : ''}${item.channel.name}</div>
-            ${nowPlaying ? html`<div class="channel-now">${nowPlaying.title}</div>` : ''}
+            ${nowPlaying ? html`
+              <div class="channel-now">${nowPlaying.title}</div>
+              ${this.renderEpgProgress(nowPlaying)}
+            ` : ''}
           </div>
           ${this.renderHealth(item.channel)}
           <div class="recent-kind-badge live">${t('common.live')}</div>
@@ -592,6 +615,18 @@ export class ChannelList {
     return html`
       <div class="channel-logo-wrap">
         ${logo}
+      </div>
+    `;
+  }
+
+  private renderEpgProgress(programme: Programme): Safe | string {
+    const start = programme.start.getTime();
+    const duration = programme.stop.getTime() - start;
+    if (duration <= 0) return '';
+    const percent = Math.round(Math.max(0, Math.min(1, (Date.now() - start) / duration)) * 100);
+    return html`
+      <div class="channel-epg-progress" aria-hidden="true">
+        <div class="channel-epg-progress-fill" style="width:${percent}%"></div>
       </div>
     `;
   }
