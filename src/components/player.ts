@@ -20,7 +20,7 @@ import { StallWatchdog, type StallProbe, type StallRecovery } from '../utils/sta
 import { StartupWatchdog, type StartupFailure, type StartupProbe } from '../utils/startup-watchdog';
 import { resolutionBadge, hdrLabel, frameRateLabel, bitrateLabel, pickVariant, codecName, type StreamVariant, type MediaInfo, type ResolutionBadge } from '../utils/stream-info';
 import { formatPosition } from '../utils/time';
-import { containerMime, extFromUrl, diagnosticStreamUrl } from '../utils/url';
+import { extFromUrl, diagnosticStreamUrl } from '../utils/url';
 import { probeMedia } from '../services/media-probe';
 import { ChannelHealthService } from '../services/channel-health';
 import { createLogger } from '../utils/logger';
@@ -76,6 +76,9 @@ export class Player {
   private pendingResumeSecs = 0;
   private pendingSeekTarget: number | null = null;
   private wasPlayingBeforeHide = false;
+  private suspendedForHide = false;
+  private pauseAfterResume = false;
+  private vodSuspendPos = -1;
   private dvrPauseTick: ReturnType<typeof setInterval> | null = null;
   // Catch-up progress checkpointing. Wall-clock time of the last periodic save;
   // reset to Date.now() on every new catch-up session so the first checkpoint
@@ -91,7 +94,8 @@ export class Player {
   private healthStartedAt = 0;
   private liveHistoryGeneration = -1;
   private liveHistoryTimer: ReturnType<typeof setTimeout> | null = null;
-  private errorAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
+  private mediaErrorReloads = 0;
+  private mediaErrorExhausted = false;
   // Manual A/V resync (catch-up / VOD): true from the resync seek until playback
   // resumes, gating the "Resyncing…" message and debouncing repeat presses.
   private resyncing = false;
@@ -100,7 +104,6 @@ export class Player {
   private vodInfo: MediaInfo | null = null; // container-header stream info for the active VOD (codec/fps/HDR)
   private stallWatchdog: StallWatchdog;
   private startupWatchdog: StartupWatchdog;
-  private startupPending = false;
   constructor(
     container: HTMLElement,
     onBack: () => void,
@@ -160,11 +163,13 @@ export class Player {
         this.reloadCurrentStream();
       },
       onEscalate: recovery => {
-        log.error('Watchdog recovery exhausted; advancing channel',
+        log.error('Watchdog recovery exhausted',
           'event=playback.stall.exhausted', this.playbackLabel(),
           this.recoveryState(recovery));
+        this.mediaErrorExhausted = true;
+        this.startupWatchdog.stop();
         this.markLiveUnavailable('stall_exhausted');
-        this.channelUp();
+        this.osd.updateMessage(t('player.streamError'));
       },
       pollMs: CONFIG.PLAYER.STALL_POLL_MS,
       freezeTicks: CONFIG.PLAYER.STALL_FREEZE_TICKS,
@@ -233,6 +238,10 @@ export class Player {
         el.currentTime = target;
         this.pendingResumeSecs = 0;
       }
+      if (this.pauseAfterResume) {
+        el.pause();
+        this.pauseAfterResume = false;
+      }
       this.tracks.applyNativeAudioSelection();
       this.tracks.applyNativeSubtitleSelection();
       if (this.osd.isVisible()) this.osd.render();
@@ -241,7 +250,6 @@ export class Player {
     // not playback was allowed to begin (autoplay can be rejected, or the user
     // can pause while the spinner is up).
     el.addEventListener('loadeddata', () => {
-      this.startupPending = false;
       if (this.catchupInfo) this.catchupVariantConfirmed = true;
     });
     // Intrinsic size changes mid-stream (ABR up/down-switch) so the OSD pills
@@ -254,6 +262,8 @@ export class Player {
     el.textTracks?.addEventListener?.('addtrack', () => this.tracks.applyNativeSubtitleSelection());
     el.addEventListener('playing', () => {
       log.info('playing', this.videoLabel(el), this.mediaState(el));
+      this.mediaErrorReloads = 0;
+      this.mediaErrorExhausted = false;
       if (this.catchupInfo) this.catchupVariantConfirmed = true;
       this.startupWatchdog.stop();
       this.tracks.reapplyNativeSubtitleCompositor();
@@ -313,27 +323,28 @@ export class Player {
 
   suspend(): void {
     this.startupWatchdog.stop();
-    if (!this.videoEl || !this.currentChannel) return;
-    if (this.wasPlayingBeforeHide) return; // already suspended
+    if (!this.videoEl || (!this.currentChannel && !this.vod)) return;
+    if (this.suspendedForHide) return;
+    this.suspendedForHide = true;
     this.wasPlayingBeforeHide = !this.videoEl.paused;
-    if (this.wasPlayingBeforeHide) {
-      // Save catch-up position and remember it for resume() BEFORE the element is destroyed.
-      // Prefer a not-yet-applied resume seek: if we suspend before loadedmetadata
-      // seeks to pendingResumeSecs, currentTime is still 0 and would otherwise
-      // collapse the resume point to the start on the next play().
-      if (this.catchupInfo) {
-        this.catchupSuspendPos = Math.max(
-          this.videoEl.currentTime,
-          this.pendingResumeSecs,
-          this.pendingSeekTarget ?? 0,
-        );
-        this.saveCatchupProgress();
-      }
-      this.stallWatchdog.stop();
-      this.tracks.suspend();
-      this.pipeline.destroy();
-      this.recreateVideoEl();
+    this.pauseAfterResume = !this.wasPlayingBeforeHide;
+    // Save progress before destroying the native pipeline. A pending seek wins
+    // over currentTime so suspending during a backward seek does not jump ahead.
+    if (this.vod) {
+      this.vodSuspendPos = this.vodResumePosition();
+      this.saveVodResume();
+    } else if (this.catchupInfo) {
+      this.catchupSuspendPos = Math.max(
+        this.videoEl.currentTime,
+        this.pendingResumeSecs,
+        this.pendingSeekTarget ?? 0,
+      );
+      this.saveCatchupProgress();
     }
+    this.stallWatchdog.stop();
+    this.tracks.suspend();
+    this.pipeline.destroy();
+    this.recreateVideoEl();
   }
 
   /**
@@ -359,16 +370,17 @@ export class Player {
   }
 
   resume(): void {
-    if (!this.videoEl) return;
-    // A stream still starting when we were hidden gets a fresh budget. Element
-    // state alone can't say that: a seek into an unbuffered region also drops
-    // readyState below HAVE_CURRENT_DATA.
-    if (this.startupPending && this.videoEl.readyState < 2) this.startupWatchdog.start();
-    if (!this.currentChannel) return;
-    if (this.wasPlayingBeforeHide) {
-      this.wasPlayingBeforeHide = false;
+    if (!this.videoEl || !this.suspendedForHide) return;
+    this.suspendedForHide = false;
+    if (this.currentChannel) {
       this.playResolved(this.currentChannel, this.currentIndex, this.catchupInfo || undefined);
+    } else if (this.vod) {
+      const vod = this.vod;
+      const resumeSecs = Math.max(0, this.vodSuspendPos);
+      this.vodSuspendPos = -1;
+      this.playVod({ ...vod, resumeSecs });
     }
+    this.wasPlayingBeforeHide = false;
   }
 
   // Resolve the playable URL for a channel, applying the catch-up template when
@@ -407,10 +419,8 @@ export class Player {
 
   private startPlaybackGeneration(): void {
     this.cancelLiveHistoryTimer();
-    if (this.errorAdvanceTimer !== null) {
-      clearTimeout(this.errorAdvanceTimer);
-      this.errorAdvanceTimer = null;
-    }
+    this.mediaErrorReloads = 0;
+    this.mediaErrorExhausted = false;
     this.playbackGeneration++;
     this.healthStartedAt = Date.now();
     this.liveHistoryGeneration = -1;
@@ -530,7 +540,7 @@ export class Player {
     const entry = {
       accountId: v.accountId, kind: v.kind, itemId: v.itemId,
       name: v.title, poster: v.poster, ext: extFromUrl(v.url),
-      position: this.pendingSeekTarget ?? (el.currentTime || 0),
+      position: this.vodResumePosition(),
       duration: dur,
       updatedAt: Date.now(),
       seriesId: v.seriesId,
@@ -546,6 +556,11 @@ export class Player {
       StorageService.setResume(entry);
     }
     StorageService.setWatchHistory(entry);
+  }
+
+  private vodResumePosition(): number {
+    const current = this.videoEl?.currentTime ?? 0;
+    return this.pendingSeekTarget ?? Math.max(current || 0, this.pendingResumeSecs);
   }
 
   private saveCatchupProgress(opts?: { completed?: boolean }): void {
@@ -650,9 +665,9 @@ export class Player {
     this.tracks.setSubtitleOffset(seconds);
   }
 
-  // Stall watchdog recovery: swap in a fresh <video> (kills the wedged native
+  // Playback recovery: swap in a fresh <video> (kills the wedged native
   // pipeline) and reload the current channel WITHOUT going through play() — that
-  // would reset the watchdog's reload budget and prevent escalation.
+  // would reset the active recovery budget and prevent bounded escalation.
   private reloadCurrentStream(): void {
     if (!this.currentChannel) return;
     this.osd.updateMessage(t('player.reconnecting'));
@@ -708,7 +723,6 @@ export class Player {
     if (this.vod) this.saveVodResume();
     this.saveCatchupProgress(); // save before the video element is torn down
     this.stallWatchdog.stop();
-    this.startupPending = false;
     this.startupWatchdog.stop();
     this.tracks.stop();
     this.pipeline.destroy();
@@ -724,6 +738,10 @@ export class Player {
     this.vod = null;
     this.pendingResumeSecs = 0;
     this.pendingSeekTarget = null;
+    this.wasPlayingBeforeHide = false;
+    this.suspendedForHide = false;
+    this.pauseAfterResume = false;
+    this.vodSuspendPos = -1;
     this.catchupCheckpointAt = 0;
     this.catchupSuspendPos = -1;
     this.catchupSourceIndex = 0;
@@ -782,7 +800,6 @@ export class Player {
   ): void {
     this.tracks.resetForLoad();
     this.manifestVariants = [];
-    this.startupPending = true;
     this.startupWatchdog.stop();
     this.pipeline.load(url, extras, opts);
   }
@@ -823,7 +840,6 @@ export class Player {
     }
     log.error('Stream never started', 'event=playback.startup.failed',
       this.playbackLabel(), ...detail);
-    this.startupPending = false;
     this.onError();
   }
 
@@ -836,10 +852,11 @@ export class Player {
     this.cancelLiveHistoryTimer();
     if (this.vod) {
       const v = this.vod;
-      if (!this.vodSniffRetry && containerMime(v.url) === 'video/x-matroska') {
+      if (!this.vodSniffRetry) {
         this.vodSniffRetry = true;
+        this.pendingResumeSecs = this.vodResumePosition();
         log.warn(
-          'Matroska source was rejected; retrying without a MIME hint',
+          'VOD source was rejected; retrying without a MIME hint',
           'event=playback.vod.sniff_retry',
           this.playbackLabel(),
         );
@@ -893,7 +910,24 @@ export class Player {
     }
     if (!this.currentChannel) return;
     const v = this.videoEl;
-    if (this.errorAdvanceTimer !== null) return;
+    if (this.mediaErrorExhausted) return;
+    if (this.mediaErrorReloads < CONFIG.PLAYER.STALL_MAX_RELOADS) {
+      this.mediaErrorReloads++;
+      log.warn('Video playback error; reloading the current stream',
+        'event=playback.video.reload',
+        this.playbackLabel(),
+        `attempt=${String(this.mediaErrorReloads)}`,
+        `max=${String(CONFIG.PLAYER.STALL_MAX_RELOADS)}`,
+        v ? this.mediaState(v) : 'no video element',
+        v?.error ? { code: v.error.code, message: v.error.message } : 'no error info',
+        '| channel:', this.currentChannel.name,
+        '| url:', diagnosticStreamUrl(v?.currentSrc || this.currentChannel.url));
+      this.reloadCurrentStream();
+      return;
+    }
+    this.mediaErrorExhausted = true;
+    this.stallWatchdog.stop();
+    this.startupWatchdog.stop();
     this.markLiveUnavailable('playback_error');
     log.error('Video playback error', 'event=playback.video.error',
       this.playbackLabel(),
@@ -902,10 +936,6 @@ export class Player {
       '| channel:', this.currentChannel?.name,
       '| url:', diagnosticStreamUrl(v?.currentSrc || this.currentChannel?.url || ''));
     this.osd.updateMessage(t('player.streamError'));
-    this.errorAdvanceTimer = setTimeout(() => {
-      this.errorAdvanceTimer = null;
-      this.channelUp();
-    }, 2000);
   }
 
   private markLiveUnavailable(reason: string): void {

@@ -165,7 +165,7 @@ export const FR_MESSAGES = {
   'player.unableToPlay': 'Impossible de lire cette vidéo.',
   'player.reconnecting': 'Reconnexion…',
   'player.retryingCatchup': 'Nouvelle tentative de rattrapage…',
-  'player.streamError': 'Erreur de lecture — essai de la chaîne suivante…',
+  'player.streamError': 'Erreur de lecture.',
   'player.resyncing': 'Resynchronisation…',
   'player.switchingAudio': 'Passage à la piste audio {name}',
   'player.subtitlesTrack': 'Sous-titres : {name}',

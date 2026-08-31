@@ -165,7 +165,7 @@ export const IT_MESSAGES = {
   'player.unableToPlay': 'Impossibile riprodurre questo video.',
   'player.reconnecting': 'Riconnessione…',
   'player.retryingCatchup': 'Nuovo tentativo di replay…',
-  'player.streamError': 'Errore di riproduzione — tentativo con il canale successivo…',
+  'player.streamError': 'Errore di riproduzione.',
   'player.resyncing': 'Risincronizzazione…',
   'player.switchingAudio': 'Passaggio alla traccia audio {name}',
   'player.subtitlesTrack': 'Sottotitoli: {name}',

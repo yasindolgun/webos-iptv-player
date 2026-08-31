@@ -498,7 +498,7 @@ class M3UStreamParser {
     this.channels.push(this.current);
     this.totalChannels++;
     this.current = null;
-    if (this.maxChannels > 0 && this.channels.length >= this.maxChannels) {
+    if (this.maxChannels > 0 && this.totalChannels >= this.maxChannels) {
       this.addIssue(
         'warning',
         'channel-limit',

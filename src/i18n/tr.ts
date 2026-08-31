@@ -189,7 +189,7 @@ export const TR_MESSAGES = {
   'player.timeshift': 'ZAMAN KAYDIRMA',
   'player.playingIn': { other: '{count} saniye içinde başlıyor' },
   'player.retryingCatchup': 'Tekrar izleme yeniden deneniyor…',
-  'player.streamError': 'Oynatma hatası — sonraki kanal deneniyor…',
+  'player.streamError': 'Oynatma hatası.',
   'player.switchingAudio': 'Ses parçası {name} olarak değiştiriliyor',
   'player.closedCaptions': 'Kapalı Altyazılar',
   'player.playbackDetails': 'Oynatma ayrıntıları',

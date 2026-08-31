@@ -162,7 +162,7 @@ export const ZH_CN_MESSAGES = {
   'player.unableToPlay': '无法播放此视频。',
   'player.reconnecting': '正在重新连接…',
   'player.retryingCatchup': '正在重试回看…',
-  'player.streamError': '播放出错，正在尝试下一个频道…',
+  'player.streamError': '播放出错。',
   'player.resyncing': '正在重新同步…',
   'player.switchingAudio': '正在切换到音轨 {name}',
   'player.subtitlesTrack': '字幕：{name}',

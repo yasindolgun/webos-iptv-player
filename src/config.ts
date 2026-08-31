@@ -39,10 +39,10 @@ export const CONFIG = {
     SEEK_HOLD_FAST_MS: 3000,    // held duration where each repeat advances by SEEK_HOLD_FAST_STEP
     SEEK_HOLD_MEDIUM_STEP: 30,  // seconds per repeat after SEEK_HOLD_MEDIUM_MS
     SEEK_HOLD_FAST_STEP: 60,    // seconds per repeat after SEEK_HOLD_FAST_MS
-    HLS_MAX_RECOVERIES: 3,      // bounded hls.js fatal-error retries before giving up → next channel
+    HLS_MAX_RECOVERIES: 3,      // bounded hls.js fatal-error retries before surfacing the failure
     STALL_POLL_MS: 2000,        // native stall watchdog: currentTime poll interval
     STALL_FREEZE_TICKS: 5,      // ~10s frozen before the first in-place reload
-    STALL_MAX_RELOADS: 2,       // in-place reloads before escalating to the next channel
+    STALL_MAX_RELOADS: 2,       // in-place reloads before surfacing the current stream failure
     STARTUP_POLL_MS: 500,       // startup watchdog: readyState/networkState poll interval
     STARTUP_TIMEOUT: 15000,     // ms a stream may load without a frame before it counts as failed
     DVR_MIN_WINDOW: 10,         // live DVR: a seekable window must exceed this (s) to offer timeshift

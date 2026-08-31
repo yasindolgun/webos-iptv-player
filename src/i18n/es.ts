@@ -165,7 +165,7 @@ export const ES_MESSAGES = {
   'player.unableToPlay': 'No se puede reproducir este video.',
   'player.reconnecting': 'Reconectando…',
   'player.retryingCatchup': 'Reintentando la repetición…',
-  'player.streamError': 'Error de reproducción — probando el siguiente canal…',
+  'player.streamError': 'Error de reproducción.',
   'player.resyncing': 'Sincronizando de nuevo…',
   'player.switchingAudio': 'Cambiando la pista de audio a {name}',
   'player.subtitlesTrack': 'Subtítulos: {name}',

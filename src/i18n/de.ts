@@ -165,7 +165,7 @@ export const DE_MESSAGES = {
   'player.unableToPlay': 'Dieses Video kann nicht abgespielt werden.',
   'player.reconnecting': 'Verbindung wird wiederhergestellt…',
   'player.retryingCatchup': 'Catch-up wird erneut versucht…',
-  'player.streamError': 'Wiedergabefehler — nächster Sender wird versucht…',
+  'player.streamError': 'Wiedergabefehler.',
   'player.resyncing': 'Wird synchronisiert…',
   'player.switchingAudio': 'Audiospur wird zu {name} gewechselt',
   'player.subtitlesTrack': 'Untertitel: {name}',

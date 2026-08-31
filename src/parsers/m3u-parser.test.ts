@@ -458,6 +458,27 @@ describe('parseM3U', () => {
     expect(batches).toEqual([500, 500, 1]);
     expect(maximumActiveWrites).toBe(1);
   });
+
+  it('enforces maxChannels across emitted result batches', async () => {
+    const entries = Array.from({ length: 5 }, (_, index) =>
+      `#EXTINF:-1,ch${String(index)}\nhttp://host/${String(index)}`);
+    const batches: string[][] = [];
+
+    const parsed = await parseM3UBytesInBatches(
+      new TextEncoder().encode(['#EXTM3U', ...entries].join('\n')),
+      'http://host/list.m3u',
+      async channels => { batches.push(channels.map(channel => channel.name)); },
+      { maxChannels: 3 },
+      64 * 1024,
+      2,
+    );
+
+    expect(batches).toEqual([['ch0', 'ch1'], ['ch2']]);
+    expect(parsed.metrics.channelCount).toBe(3);
+    expect(parsed.data.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'channel-limit' }),
+    ]));
+  });
 });
 
 function encodeUtf16(value: string, littleEndian: boolean): Uint8Array {

@@ -50,15 +50,17 @@ beforeEach(async () => {
     add: cacheWriterAddMock,
     finish: cacheWriterFinishMock,
   });
-  const batches: Channel[][] = [];
-  parseStageBeginMock.mockResolvedValue({
-    abort: vi.fn(),
-    add: vi.fn((channels: Channel[]) => { batches.push(channels); }),
-    finish: vi.fn(),
-    take: vi.fn((limit: number) => {
-      const taken = batches.splice(0, limit);
-      return { batches: taken, done: batches.length === 0 };
-    }),
+  parseStageBeginMock.mockImplementation(() => {
+    const batches: Channel[][] = [];
+    return Promise.resolve({
+      abort: vi.fn(),
+      add: vi.fn((channels: Channel[]) => { batches.push(channels); }),
+      finish: vi.fn(),
+      take: vi.fn((limit: number) => {
+        const taken = batches.splice(0, limit);
+        return { batches: taken, done: batches.length === 0 };
+      }),
+    });
   });
   await import('./app-worker');
 });
@@ -168,6 +170,39 @@ describe('app worker M3U task', () => {
     });
     await expect(handlers['m3u.parse.next']({ sessionId: 9 })).resolves.toMatchObject({
       channels: [expect.objectContaining({ name: 'ch1' })],
+      done: true,
+    });
+  });
+
+  it('keeps overlapping parse result sessions isolated', async () => {
+    const firstBuffer = new TextEncoder().encode(
+      '#EXTM3U\n#EXTINF:-1,ch1\nhttp://host/1',
+    ).buffer;
+    const secondBuffer = new TextEncoder().encode(
+      '#EXTM3U\n#EXTINF:-1,ch2\nhttp://host/2',
+    ).buffer;
+
+    await Promise.all([
+      handlers['m3u.parse']({
+        buffer: firstBuffer,
+        sourceUrl: 'http://host/first.m3u',
+        sentAtEpochMs: Date.now(),
+        sessionId: 21,
+      }),
+      handlers['m3u.parse']({
+        buffer: secondBuffer,
+        sourceUrl: 'http://host/second.m3u',
+        sentAtEpochMs: Date.now(),
+        sessionId: 22,
+      }),
+    ]);
+
+    await expect(handlers['m3u.parse.next']({ sessionId: 21 })).resolves.toMatchObject({
+      channels: [expect.objectContaining({ name: 'ch1' })],
+      done: true,
+    });
+    await expect(handlers['m3u.parse.next']({ sessionId: 22 })).resolves.toMatchObject({
+      channels: [expect.objectContaining({ name: 'ch2' })],
       done: true,
     });
   });

@@ -171,7 +171,7 @@ export const UK_MESSAGES = {
   'player.unableToPlay': 'Не вдалося відтворити це відео.',
   'player.reconnecting': 'Повторне підключення…',
   'player.retryingCatchup': 'Повторне завантаження з архіву…',
-  'player.streamError': 'Помилка відтворення — перехід до наступного каналу…',
+  'player.streamError': 'Помилка відтворення.',
   'player.resyncing': 'Синхронізація…',
   'player.switchingAudio': 'Перехід на аудіодоріжку {name}',
   'player.subtitlesTrack': 'Субтитри: {name}',

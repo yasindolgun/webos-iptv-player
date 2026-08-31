@@ -171,7 +171,7 @@ export const RU_MESSAGES = {
   'player.unableToPlay': 'Не удалось воспроизвести это видео.',
   'player.reconnecting': 'Повторное подключение…',
   'player.retryingCatchup': 'Повторная загрузка из архива…',
-  'player.streamError': 'Ошибка воспроизведения — переход к следующему каналу…',
+  'player.streamError': 'Ошибка воспроизведения.',
   'player.resyncing': 'Синхронизация…',
   'player.switchingAudio': 'Переключение на аудиодорожку {name}',
   'player.subtitlesTrack': 'Субтитры: {name}',

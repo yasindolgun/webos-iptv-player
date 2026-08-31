@@ -64,4 +64,17 @@ describe('PlaylistParseStage', () => {
 
     expect(await stageRecordCount()).toBe(0);
   });
+
+  it('does not clear another active stage when a new stage begins', async () => {
+    const first = await PlaylistParseStage.begin('stage-a');
+    await first.add([channel(1)]);
+    const second = await PlaylistParseStage.begin('stage-b');
+    await second.add([channel(2)]);
+    first.finish();
+    second.finish();
+
+    expect(await stageRecordCount()).toBe(2);
+    expect((await first.take(1)).batches[0]).toEqual([channel(1)]);
+    expect((await second.take(1)).batches[0]).toEqual([channel(2)]);
+  });
 });

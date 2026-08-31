@@ -113,10 +113,9 @@ describe('StallWatchdog', () => {
     });
   });
 
-  it('keeps a restarting onEscalate\'s watchdog alive (escalation must not kill the next channel)', () => {
-    // Production wiring: onEscalate -> channelUp -> play -> stop()+start(). Model
-    // that by having onEscalate restart THIS watchdog and point it at a fresh,
-    // also-frozen stream. The restarted timer must survive and detect the freeze.
+  it('keeps a watchdog alive when onEscalate starts another session', () => {
+    // Model a caller that starts another session from onEscalate. The restarted
+    // timer must survive cleanup of the exhausted session and detect the freeze.
     let probeState = frozen(5);
     let escalated = 0;
     const reload = vi.fn();

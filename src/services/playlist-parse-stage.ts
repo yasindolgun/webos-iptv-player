@@ -22,10 +22,20 @@ export class PlaylistParseStage {
 
   static async begin(stageId: string): Promise<PlaylistParseStage> {
     if (!stageId) throw new Error('Playlist parse stage requires an id');
-    const tx = await openPersistenceTransaction(PLAYLIST_STAGING_STORE, 'readwrite');
-    if (!tx) throw new Error('Playlist parse staging requires IndexedDB');
-    tx.objectStore(PLAYLIST_STAGING_STORE).clear();
-    await transactionDone(tx);
+    const readTx = await openPersistenceTransaction(PLAYLIST_STAGING_STORE, 'readonly');
+    if (!readTx) throw new Error('Playlist parse staging requires IndexedDB');
+    const prefix = `${stageId}:`;
+    const keys = await requestResult(readTx.objectStore(PLAYLIST_STAGING_STORE).getAllKeys(
+      IDBKeyRange.bound(prefix, `${prefix}\uffff`),
+    ));
+    await transactionDone(readTx);
+    if (keys.length) {
+      const writeTx = await openPersistenceTransaction(PLAYLIST_STAGING_STORE, 'readwrite');
+      if (!writeTx) throw new Error('Playlist parse staging became unavailable');
+      const store = writeTx.objectStore(PLAYLIST_STAGING_STORE);
+      for (const key of keys) store.delete(key);
+      await transactionDone(writeTx);
+    }
     return new PlaylistParseStage(stageId);
   }
 

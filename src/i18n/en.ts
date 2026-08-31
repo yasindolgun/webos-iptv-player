@@ -172,7 +172,7 @@ export const EN_MESSAGES = {
   'player.unableToPlay': 'Unable to play this video.',
   'player.reconnecting': 'Reconnecting…',
   'player.retryingCatchup': 'Retrying catch-up…',
-  'player.streamError': 'Playback error — trying the next channel…',
+  'player.streamError': 'Playback error.',
   'player.resyncing': 'Resyncing…',
   'player.switchingAudio': 'Switching audio track to {name}',
   'player.subtitlesTrack': 'Subtitles: {name}',

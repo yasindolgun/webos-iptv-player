@@ -165,7 +165,7 @@ export const PT_BR_MESSAGES = {
   'player.unableToPlay': 'Não foi possível reproduzir este vídeo.',
   'player.reconnecting': 'Reconectando…',
   'player.retryingCatchup': 'Tentando a reprise novamente…',
-  'player.streamError': 'Erro de reprodução — tentando o próximo canal…',
+  'player.streamError': 'Erro de reprodução.',
   'player.resyncing': 'Ressincronizando…',
   'player.switchingAudio': 'Alterando a faixa de áudio para {name}',
   'player.subtitlesTrack': 'Legendas: {name}',
