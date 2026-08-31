@@ -216,6 +216,22 @@ the worker during a cold refresh, and the legacy full-catalog cache remains the
 Movies/Series browse source. Removing that transient peak belongs to large-
 source ingestion; staged heap budgets and real-device qualification remain open.
 
+### Staged scale profiles — 2026-08-31
+
+The production-path benchmark now exposes named, opt-in 50,000, 100,000, and
+200,000-item profiles for both desktop Chromium and the TV runner. Every profile
+uses the same channels, catalog entries, categories, programs, episodes, Search,
+navigation, cold-load, and reopen-cycle workload, so scale changes do not
+silently reduce coverage. Named runs write separate reports and cannot replace
+the required 50,000-item regression baseline.
+
+Reports identify the selected profile and include both the serialized cache
+payload total and the browser's origin-usage estimate for the seeded IndexedDB
+fixture. Existing startup readiness, maximum frame-gap, search latency, forced-
+GC retained heap, final page heap, and TV renderer RSS measurements remain in
+the same report. The larger profiles are still opt-in until their runtime and
+real-device memory budgets have been established.
+
 ## Planned priorities
 
 ### Priority 0: webOS 4 cold-start validation
@@ -292,9 +308,9 @@ Acceptance criteria:
 Treat 200,000 items as a measured source-size target, not a promise that every
 full record remains resident in JavaScript memory.
 
-- Add opt-in 50,000, 100,000, and 200,000-item benchmark profiles for channels,
-  catalog entries, categories, programs, and episodes so nonlinear growth is
-  visible before the largest run.
+- Keep the named opt-in 50,000, 100,000, and 200,000-item desktop and TV
+  profiles regression-gated for channels, catalog entries, categories,
+  programs, and episodes so nonlinear growth is visible before the largest run.
 - Record retained heap after forced GC, peak page heap, maximum frame gap,
   startup readiness, search latency, and IndexedDB footprint.
 - Define separate budgets for low-memory webOS 4 hardware and desktop preview.

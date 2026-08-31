@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { resolveBenchmarkProfile } from './benchmark-profile.mjs';
 import {
   CdpClient,
   resolveCdpWebSocketUrl,
@@ -46,7 +47,7 @@ const ACCOUNT_ID = 'benchmark-x1';
 const EPG_URL = 'http://host/benchmark-epg';
 const BACKUP_KEY = '__tv_benchmark_backup__';
 const COLD_PLAYLIST_URL = 'http://host/cold-list.m3u';
-const SCALE = Number(process.env.BENCHMARK_SCALE ?? '50000');
+const { profile: PROFILE, scale: SCALE } = resolveBenchmarkProfile();
 const KEY_SAMPLES = Number(process.env.BENCHMARK_KEY_SAMPLES ?? '30');
 const QUERY_SAMPLES = Number(process.env.BENCHMARK_QUERY_SAMPLES ?? '5');
 const PORT = Number(process.env.TV_CDP_PORT ?? '9998');
@@ -322,7 +323,7 @@ async function runTvBenchmark() {
     const build = await verifyInstalledBuild(client);
     fixtureAttempted = true;
     const fixtureStarted = Date.now();
-    await installFixture(client);
+    const fixture = await installFixture(client);
     const fixtureSetupMs = Date.now() - fixtureStarted;
     const startupStarted = Date.now();
     await reloadApp(client);
@@ -415,6 +416,7 @@ async function runTvBenchmark() {
       version: 1,
       target: 'webos-tv',
       generatedAt: new Date().toISOString(),
+      profile: PROFILE,
       scale: SCALE,
       keySamples: KEY_SAMPLES,
       querySamples: QUERY_SAMPLES,
@@ -424,6 +426,7 @@ async function runTvBenchmark() {
       browser: device.userAgent,
       device,
       fixtureSetupMs,
+      fixture,
       suites: {
         startup: {
           readyMs: startupReadyMs,
@@ -441,7 +444,10 @@ async function runTvBenchmark() {
     };
     const outputDir = path.join(process.cwd(), 'test-output', 'benchmarks');
     await mkdir(outputDir, { recursive: true });
-    const outputPath = path.join(outputDir, 'tv-latest.json');
+    const outputName = process.env.BENCHMARK_PROFILE
+      ? `tv-latest-${PROFILE}.json`
+      : 'tv-latest.json';
+    const outputPath = path.join(outputDir, outputName);
     await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
     console.log(`TV benchmark report: ${outputPath}`);
   } finally {

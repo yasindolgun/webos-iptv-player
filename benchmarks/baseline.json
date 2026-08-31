@@ -2,6 +2,7 @@
   "version": 2,
   "target": "desktop-chromium",
   "generatedAt": "2026-08-29T21:25:58.295Z",
+  "profile": "50k",
   "scale": 50000,
   "keySamples": 30,
   "querySamples": 5,

@@ -1,9 +1,11 @@
 # Performance benchmark
 
-The benchmark exercises the real bundled application in Playwright Chromium
-with 50,000 channels, groups, programs, movies, series, categories, and episodes. It
-uses IndexedDB and localStorage fixtures so network and fixture generation are
-excluded from the measured view operations.
+The required benchmark exercises the real bundled application in Playwright
+Chromium with 50,000 channels, groups, programs, movies, series, categories,
+and episodes. Opt-in 100,000 and 200,000 profiles run the same production-path
+workload so nonlinear scale growth is visible. It uses IndexedDB and
+localStorage fixtures so network and fixture generation are excluded from the
+measured view operations.
 Playwright rebuilds the current database schema and seeds current-format
 records directly, so schema upgrades and legacy-data migration are not measured.
 
@@ -13,10 +15,21 @@ records directly, so schema upgrades and legacy-data migration are not measured.
 npm run benchmark          # write test-output/benchmarks/latest.json
 npm run benchmark:check    # run and compare with benchmarks/baseline.json
 npm run benchmark:update   # run and intentionally replace the baseline
+npm run benchmark:profile -- 50k
+npm run benchmark:profile -- 100k
+npm run benchmark:profile -- 200k
 ```
 
+Named profile reports are kept separate as `latest-50k.json`,
+`latest-100k.json`, and `latest-200k.json` under
+`test-output/benchmarks/`; they never replace the required 50k baseline. The
+reports record their profile and scale plus the cache-payload and browser
+origin-usage estimates for the seeded IndexedDB fixture.
+
 The default run uses four-times CPU throttling to make main-thread regressions
-more visible on a development computer. The values can be overridden:
+more visible on a development computer. The sample counts and CPU rate can be
+overridden. `BENCHMARK_SCALE` remains available for custom local investigations
+and is reported as the `custom` profile:
 
 ```bash
 BENCHMARK_SCALE=50000 \
@@ -129,6 +142,9 @@ Install and cold-start the exact build that should be measured, then run:
 npm run benchmark:tv
 npm run benchmark:tv:update
 npm run benchmark:tv:check
+npm run benchmark:profile:tv -- 50k
+npm run benchmark:profile:tv -- 100k
+npm run benchmark:profile:tv -- 200k
 ```
 
 The TV runner connects directly to the running app's page through the CDP

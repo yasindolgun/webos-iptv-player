@@ -104,6 +104,7 @@ if (baseline.cpuRate !== latest.cpuRate) {
 }
 const compatibilityFields = [
   'version',
+  'profile',
   'browser',
   'keySamples',
   'querySamples',

@@ -2,6 +2,7 @@
   "version": 1,
   "target": "webos-tv",
   "generatedAt": "2026-08-15T01:28:15.728Z",
+  "profile": "50k",
   "scale": 50000,
   "keySamples": 30,
   "querySamples": 5,

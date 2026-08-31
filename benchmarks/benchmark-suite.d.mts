@@ -34,7 +34,14 @@ export interface BenchmarkSuites {
 
 export function installBenchmarkFixture(
   options: BenchmarkFixtureOptions,
-): Promise<{ channels: number }>;
+): Promise<{
+  channels: number;
+  indexedDbFootprint: {
+    cachePayloadBytes: number;
+    cacheEntries: number;
+    originUsageBytes: number | null;
+  } | null;
+}>;
 
 export function rebuildBenchmarkDatabase(): Promise<void>;
 

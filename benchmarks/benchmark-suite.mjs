@@ -275,6 +275,7 @@ export async function installBenchmarkFixture(options) {
       'epg-cache',
       'catalog-cache',
     ];
+    let indexedDbFootprint = null;
     if (directStorage) {
       fixtureStores.push(
         'playlist-cache',
@@ -401,9 +402,23 @@ export async function installBenchmarkFixture(options) {
       }
       meta.put({ category: 'entry-index', version: 1, updatedAt: now });
       await transactionDone(metaTx);
+      let originUsageBytes = null;
+      try {
+        if (navigator.storage && typeof navigator.storage.estimate === 'function') {
+          const estimate = await navigator.storage.estimate();
+          originUsageBytes = typeof estimate.usage === 'number' ? estimate.usage : null;
+        }
+      } catch {
+        // The cache payload estimate remains available on older TV engines.
+      }
+      indexedDbFootprint = {
+        cachePayloadBytes: total.bytes,
+        cacheEntries: total.entries,
+        originUsageBytes,
+      };
     }
     db.close();
-    return { channels: channels.length };
+    return { channels: channels.length, indexedDbFootprint };
 }
 
 export async function rebuildBenchmarkDatabase() {

@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { readFile } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
 import path from 'node:path';
+import { resolveBenchmarkProfile } from './benchmark-profile.mjs';
 import {
   assertGroupBenchmarkScale,
   assertColdLoadBenchmark,
@@ -35,7 +36,7 @@ import {
   summarizeRetainedMemory,
 } from './benchmark-suite.mjs';
 
-const SCALE = Number(process.env.BENCHMARK_SCALE ?? '50000');
+const { profile: PROFILE, scale: SCALE } = resolveBenchmarkProfile();
 const KEY_SAMPLES = Number(process.env.BENCHMARK_KEY_SAMPLES ?? '30');
 const QUERY_SAMPLES = Number(process.env.BENCHMARK_QUERY_SAMPLES ?? '5');
 const CPU_RATE = Number(process.env.BENCHMARK_CPU_RATE ?? '4');
@@ -56,7 +57,7 @@ async function openLiveFromHome(page: Page): Promise<void> {
   await expect(page.locator('#view-channels')).toBeVisible({ timeout: 30_000 });
 }
 
-test('records 50,000-item application benchmarks', async ({ page, browserName }) => {
+test(`records the ${PROFILE} application benchmark`, async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'The benchmark uses Chromium heap metrics');
   await page.route('**/benchmark-seed.html', (route) => route.fulfill({
     contentType: 'text/html',
@@ -101,7 +102,7 @@ test('records 50,000-item application benchmarks', async ({ page, browserName })
   await page.goto('/benchmark-seed.html');
   await page.evaluate(rebuildBenchmarkDatabase);
   const fixtureStarted = Date.now();
-  await page.evaluate(installBenchmarkFixture, FIXTURE);
+  const fixture = await page.evaluate(installBenchmarkFixture, FIXTURE);
   const fixtureSetupMs = Date.now() - fixtureStarted;
 
   try {
@@ -224,12 +225,14 @@ test('records 50,000-item application benchmarks', async ({ page, browserName })
       version: 2,
       target: 'desktop-chromium',
       generatedAt: new Date().toISOString(),
+      profile: PROFILE,
       scale: SCALE,
       keySamples: KEY_SAMPLES,
       querySamples: QUERY_SAMPLES,
       cpuRate: CPU_RATE,
       browser: await page.evaluate(() => navigator.userAgent),
       fixtureSetupMs,
+      fixture,
       suites: {
         startup: {
           readyMs: startupReadyMs,
@@ -246,7 +249,10 @@ test('records 50,000-item application benchmarks', async ({ page, browserName })
     };
     const outputDir = path.join(process.cwd(), 'test-output', 'benchmarks');
     await mkdir(outputDir, { recursive: true });
-    const outputPath = path.join(outputDir, 'latest.json');
+    const outputName = process.env.BENCHMARK_PROFILE
+      ? `latest-${PROFILE}.json`
+      : 'latest.json';
+    const outputPath = path.join(outputDir, outputName);
     await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
     console.log(`Benchmark report: ${outputPath}`);
   } finally {
