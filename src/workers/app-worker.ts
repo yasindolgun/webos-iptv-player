@@ -1,8 +1,13 @@
 import '../polyfills';
 import { CONFIG } from '../config';
-import { parseM3UBytes } from '../parsers/m3u-parser';
+import {
+  parseM3UBytesInBatches,
+  parseM3UBytesWithMetrics,
+} from '../parsers/m3u-parser';
 import type { Channel } from '../types';
 import { CachedPlaylistBatchWriter } from '../services/idb-cache';
+import { PlaylistParseStage } from '../services/playlist-parse-stage';
+import { createLogger } from '../utils/logger';
 import {
   hydrateXtreamSearchCatalog,
   loadXtreamSearchCatalog,
@@ -24,6 +29,7 @@ import {
 
 const searchIndex = new SearchWorkerIndex();
 const scopedSearchIndex = new ScopedSearchIndex();
+const log = createLogger('AppWorker');
 let searchCatalogSession: {
   id: number;
   catalog: XtreamSearchCatalog | null;
@@ -31,8 +37,15 @@ let searchCatalogSession: {
 } | null = null;
 let m3uSession: {
   id: number;
+  kind: 'memory';
   channels: Array<Channel | null>;
   cursor: number;
+} | {
+  id: number;
+  kind: 'staged';
+  exhausted: boolean;
+  pending: Channel[][];
+  stage: PlaylistParseStage;
 } | null = null;
 let playlistIndexSession: {
   id: number;
@@ -43,35 +56,101 @@ let playlistCacheSession: {
   writer: CachedPlaylistBatchWriter;
 } | null = null;
 const handlers: WorkerTaskHandlers<AppWorkerTasks> = {
-  'm3u.parse': request => {
+  'm3u.parse': async request => {
+    if (m3uSession?.kind === 'staged') await m3uSession.stage.abort();
+    m3uSession = null;
     const receivedAtEpochMs = Date.now();
     const started = performance.now();
-    const data = parseM3UBytes(
-      new Uint8Array(request.buffer),
-      request.sourceUrl,
-    );
-    const channels: Array<Channel | null> = data.channels;
-    const { channels: _channels, ...metadata } = data;
-    m3uSession = {
-      id: request.sessionId,
-      channels,
-      cursor: 0,
-    };
-    return {
-      data: metadata,
-      channelCount: channels.length,
-      metrics: {
-        inputBytes: request.buffer.byteLength,
-        inputTransferMs: Math.max(0, receivedAtEpochMs - request.sentAtEpochMs),
-        parseMs: performance.now() - started,
-        completedAtEpochMs: Date.now(),
-      },
-    };
+    const bytes = new Uint8Array(request.buffer);
+    let stage: PlaylistParseStage | null = null;
+    let stageWriteMs = 0;
+    try {
+      const activeStage = await PlaylistParseStage.begin(`m3u-${String(request.sessionId)}`);
+      stage = activeStage;
+      const parsed = await parseM3UBytesInBatches(
+        bytes,
+        request.sourceUrl,
+        async channels => {
+          const writeStarted = performance.now();
+          await activeStage.add(channels);
+          stageWriteMs += performance.now() - writeStarted;
+        },
+      );
+      stage.finish();
+      m3uSession = parsed.metrics.channelCount
+        ? { id: request.sessionId, kind: 'staged', exhausted: false, pending: [], stage }
+        : null;
+      return {
+        data: parsed.data,
+        channelCount: parsed.metrics.channelCount,
+        metrics: {
+          decodeChunkBytes: parsed.metrics.decodeChunkBytes,
+          decodeChunks: parsed.metrics.decodeChunks,
+          encoding: parsed.metrics.encoding,
+          maxDecodedChunkChars: parsed.metrics.maxDecodedChunkChars,
+          inputBytes: request.buffer.byteLength,
+          inputTransferMs: Math.max(0, receivedAtEpochMs - request.sentAtEpochMs),
+          maxBufferedChannels: parsed.metrics.maxBufferedChannels,
+          parseMs: Math.max(0, performance.now() - started - stageWriteMs),
+          sourceStaging: 'indexeddb' as const,
+          stageBatchSize: CONFIG.M3U.RESULT_BATCH_SIZE,
+          stageBatches: parsed.metrics.batches,
+          stageReadBatches: CONFIG.M3U.RESULT_BATCHES_PER_YIELD,
+          stageWriteMs,
+          completedAtEpochMs: Date.now(),
+        },
+      };
+    } catch (error) {
+      await stage?.abort();
+      log.warn(
+        'Playlist parse staging unavailable; retaining worker result batches in memory',
+        'event=m3u.parse.staging.fallback.used',
+        error,
+      );
+      const parsed = parseM3UBytesWithMetrics(bytes, request.sourceUrl);
+      const data = parsed.data;
+      const channels: Array<Channel | null> = data.channels;
+      const { channels: _channels, ...metadata } = data;
+      m3uSession = {
+        id: request.sessionId,
+        kind: 'memory',
+        channels,
+        cursor: 0,
+      };
+      return {
+        data: metadata,
+        channelCount: channels.length,
+        metrics: {
+          ...parsed.metrics,
+          inputBytes: request.buffer.byteLength,
+          inputTransferMs: Math.max(0, receivedAtEpochMs - request.sentAtEpochMs),
+          maxBufferedChannels: channels.length,
+          parseMs: performance.now() - started,
+          sourceStaging: 'memory' as const,
+          stageBatchSize: CONFIG.M3U.RESULT_BATCH_SIZE,
+          stageBatches: 0,
+          stageReadBatches: 0,
+          stageWriteMs,
+          completedAtEpochMs: Date.now(),
+        },
+      };
+    }
   },
-  'm3u.parse.next': request => {
+  'm3u.parse.next': async request => {
     const session = m3uSession;
     if (!session || session.id !== request.sessionId) {
       throw new Error('M3U parse session is no longer available');
+    }
+    if (session.kind === 'staged') {
+      if (!session.pending.length) {
+        const staged = await session.stage.take(CONFIG.M3U.RESULT_BATCHES_PER_YIELD);
+        session.pending.push(...staged.batches);
+        session.exhausted = staged.done;
+      }
+      const channels = session.pending.shift() ?? [];
+      const done = session.exhausted && !session.pending.length;
+      if (done) m3uSession = null;
+      return { channels, done };
     }
     const end = Math.min(
       session.cursor + CONFIG.M3U.RESULT_BATCH_SIZE,

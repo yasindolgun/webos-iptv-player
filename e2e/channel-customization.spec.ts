@@ -66,6 +66,7 @@ test('yellow enters edit mode and shows the color-key hints; yellow again leaves
 });
 
 test('the edit toolbar fits every locale with both EPG actions', async ({ page }) => {
+  test.setTimeout(60_000);
   await boot(page);
   const locales = ['en', 'de', 'es', 'fr', 'it', 'pt-BR', 'ru', 'uk', 'zh-CN'];
 

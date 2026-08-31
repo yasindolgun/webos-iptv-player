@@ -48,6 +48,9 @@ export async function runM3UParseWorker(
       channels.push(...batch.channels);
       resultBatches++;
       done = batch.done;
+      if (!done && resultBatches % CONFIG.M3U.RESULT_BATCHES_PER_YIELD === 0) {
+        await yieldResultDelivery();
+      }
     }
     if (channels.length !== response.channelCount) {
       throw new Error(
@@ -70,6 +73,17 @@ export async function runM3UParseWorker(
   } finally {
     releaseWorker();
   }
+}
+
+function yieldResultDelivery(): Promise<void> {
+  return new Promise(resolve => {
+    if (typeof requestAnimationFrame === 'function'
+        && (typeof document === 'undefined' || !document.hidden)) {
+      requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
 }
 
 export async function parseM3UOffThread(

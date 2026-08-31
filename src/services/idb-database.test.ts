@@ -56,15 +56,18 @@ afterEach(async () => {
 });
 
 describe('persistence database migrations', () => {
-  it('upgrades the published v4 schema to v5 without losing records', async () => {
+  it('upgrades the published v4 schema to v6 without losing records', async () => {
     await createPublishedV4Database();
     const databaseModule = await import('./idb-database');
 
     upgradedDatabase = await databaseModule.openPersistenceDb();
 
-    expect(upgradedDatabase?.version).toBe(5);
+    expect(upgradedDatabase?.version).toBe(6);
     expect(upgradedDatabase?.objectStoreNames.contains(
       databaseModule.CHANNEL_HEALTH_STORE,
+    )).toBe(true);
+    expect(upgradedDatabase?.objectStoreNames.contains(
+      databaseModule.PLAYLIST_STAGING_STORE,
     )).toBe(true);
     const transaction = upgradedDatabase!.transaction(
       ['epg-cache', 'favorites'],

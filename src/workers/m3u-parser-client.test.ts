@@ -15,6 +15,18 @@ vi.mock('./app-worker-client', () => ({
 import { parseM3UOffThread, runM3UParseWorker } from './m3u-parser-client';
 
 const SOURCE = '#EXTM3U\n#EXTINF:-1,Alpha\nhttp://host/a';
+const DECODE_METRICS = {
+  decodeChunkBytes: 64 * 1024,
+  decodeChunks: 1,
+  encoding: 'utf-8' as const,
+  maxDecodedChunkChars: SOURCE.length,
+  maxBufferedChannels: 1,
+  sourceStaging: 'indexeddb' as const,
+  stageBatchSize: 500,
+  stageBatches: 1,
+  stageReadBatches: 6,
+  stageWriteMs: 3,
+};
 
 beforeEach(() => {
   retainWorkerMock.mockReturnValue(releaseWorkerMock);
@@ -45,6 +57,7 @@ describe('runM3UParseWorker', () => {
         data,
         channelCount: parsed.channels.length,
         metrics: {
+          ...DECODE_METRICS,
           inputBytes: buffer.byteLength,
           inputTransferMs: 15,
           parseMs: 40,
@@ -57,6 +70,7 @@ describe('runM3UParseWorker', () => {
 
     expect(result.data).toEqual(parsed);
     expect(result.metrics).toEqual({
+      ...DECODE_METRICS,
       inputBytes: buffer.byteLength,
       inputTransferMs: 15,
       parseMs: 40,
@@ -159,6 +173,45 @@ describe('runM3UParseWorker', () => {
     await expect(runM3UParseWorker(buffer, 'http://host/list.m3u'))
       .rejects.toThrow('returned 1 of 2 parsed channels');
     expect(releaseWorkerMock).toHaveBeenCalledOnce();
+  });
+
+  it('yields to rendering between staged result batch groups', async () => {
+    const frame = vi.fn((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('requestAnimationFrame', frame);
+    const entries = Array.from({ length: 3_001 }, (_, index) =>
+      `#EXTINF:-1,ch${String(index)}\nhttp://host/${String(index)}`);
+    const source = ['#EXTM3U', ...entries].join('\n');
+    const buffer = new TextEncoder().encode(source).buffer;
+    const parsed = parseM3UBytes(new Uint8Array(buffer), 'http://host/list.m3u');
+    let cursor = 0;
+    runTaskMock.mockImplementation(async (task) => {
+      if (task === 'm3u.parse.next') {
+        const channels = parsed.channels.slice(cursor, cursor + 500);
+        cursor += channels.length;
+        return { channels, done: cursor >= parsed.channels.length };
+      }
+      const { channels: _channels, ...data } = parsed;
+      return {
+        data,
+        channelCount: parsed.channels.length,
+        metrics: {
+          ...DECODE_METRICS,
+          inputBytes: buffer.byteLength,
+          inputTransferMs: 1,
+          parseMs: 2,
+          completedAtEpochMs: Date.now(),
+        },
+      };
+    });
+
+    const result = await runM3UParseWorker(buffer, 'http://host/list.m3u');
+
+    expect(result.data.channels).toHaveLength(3_001);
+    expect(result.metrics.resultBatches).toBe(7);
+    expect(frame).toHaveBeenCalledOnce();
   });
 });
 

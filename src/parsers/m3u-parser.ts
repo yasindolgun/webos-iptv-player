@@ -5,6 +5,7 @@ import type {
   PlaylistParseIssue,
 } from '../types';
 import { UNCATEGORIZED_GROUP } from '../types';
+import { CONFIG } from '../config';
 import {
   xtreamCatchupSources,
   xtreamCredentialsFromLiveUrl,
@@ -14,6 +15,29 @@ import { m3uContentKind } from '../utils/m3u-content-kind';
 export interface M3UParseOptions {
   maxChannels?: number;
   maxIssues?: number;
+}
+
+export interface M3UByteParseMetrics {
+  decodeChunkBytes: number;
+  decodeChunks: number;
+  encoding: 'utf-8' | 'utf-16le' | 'utf-16be';
+  maxDecodedChunkChars: number;
+}
+
+export interface M3UByteParseResult {
+  data: ParsedPlaylist;
+  metrics: M3UByteParseMetrics;
+}
+
+export interface M3UBatchedParseMetrics extends M3UByteParseMetrics {
+  batches: number;
+  channelCount: number;
+  maxBufferedChannels: number;
+}
+
+export interface M3UBatchedParseResult {
+  data: Omit<ParsedPlaylist, 'channels'>;
+  metrics: M3UBatchedParseMetrics;
 }
 
 const DEFAULT_MAX_ISSUES = 500;
@@ -26,199 +50,9 @@ export function parseM3U(
 ): ParsedPlaylist {
   const text = stripBom(input);
   const detection = detectPlaylistFormat(input);
-  const headerAttributes: Record<string, string> = {};
-  const channels: Channel[] = [];
-  const groupSet = new Set<string>();
-  const issues: PlaylistParseIssue[] = [];
-  const maxIssues = options.maxIssues ?? DEFAULT_MAX_ISSUES;
-  const maxChannels = options.maxChannels ?? 0;
-  let current: Channel | null = null;
-  let epgUrls: string[] = [];
-  let maxConnections: number | undefined;
-  let playlistName: string | undefined;
-  let sawHeader = false;
-
-  const addIssue = (
-    level: PlaylistParseIssue['level'],
-    code: string,
-    message: string,
-    line: number,
-  ): void => {
-    if (issues.length < maxIssues) issues.push({ level, code, message, line });
-  };
-
-  if (detection.format === 'hls-master' || detection.format === 'hls-media') {
-    const metadata = readPlaylistMetadata(text);
-    Object.assign(headerAttributes, metadata.attributes);
-    epgUrls = collectEpgUrls(metadata.attributes);
-    const maxConn = parseInt(metadata.attributes['max-conn'] || '', 10);
-    if (maxConn > 0) maxConnections = maxConn;
-    if (sourceUrl) {
-      const channel = emptyChannel(nameFromUrl(sourceUrl));
-      channel.url = sourceUrl;
-      return result(
-        [channel],
-        [UNCATEGORIZED_GROUP],
-        epgUrls,
-        headerAttributes,
-        detection.format,
-        issues,
-        maxConnections,
-        metadata.name,
-      );
-    }
-    addIssue('error', 'hls-without-source', 'HLS input requires its source URL', 1);
-    return result(
-      [],
-      [],
-      epgUrls,
-      headerAttributes,
-      detection.format,
-      issues,
-      maxConnections,
-      metadata.name,
-    );
-  }
-
-  if (detection.format === 'xmltv' || detection.format === 'json'
-      || detection.format === 'html') {
-    addIssue(
-      'error',
-      'wrong-format',
-      `Expected an M3U playlist but received ${detection.format}`,
-      1,
-    );
-    return result([], [], [], headerAttributes, detection.format, issues);
-  }
-
-  let lineNo = 0;
-  let position = 0;
-  while (position < text.length) {
-    const lineStart = position;
-    while (position < text.length) {
-      const code = text.charCodeAt(position);
-      if (code === 10 || code === 13) break;
-      position++;
-    }
-    const line = text.slice(lineStart, position).trim();
-    if (position < text.length && text.charCodeAt(position) === 13
-        && text.charCodeAt(position + 1) === 10) position += 2;
-    else if (position < text.length) position++;
-    lineNo++;
-    if (!line) continue;
-
-    const tagEnd = directiveEnd(line);
-    const tag = tagEnd > 0 ? line.slice(0, tagEnd).toUpperCase() : '';
-    const hasColon = tagEnd > 0 && line.charCodeAt(tagEnd) === 58;
-    const body = tagEnd > 0 ? line.slice(tagEnd + (hasColon ? 1 : 0)) : '';
-
-    switch (tag) {
-      case '#EXTM3U': {
-        sawHeader = true;
-        const attrs = scanAttributes(body, 0).values;
-        Object.assign(headerAttributes, attrs);
-        epgUrls = collectEpgUrls(attrs);
-        const maxConn = parseInt(attrs['max-conn'] || '', 10);
-        if (maxConn > 0) maxConnections = maxConn;
-        break;
-      }
-      case '#EXTINF':
-        if (current) {
-          addIssue(
-            'warning',
-            'orphan-extinf',
-            `"${current.name}" has no stream URL; skipped`,
-            lineNo - 1,
-          );
-        }
-        current = parseExtInf(body);
-        break;
-      case '#EXTGRP':
-        if (current) applyGroups(current, body.trim(), true);
-        break;
-      case '#EXTVLCOPT':
-        if (current) addExtra(current, body, false);
-        break;
-      case '#KODIPROP':
-        if (current) addExtra(current, body, true);
-        break;
-      case '#EXTHTTP':
-        if (current) parseHttpHeaders(current, body, lineNo, addIssue);
-        break;
-      case '#PLAYLIST':
-        playlistName = body.trim() || undefined;
-        break;
-      default:
-        if (line.charCodeAt(0) === 35) break;
-        if (!current && detection.format === 'unknown' && !isPlaylistLocation(line)) {
-          addIssue(
-            'warning',
-            'unrecognized-line',
-            'Ignored a line that is not a stream location',
-            lineNo,
-          );
-          break;
-        }
-        if (!current) current = emptyChannel(nameFromUrl(line));
-        current.url = line;
-        if (current.catchup.toLowerCase() === 'xc' && !current.catchupSource) {
-          const inferred = xtreamCredentialsFromLiveUrl(line);
-          if (inferred) {
-            const sources = xtreamCatchupSources(
-              inferred.credentials,
-              inferred.streamId,
-              inferred.output,
-            );
-            current.catchup = 'xtream';
-            current.catchupSource = sources[0].url;
-            current.catchupFallbackSource = sources[3].url;
-            current.catchupSources = sources;
-            current.catchupStreamId = inferred.streamId;
-          }
-        }
-        if (current.group) groupSet.add(current.group);
-        for (const group of current.sourceGroups ?? []) groupSet.add(group);
-        current.contentKind = m3uContentKind(current.group);
-        channels.push(current);
-        current = null;
-        if (maxChannels > 0 && channels.length >= maxChannels) {
-          addIssue(
-            'warning',
-            'channel-limit',
-            `Stopped after ${String(maxChannels)} channels`,
-            lineNo,
-          );
-          position = text.length;
-        }
-        break;
-    }
-  }
-
-  if (current) {
-    addIssue(
-      'warning',
-      'orphan-extinf',
-      `"${current.name}" has no stream URL; skipped`,
-      lineNo,
-    );
-  }
-  if (!sawHeader) {
-    addIssue('warning', 'missing-extm3u', 'Playlist has no #EXTM3U header', 1);
-  }
-  if (!channels.length) {
-    addIssue('error', 'no-channels', 'No playable entries were found', 1);
-  }
-
-  return result(
-    channels,
-    Array.from(groupSet),
-    epgUrls,
-    headerAttributes,
-    detection.format,
-    issues,
-    maxConnections,
-    playlistName,
-  );
+  const parser = new M3UStreamParser(detection, sourceUrl, options);
+  parser.write(text);
+  return parser.finish();
 }
 
 export function parseM3UBytes(
@@ -226,7 +60,179 @@ export function parseM3UBytes(
   sourceUrl = '',
   options: M3UParseOptions = {},
 ): ParsedPlaylist {
-  return parseM3U(decodePlaylistBytes(bytes), sourceUrl, options);
+  return parseM3UBytesWithMetrics(bytes, sourceUrl, options).data;
+}
+
+export function parseM3UBytesWithMetrics(
+  bytes: Uint8Array,
+  sourceUrl = '',
+  options: M3UParseOptions = {},
+  requestedChunkBytes = CONFIG.M3U.DECODE_CHUNK_BYTES,
+): M3UByteParseResult {
+  const chunkBytes = Math.max(1, Math.floor(requestedChunkBytes));
+  const byteOrder = playlistByteOrder(bytes);
+  let parser: M3UStreamParser | null = null;
+  let detectionPrefix = '';
+  let decodeChunks = 0;
+  let maxDecodedChunkChars = 0;
+
+  const writeDecoded = (decoded: string): void => {
+    if (!decoded) return;
+    maxDecodedChunkChars = Math.max(maxDecodedChunkChars, decoded.length);
+    if (parser) {
+      parser.write(decoded);
+      return;
+    }
+    detectionPrefix += decoded;
+    if (detectionPrefix.length >= SAMPLE_CHARS) {
+      parser = new M3UStreamParser(
+        detectPlaylistFormat(detectionPrefix),
+        sourceUrl,
+        options,
+      );
+      parser.write(detectionPrefix);
+      detectionPrefix = '';
+    }
+  };
+
+  if (byteOrder.encoding === 'utf-8') {
+    const decoder = new TextDecoder('utf-8');
+    for (let start = byteOrder.offset; start < bytes.length; start += chunkBytes) {
+      const end = Math.min(start + chunkBytes, bytes.length);
+      writeDecoded(decoder.decode(bytes.subarray(start, end), { stream: true }));
+      decodeChunks++;
+    }
+    writeDecoded(decoder.decode());
+  } else {
+    const littleEndian = byteOrder.encoding === 'utf-16le';
+    const decoder = new Utf16ChunkDecoder(littleEndian);
+    for (let start = byteOrder.offset; start < bytes.length; start += chunkBytes) {
+      const end = Math.min(start + chunkBytes, bytes.length);
+      writeDecoded(decoder.decode(bytes.subarray(start, end)));
+      decodeChunks++;
+    }
+    writeDecoded(decoder.finish());
+  }
+
+  if (!parser) {
+    parser = new M3UStreamParser(
+      detectPlaylistFormat(detectionPrefix),
+      sourceUrl,
+      options,
+    );
+    parser.write(detectionPrefix);
+  }
+  return {
+    data: parser.finish(),
+    metrics: {
+      decodeChunkBytes: chunkBytes,
+      decodeChunks,
+      encoding: byteOrder.encoding,
+      maxDecodedChunkChars,
+    },
+  };
+}
+
+export async function parseM3UBytesInBatches(
+  bytes: Uint8Array,
+  sourceUrl: string,
+  onBatch: (channels: Channel[]) => Promise<void>,
+  options: M3UParseOptions = {},
+  requestedChunkBytes = CONFIG.M3U.DECODE_CHUNK_BYTES,
+  requestedBatchSize = CONFIG.M3U.RESULT_BATCH_SIZE,
+): Promise<M3UBatchedParseResult> {
+  const chunkBytes = Math.max(1, Math.floor(requestedChunkBytes));
+  const batchSize = Math.max(1, Math.floor(requestedBatchSize));
+  const byteOrder = playlistByteOrder(bytes);
+  let parser: M3UStreamParser | null = null;
+  let detectionPrefix = '';
+  let decodeChunks = 0;
+  let maxDecodedChunkChars = 0;
+  let maxBufferedChannels = 0;
+  let batches = 0;
+  let channelCount = 0;
+
+  const emitBatch = async (channels: Channel[]): Promise<void> => {
+    await onBatch(channels);
+    batches++;
+    channelCount += channels.length;
+  };
+
+  const flushParser = async (decoded: string): Promise<void> => {
+    if (decoded) maxDecodedChunkChars = Math.max(maxDecodedChunkChars, decoded.length);
+    if (!parser) {
+      detectionPrefix += decoded;
+      if (detectionPrefix.length < SAMPLE_CHARS) return;
+      parser = new M3UStreamParser(
+        detectPlaylistFormat(detectionPrefix),
+        sourceUrl,
+        options,
+        batchSize,
+      );
+      decoded = detectionPrefix;
+      detectionPrefix = '';
+    }
+    parser.write(decoded);
+    maxBufferedChannels = Math.max(maxBufferedChannels, parser.bufferedChannelCount);
+    while (parser.bufferedChannelCount >= batchSize) {
+      await emitBatch(parser.takeChannels(batchSize));
+      parser.write('');
+      maxBufferedChannels = Math.max(maxBufferedChannels, parser.bufferedChannelCount);
+    }
+  };
+
+  if (byteOrder.encoding === 'utf-8') {
+    const decoder = new TextDecoder('utf-8');
+    for (let start = byteOrder.offset; start < bytes.length; start += chunkBytes) {
+      const end = Math.min(start + chunkBytes, bytes.length);
+      await flushParser(decoder.decode(bytes.subarray(start, end), { stream: true }));
+      decodeChunks++;
+    }
+    await flushParser(decoder.decode());
+  } else {
+    const littleEndian = byteOrder.encoding === 'utf-16le';
+    const decoder = new Utf16ChunkDecoder(littleEndian);
+    for (let start = byteOrder.offset; start < bytes.length; start += chunkBytes) {
+      const end = Math.min(start + chunkBytes, bytes.length);
+      await flushParser(decoder.decode(bytes.subarray(start, end)));
+      decodeChunks++;
+    }
+    await flushParser(decoder.finish());
+  }
+
+  if (!parser) {
+    parser = new M3UStreamParser(
+      detectPlaylistFormat(detectionPrefix),
+      sourceUrl,
+      options,
+      batchSize,
+    );
+    parser.write(detectionPrefix);
+    maxBufferedChannels = Math.max(maxBufferedChannels, parser.bufferedChannelCount);
+    while (parser.bufferedChannelCount >= batchSize) {
+      await emitBatch(parser.takeChannels(batchSize));
+      parser.write('');
+      maxBufferedChannels = Math.max(maxBufferedChannels, parser.bufferedChannelCount);
+    }
+  }
+  const complete = parser.finish();
+  maxBufferedChannels = Math.max(maxBufferedChannels, complete.channels.length);
+  for (let index = 0; index < complete.channels.length; index += batchSize) {
+    await emitBatch(complete.channels.slice(index, index + batchSize));
+  }
+  const { channels: _channels, ...data } = complete;
+  return {
+    data,
+    metrics: {
+      decodeChunkBytes: chunkBytes,
+      decodeChunks,
+      encoding: byteOrder.encoding,
+      maxDecodedChunkChars,
+      batches,
+      channelCount,
+      maxBufferedChannels,
+    },
+  };
 }
 
 export function decodePlaylistBytes(bytes: Uint8Array): string {
@@ -234,6 +240,326 @@ export function decodePlaylistBytes(bytes: Uint8Array): string {
   if (bytes[0] === 0xfe && bytes[1] === 0xff) return decodeUtf16(bytes, 2, false);
   const offset = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
   return new TextDecoder('utf-8').decode(bytes.subarray(offset));
+}
+
+class M3UStreamParser {
+  private readonly channels: Channel[] = [];
+  private readonly groupSet = new Set<string>();
+  private readonly headerAttributes: Record<string, string> = {};
+  private readonly issues: PlaylistParseIssue[] = [];
+  private readonly maxChannels: number;
+  private readonly maxIssues: number;
+  private current: Channel | null = null;
+  private epgUrls: string[] = [];
+  private lineNo = 0;
+  private maxConnections: number | undefined;
+  private playlistName: string | undefined;
+  private remainder = '';
+  private sawHeader = false;
+  private stopped = false;
+  private totalChannels = 0;
+
+  constructor(
+    private readonly detection: PlaylistFormatDetection,
+    private readonly sourceUrl: string,
+    options: M3UParseOptions,
+    private readonly channelBufferLimit = 0,
+  ) {
+    this.maxChannels = options.maxChannels ?? 0;
+    this.maxIssues = options.maxIssues ?? DEFAULT_MAX_ISSUES;
+  }
+
+  write(chunk: string): void {
+    if ((!chunk && !this.remainder) || this.stopped || this.isWrongDocument()) return;
+    const text = this.remainder + chunk;
+    let lineStart = 0;
+    let position = 0;
+    while (position < text.length) {
+      const code = text.charCodeAt(position);
+      if (code !== 10 && code !== 13) {
+        position++;
+        continue;
+      }
+      if (code === 13 && position + 1 === text.length) break;
+      this.processLine(text.slice(lineStart, position));
+      position += code === 13 && text.charCodeAt(position + 1) === 10 ? 2 : 1;
+      lineStart = position;
+      if (this.stopped
+          || (this.channelBufferLimit > 0
+            && this.channels.length >= this.channelBufferLimit)) break;
+    }
+    this.remainder = this.stopped ? '' : text.slice(lineStart);
+  }
+
+  get bufferedChannelCount(): number {
+    return this.channels.length;
+  }
+
+  takeChannels(count: number): Channel[] {
+    return this.channels.splice(0, count);
+  }
+
+  finish(): ParsedPlaylist {
+    if (!this.stopped && !this.isWrongDocument() && this.remainder) {
+      const finalLine = this.remainder.charCodeAt(this.remainder.length - 1) === 13
+        ? this.remainder.slice(0, -1)
+        : this.remainder;
+      this.processLine(finalLine);
+    }
+    this.remainder = '';
+
+    if (this.isWrongDocument()) {
+      this.addIssue(
+        'error',
+        'wrong-format',
+        `Expected an M3U playlist but received ${this.detection.format}`,
+        1,
+      );
+      return result(
+        [],
+        [],
+        [],
+        this.headerAttributes,
+        this.detection.format,
+        this.issues,
+      );
+    }
+
+    if (this.isHls()) {
+      if (this.sourceUrl) {
+        const channel = emptyChannel(nameFromUrl(this.sourceUrl));
+        channel.url = this.sourceUrl;
+        return result(
+          [channel],
+          [UNCATEGORIZED_GROUP],
+          this.epgUrls,
+          this.headerAttributes,
+          this.detection.format,
+          this.issues,
+          this.maxConnections,
+          this.playlistName,
+        );
+      }
+      this.addIssue('error', 'hls-without-source', 'HLS input requires its source URL', 1);
+      return result(
+        [],
+        [],
+        this.epgUrls,
+        this.headerAttributes,
+        this.detection.format,
+        this.issues,
+        this.maxConnections,
+        this.playlistName,
+      );
+    }
+
+    if (this.current) {
+      this.addIssue(
+        'warning',
+        'orphan-extinf',
+        `"${this.current.name}" has no stream URL; skipped`,
+        this.lineNo,
+      );
+    }
+    if (!this.sawHeader) {
+      this.addIssue('warning', 'missing-extm3u', 'Playlist has no #EXTM3U header', 1);
+    }
+    if (!this.totalChannels) {
+      this.addIssue('error', 'no-channels', 'No playable entries were found', 1);
+    }
+    return result(
+      this.channels,
+      Array.from(this.groupSet),
+      this.epgUrls,
+      this.headerAttributes,
+      this.detection.format,
+      this.issues,
+      this.maxConnections,
+      this.playlistName,
+    );
+  }
+
+  private readonly addIssue = (
+    level: PlaylistParseIssue['level'],
+    code: string,
+    message: string,
+    line: number,
+  ): void => {
+    if (this.issues.length < this.maxIssues) {
+      this.issues.push({ level, code, message, line });
+    }
+  };
+
+  private isHls(): boolean {
+    return this.detection.format === 'hls-master'
+      || this.detection.format === 'hls-media';
+  }
+
+  private isWrongDocument(): boolean {
+    return this.detection.format === 'xmltv'
+      || this.detection.format === 'json'
+      || this.detection.format === 'html';
+  }
+
+  private processLine(rawLine: string): void {
+    this.lineNo++;
+    const line = rawLine.trim();
+    if (!line) return;
+    const tagEnd = directiveEnd(line);
+    const tag = tagEnd > 0 ? line.slice(0, tagEnd).toUpperCase() : '';
+    const hasColon = tagEnd > 0 && line.charCodeAt(tagEnd) === 58;
+    const body = tagEnd > 0 ? line.slice(tagEnd + (hasColon ? 1 : 0)) : '';
+
+    if (this.isHls()) {
+      if (tag === '#EXTM3U') this.applyHeader(body);
+      else if (tag === '#PLAYLIST') this.playlistName = body.trim() || undefined;
+      return;
+    }
+
+    switch (tag) {
+      case '#EXTM3U':
+        this.sawHeader = true;
+        this.applyHeader(body);
+        break;
+      case '#EXTINF':
+        if (this.current) {
+          this.addIssue(
+            'warning',
+            'orphan-extinf',
+            `"${this.current.name}" has no stream URL; skipped`,
+            this.lineNo - 1,
+          );
+        }
+        this.current = parseExtInf(body);
+        break;
+      case '#EXTGRP':
+        if (this.current) applyGroups(this.current, body.trim(), true);
+        break;
+      case '#EXTVLCOPT':
+        if (this.current) addExtra(this.current, body, false);
+        break;
+      case '#KODIPROP':
+        if (this.current) addExtra(this.current, body, true);
+        break;
+      case '#EXTHTTP':
+        if (this.current) {
+          parseHttpHeaders(this.current, body, this.lineNo, this.addIssue);
+        }
+        break;
+      case '#PLAYLIST':
+        this.playlistName = body.trim() || undefined;
+        break;
+      default:
+        this.processLocation(line);
+        break;
+    }
+  }
+
+  private applyHeader(body: string): void {
+    const attributes = scanAttributes(body, 0).values;
+    Object.assign(this.headerAttributes, attributes);
+    this.epgUrls = collectEpgUrls(attributes);
+    const maxConnections = parseInt(attributes['max-conn'] || '', 10);
+    if (maxConnections > 0) this.maxConnections = maxConnections;
+  }
+
+  private processLocation(line: string): void {
+    if (line.charCodeAt(0) === 35) return;
+    if (!this.current && this.detection.format === 'unknown'
+        && !isPlaylistLocation(line)) {
+      this.addIssue(
+        'warning',
+        'unrecognized-line',
+        'Ignored a line that is not a stream location',
+        this.lineNo,
+      );
+      return;
+    }
+    if (!this.current) this.current = emptyChannel(nameFromUrl(line));
+    this.current.url = line;
+    if (this.current.catchup.toLowerCase() === 'xc' && !this.current.catchupSource) {
+      const inferred = xtreamCredentialsFromLiveUrl(line);
+      if (inferred) {
+        const sources = xtreamCatchupSources(
+          inferred.credentials,
+          inferred.streamId,
+          inferred.output,
+        );
+        this.current.catchup = 'xtream';
+        this.current.catchupSource = sources[0].url;
+        this.current.catchupFallbackSource = sources[3].url;
+        this.current.catchupSources = sources;
+        this.current.catchupStreamId = inferred.streamId;
+      }
+    }
+    if (this.current.group) this.groupSet.add(this.current.group);
+    for (const group of this.current.sourceGroups ?? []) this.groupSet.add(group);
+    this.current.contentKind = m3uContentKind(this.current.group);
+    this.channels.push(this.current);
+    this.totalChannels++;
+    this.current = null;
+    if (this.maxChannels > 0 && this.channels.length >= this.maxChannels) {
+      this.addIssue(
+        'warning',
+        'channel-limit',
+        `Stopped after ${String(this.maxChannels)} channels`,
+        this.lineNo,
+      );
+      this.stopped = true;
+    }
+  }
+}
+
+interface PlaylistByteOrder {
+  encoding: M3UByteParseMetrics['encoding'];
+  offset: number;
+}
+
+function playlistByteOrder(bytes: Uint8Array): PlaylistByteOrder {
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return { encoding: 'utf-16le', offset: 2 };
+  }
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return { encoding: 'utf-16be', offset: 2 };
+  }
+  const offset = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
+  return { encoding: 'utf-8', offset };
+}
+
+class Utf16ChunkDecoder {
+  private pendingByte = -1;
+
+  constructor(private readonly littleEndian: boolean) {}
+
+  decode(bytes: Uint8Array): string {
+    const chunks: string[] = [];
+    const units: number[] = [];
+    let index = 0;
+    if (this.pendingByte >= 0 && bytes.length) {
+      units.push(this.codeUnit(this.pendingByte, bytes[0]));
+      this.pendingByte = -1;
+      index = 1;
+    }
+    for (; index + 1 < bytes.length; index += 2) {
+      units.push(this.codeUnit(bytes[index], bytes[index + 1]));
+      if (units.length === 4096) {
+        chunks.push(String.fromCharCode(...units));
+        units.length = 0;
+      }
+    }
+    if (index < bytes.length) this.pendingByte = bytes[index];
+    if (units.length) chunks.push(String.fromCharCode(...units));
+    return chunks.join('');
+  }
+
+  finish(): string {
+    this.pendingByte = -1;
+    return '';
+  }
+
+  private codeUnit(first: number, second: number): number {
+    return this.littleEndian ? first | second << 8 : first << 8 | second;
+  }
 }
 
 export function detectPlaylistFormat(input: string): PlaylistFormatDetection {
@@ -299,36 +625,6 @@ function result(
     format,
     issues,
   };
-}
-
-function readPlaylistMetadata(text: string): {
-  attributes: Record<string, string>;
-  name?: string;
-} {
-  const attributes: Record<string, string> = {};
-  let name: string | undefined;
-  let position = 0;
-  while (position < text.length) {
-    const start = position;
-    while (position < text.length) {
-      const code = text.charCodeAt(position);
-      if (code === 10 || code === 13) break;
-      position++;
-    }
-    const line = text.slice(start, position).trim();
-    if (position < text.length && text.charCodeAt(position) === 13
-        && text.charCodeAt(position + 1) === 10) position += 2;
-    else if (position < text.length) position++;
-    const tagEnd = directiveEnd(line);
-    if (tagEnd <= 0) continue;
-    const tag = line.slice(0, tagEnd).toUpperCase();
-    const body = line.charCodeAt(tagEnd) === 58
-      ? line.slice(tagEnd + 1)
-      : line.slice(tagEnd);
-    if (tag === '#EXTM3U') Object.assign(attributes, scanAttributes(body, 0).values);
-    else if (tag === '#PLAYLIST') name = body.trim() || undefined;
-  }
-  return { attributes, name };
 }
 
 function parseExtInf(body: string): Channel {

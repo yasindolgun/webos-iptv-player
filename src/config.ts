@@ -89,8 +89,10 @@ export const CONFIG = {
   M3U: {
     CATALOG_SEARCH_RESULT_CAP: 50_000,   // cap worker result transfer for very broad queries
     CATALOG_FRAME_THRESHOLD: 2_500,      // prepare larger catalogs outside the interaction frame
+    DECODE_CHUNK_BYTES: 64 * 1024,       // bound each decoded text allocation during parsing
     PARSE_TIMEOUT_MS: 120 * 1000,        // fail a wedged worker instead of leaving startup stuck
     RESULT_BATCH_SIZE: 500,              // bound each parsed-channel clone from worker to page
+    RESULT_BATCHES_PER_YIELD: 6,         // keep rendering responsive during staged result pulls
     INDEX_BATCHES_PER_YIELD: 6,          // let rendering run during worker index ingestion
   },
 

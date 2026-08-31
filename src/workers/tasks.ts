@@ -8,6 +8,7 @@ import type {
   VodItem,
 } from '../types';
 import type { XMLTVParseStats } from '../parsers/xmltv-parser';
+import type { M3UByteParseMetrics } from '../parsers/m3u-parser';
 import type {
   PlaylistIndexDocument,
   PlaylistIndexPlan,
@@ -127,10 +128,16 @@ export interface M3UParseWorkerRequest {
 export interface M3UParseWorkerResponse {
   data: Omit<ParsedPlaylist, 'channels'>;
   channelCount: number;
-  metrics: {
+  metrics: M3UByteParseMetrics & {
     inputBytes: number;
     inputTransferMs: number;
+    maxBufferedChannels: number;
     parseMs: number;
+    sourceStaging: 'indexeddb' | 'memory';
+    stageBatchSize: number;
+    stageBatches: number;
+    stageReadBatches: number;
+    stageWriteMs: number;
     completedAtEpochMs: number;
   };
 }

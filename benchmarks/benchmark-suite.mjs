@@ -843,17 +843,28 @@ export async function runM3UPipelineTimingBenchmark(options) {
     const round = (value) => Math.round(value * 10) / 10;
     const attributedMs = result.inputTransferMs
       + result.parseMs
+      + result.stageWriteMs
       + result.resultCloneDeliveryMs;
     return {
+      decodeChunkBytes: result.decodeChunkBytes,
+      decodeChunks: result.decodeChunks,
+      encoding: result.encoding,
       inputBytes: result.inputBytes,
       inputTransferMs: round(result.inputTransferMs),
+      maxBufferedChannels: result.maxBufferedChannels,
       parseMs: round(result.parseMs),
       resultCloneDeliveryMs: round(result.resultCloneDeliveryMs),
       resultBatchSize: result.resultBatchSize,
       resultBatches: result.resultBatches,
       unattributedMs: round(Math.max(0, result.roundTripMs - attributedMs)),
       roundTripMs: round(result.roundTripMs),
+      sourceStaging: result.sourceStaging,
+      stageBatchSize: result.stageBatchSize,
+      stageBatches: result.stageBatches,
+      stageReadBatches: result.stageReadBatches,
+      stageWriteMs: round(result.stageWriteMs),
       maxFrameGapMs: round(maxFrameGapMs),
+      maxDecodedChunkChars: result.maxDecodedChunkChars,
       channels: result.channels,
       groups: result.groups,
     };
@@ -904,11 +915,31 @@ export function assertM3UPipelineBenchmark(report, scale) {
   if (report.inputBytes <= 0 || report.roundTripMs < report.parseMs) {
     throw new Error('M3U pipeline timing metrics are inconsistent');
   }
+  if (report.decodeChunkBytes !== 64 * 1024
+      || report.decodeChunks !== Math.ceil(report.inputBytes / report.decodeChunkBytes)
+      || report.encoding !== 'utf-8'
+      || report.maxDecodedChunkChars > report.decodeChunkBytes) {
+    throw new Error(
+      `M3U pipeline decoding was not bounded: ${String(report.decodeChunks)} chunks, `
+      + `${String(report.maxDecodedChunkChars)} decoded characters at peak`,
+    );
+  }
   if (report.resultBatchSize !== 500
       || report.resultBatches !== Math.ceil(scale / report.resultBatchSize)) {
     throw new Error(
       `M3U pipeline delivered ${String(report.resultBatches)} result batches of `
       + `${String(report.resultBatchSize)} for scale ${String(scale)}`,
+    );
+  }
+  if (report.sourceStaging !== 'indexeddb'
+      || report.stageBatchSize !== 500
+      || report.stageBatches !== Math.ceil(scale / report.stageBatchSize)
+      || report.stageReadBatches !== 6
+      || report.maxBufferedChannels > report.stageBatchSize) {
+    throw new Error(
+      `M3U pipeline source staging was not bounded: ${String(report.sourceStaging)}, `
+      + `${String(report.stageBatches)} batches, `
+      + `${String(report.maxBufferedChannels)} buffered channels at peak`,
     );
   }
   if (!report.workerTerminatedAfterIdle

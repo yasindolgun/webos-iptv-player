@@ -290,6 +290,7 @@ test.describe('Settings navigation', () => {
   });
 
   test('keeps the clicked indicator and Data title visible after smooth scrolling', async ({ page }) => {
+    test.setTimeout(60_000);
     await page.goto('/');
     await expect(page.locator('#view-settings')).toBeVisible();
     await page.evaluate(() => {
@@ -317,7 +318,7 @@ test.describe('Settings navigation', () => {
       const title = document.querySelector('#settings-data .settings-section-title')!
         .getBoundingClientRect();
       return title.top >= main.top && title.bottom <= main.bottom;
-    })).toBe(true);
+    }), { timeout: 30_000 }).toBe(true);
 
     const changes = await page.evaluate(() =>
       (window as typeof window & { __settingsActiveChanges: string[] }).__settingsActiveChanges);

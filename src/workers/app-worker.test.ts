@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Channel } from '../types';
 import type { WorkerTaskHandlers } from './worker-rpc';
 import type { AppWorkerTasks } from './tasks';
 
@@ -8,12 +9,14 @@ const {
   cacheWriterBeginMock,
   cacheWriterFinishMock,
   exposeMock,
+  parseStageBeginMock,
 } = vi.hoisted(() => ({
   cacheWriterAbortMock: vi.fn(),
   cacheWriterAddMock: vi.fn(),
   cacheWriterBeginMock: vi.fn(),
   cacheWriterFinishMock: vi.fn(),
   exposeMock: vi.fn(),
+  parseStageBeginMock: vi.fn(),
 }));
 
 vi.mock('./worker-rpc', () => ({
@@ -23,6 +26,11 @@ vi.mock('./worker-rpc', () => ({
 vi.mock('../services/idb-cache', () => ({
   CachedPlaylistBatchWriter: {
     begin: cacheWriterBeginMock,
+  },
+}));
+vi.mock('../services/playlist-parse-stage', () => ({
+  PlaylistParseStage: {
+    begin: parseStageBeginMock,
   },
 }));
 
@@ -42,6 +50,16 @@ beforeEach(async () => {
     add: cacheWriterAddMock,
     finish: cacheWriterFinishMock,
   });
+  const batches: Channel[][] = [];
+  parseStageBeginMock.mockResolvedValue({
+    abort: vi.fn(),
+    add: vi.fn((channels: Channel[]) => { batches.push(channels); }),
+    finish: vi.fn(),
+    take: vi.fn((limit: number) => {
+      const taken = batches.splice(0, limit);
+      return { batches: taken, done: batches.length === 0 };
+    }),
+  });
   await import('./app-worker');
 });
 
@@ -49,6 +67,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   exposeMock.mockReset();
+  parseStageBeginMock.mockReset();
   cacheWriterAbortMock.mockReset();
   cacheWriterAddMock.mockReset();
   cacheWriterBeginMock.mockReset();
@@ -56,22 +75,15 @@ afterEach(() => {
 });
 
 describe('app worker M3U task', () => {
-  it('retains parsed channels and releases them in bounded result batches', () => {
+  it('stages parsed channels and releases them in bounded result batches', async () => {
     const entries = Array.from({ length: 501 }, (_, index) =>
       `#EXTINF:-1,ch${String(index + 1)}\nhttp://host/${String(index + 1)}`);
     const source = ['#EXTM3U', ...entries].join('\n');
     const buffer = new TextEncoder().encode(source).buffer;
-    vi.spyOn(Date, 'now')
-      .mockReturnValueOnce(1000)
-      .mockReturnValueOnce(1100);
-    vi.spyOn(performance, 'now')
-      .mockReturnValueOnce(20)
-      .mockReturnValueOnce(70);
-
-    const result = handlers['m3u.parse']({
+    const result = await handlers['m3u.parse']({
       buffer,
       sourceUrl: 'http://host/list.m3u',
-      sentAtEpochMs: 900,
+      sentAtEpochMs: Date.now(),
       sessionId: 7,
     });
 
@@ -81,16 +93,25 @@ describe('app worker M3U task', () => {
       },
       channelCount: 501,
       metrics: {
+        decodeChunkBytes: 64 * 1024,
+        decodeChunks: 1,
+        encoding: 'utf-8',
         inputBytes: buffer.byteLength,
-        inputTransferMs: 100,
-        parseMs: 50,
-        completedAtEpochMs: 1100,
+        inputTransferMs: expect.any(Number),
+        maxBufferedChannels: 500,
+        maxDecodedChunkChars: source.length,
+        parseMs: expect.any(Number),
+        sourceStaging: 'indexeddb',
+        stageBatchSize: 500,
+        stageBatches: 2,
+        stageWriteMs: expect.any(Number),
+        completedAtEpochMs: expect.any(Number),
       },
     });
     expect('channels' in result.data).toBe(false);
 
-    const first = handlers['m3u.parse.next']({ sessionId: 7 });
-    const second = handlers['m3u.parse.next']({ sessionId: 7 });
+    const first = await handlers['m3u.parse.next']({ sessionId: 7 });
+    const second = await handlers['m3u.parse.next']({ sessionId: 7 });
 
     expect(first.channels).toHaveLength(500);
     expect(first.done).toBe(false);
@@ -98,8 +119,57 @@ describe('app worker M3U task', () => {
       expect.objectContaining({ name: 'ch501', url: 'http://host/501' }),
     ]);
     expect(second.done).toBe(true);
-    expect(() => handlers['m3u.parse.next']({ sessionId: 7 }))
-      .toThrow('M3U parse session is no longer available');
+    await expect(handlers['m3u.parse.next']({ sessionId: 7 }))
+      .rejects.toThrow('M3U parse session is no longer available');
+  });
+
+  it('reports bounded decoding for a multi-chunk transferred playlist', async () => {
+    const entries = Array.from({ length: 2_000 }, (_, index) =>
+      `#EXTINF:-1,Channel ${String(index)}\nhttp://host/${String(index)}`);
+    const source = ['#EXTM3U', ...entries].join('\n');
+    const buffer = new TextEncoder().encode(source).buffer;
+
+    const parsed = await handlers['m3u.parse']({
+      buffer,
+      sourceUrl: 'http://host/list.m3u',
+      sentAtEpochMs: Date.now(),
+      sessionId: 8,
+    });
+
+    expect(buffer.byteLength).toBeGreaterThan(64 * 1024);
+    expect(parsed.channelCount).toBe(2_000);
+    expect(parsed.metrics.decodeChunkBytes).toBe(64 * 1024);
+    expect(parsed.metrics.decodeChunks)
+      .toBe(Math.ceil(buffer.byteLength / parsed.metrics.decodeChunkBytes));
+    expect(parsed.metrics.maxDecodedChunkChars)
+      .toBeLessThanOrEqual(parsed.metrics.decodeChunkBytes);
+  });
+
+  it('falls back to bounded worker-memory delivery when staging is unavailable', async () => {
+    parseStageBeginMock.mockRejectedValueOnce(new Error('staging unavailable'));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const source = '#EXTM3U\n#EXTINF:-1,ch1\nhttp://host/1';
+    const buffer = new TextEncoder().encode(source).buffer;
+
+    const parsed = await handlers['m3u.parse']({
+      buffer,
+      sourceUrl: 'http://host/list.m3u',
+      sentAtEpochMs: Date.now(),
+      sessionId: 9,
+    });
+
+    expect(parsed).toMatchObject({
+      channelCount: 1,
+      metrics: {
+        sourceStaging: 'memory',
+        stageBatches: 0,
+        maxBufferedChannels: 1,
+      },
+    });
+    await expect(handlers['m3u.parse.next']({ sessionId: 9 })).resolves.toMatchObject({
+      channels: [expect.objectContaining({ name: 'ch1' })],
+      done: true,
+    });
   });
 });
 

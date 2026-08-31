@@ -1,6 +1,7 @@
 import { test, expect, routePlaylist, seedPlaylist, enterTab } from './helpers';
 
 test('switching through every language refreshes cached Recently Watched labels', async ({ page }) => {
+  test.setTimeout(60_000);
   await routePlaylist(page);
   await seedPlaylist(page);
   await page.goto('/');

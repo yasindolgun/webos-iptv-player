@@ -77,6 +77,7 @@ export class XtreamReferenceServer {
     if (!server) return;
     await new Promise<void>((resolve, reject) => {
       server.close(error => error ? reject(error) : resolve());
+      server.closeAllConnections();
     });
   }
 

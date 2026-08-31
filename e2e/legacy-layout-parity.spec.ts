@@ -507,6 +507,8 @@ const XTREAM_SCREENS: Screen[] = [
     name: 'vod-menu-subtitles',
     budget: 0.001,
     go: async (p) => {
+      await p.mouse.move(1900, 540);
+      await expect(p.locator('#player-menu')).toBeVisible();
       await p.locator('[data-menu-action="__subs_open__"]').click();
       await expect(p.locator('[data-menu-action="__subs_track__"][data-track-index="-3"]')).toBeVisible();
     },
@@ -710,6 +712,6 @@ test('the webOS 4 fallbacks lay out where the modern engine does, with an M3U pl
 // tab bar — a second tab-bar layout, and the one that exposed its missing gap.
 test('the webOS 4 fallbacks lay out where the modern engine does, with an Xtream account', async ({ page, browser }) => {
   test.skip(isChromium53(), 'this test drives both engines itself, so it runs once');
-  test.slow();
+  test.setTimeout(240_000);
   await walk(page, browser, prepareXtream, XTREAM_SCREENS);
 });

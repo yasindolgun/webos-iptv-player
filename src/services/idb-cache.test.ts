@@ -30,6 +30,7 @@ import {
   CATALOG_STORE,
   CHANNEL_HEALTH_STORE,
   openPersistenceDb,
+  PLAYLIST_STAGING_STORE,
   requestResult,
   STREAM_MIME_STORE,
   SUBTITLE_STORE,
@@ -57,8 +58,9 @@ describe('idb-cache', () => {
 
   it('opens the current schema with the stream MIME store', async () => {
     const db = await openPersistenceDb();
-    expect(db?.version).toBe(5);
+    expect(db?.version).toBe(6);
     expect(db?.objectStoreNames.contains(STREAM_MIME_STORE)).toBe(true);
+    expect(db?.objectStoreNames.contains(PLAYLIST_STAGING_STORE)).toBe(true);
   });
 
   it('stores channel health records separately and accounts for them', async () => {

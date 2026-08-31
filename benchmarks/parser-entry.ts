@@ -58,13 +58,23 @@ interface BenchmarkDerivedIndexResult {
 }
 
 interface BenchmarkM3UPipelineResult {
+  decodeChunkBytes: number;
+  decodeChunks: number;
+  encoding: 'utf-8' | 'utf-16le' | 'utf-16be';
   inputBytes: number;
   inputTransferMs: number;
+  maxBufferedChannels: number;
   parseMs: number;
   resultCloneDeliveryMs: number;
   resultBatchSize: number;
   resultBatches: number;
   roundTripMs: number;
+  sourceStaging: 'indexeddb' | 'memory';
+  stageBatchSize: number;
+  stageBatches: number;
+  stageReadBatches: number;
+  stageWriteMs: number;
+  maxDecodedChunkChars: number;
   channels: number;
   groups: number;
 }
@@ -106,13 +116,23 @@ window.__IPTV_BENCHMARK__ = {
     terminateAppWorker('benchmark-m3u-cold-start');
     const result = await runM3UParseWorker(buffer, 'http://host/list.m3u');
     return {
+      decodeChunkBytes: result.metrics.decodeChunkBytes,
+      decodeChunks: result.metrics.decodeChunks,
+      encoding: result.metrics.encoding,
       inputBytes: result.metrics.inputBytes,
       inputTransferMs: result.metrics.inputTransferMs,
+      maxBufferedChannels: result.metrics.maxBufferedChannels,
       parseMs: result.metrics.parseMs,
       resultCloneDeliveryMs: result.metrics.resultCloneDeliveryMs,
       resultBatchSize: result.metrics.resultBatchSize,
       resultBatches: result.metrics.resultBatches,
       roundTripMs: result.metrics.roundTripMs,
+      sourceStaging: result.metrics.sourceStaging,
+      stageBatchSize: result.metrics.stageBatchSize,
+      stageBatches: result.metrics.stageBatches,
+      stageReadBatches: result.metrics.stageReadBatches,
+      stageWriteMs: result.metrics.stageWriteMs,
+      maxDecodedChunkChars: result.metrics.maxDecodedChunkChars,
       channels: result.data.channels.length,
       groups: result.data.groups.length,
     };

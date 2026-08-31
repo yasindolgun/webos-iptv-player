@@ -137,8 +137,51 @@ compatibility fallback.
 This bounds page-to-worker persistence cloning and makes IndexedDB backpressure
 explicit. Parsing still constructs the complete source graph in the worker,
 and the page still hydrates the combined channel graph for merge and playback.
-Chunked decoding, parse-to-persistence source staging, and the staged
-50,000/100,000/200,000 memory profiles remain the next ingestion work.
+The staged 50,000/100,000/200,000 memory profiles remain the next ingestion
+work.
+
+### Chunked playlist decoding — 2026-08-31
+
+M3U parsing no longer creates one decoded string as large as the complete feed.
+The production parser now preserves its line and directive state while the
+worker decodes at most 64 KiB of input bytes at a time. UTF-8 multibyte
+sequences, UTF-8 BOMs, both UTF-16 byte orders, CR/LF boundaries, metadata, and
+the tolerant issue model remain intact across chunk boundaries.
+
+The worker reports decode chunk size, count, encoding, and the largest decoded
+text allocation. The 50,000-item production-path benchmark asserts that these
+allocations remain bounded in addition to its existing transfer, parse,
+result-delivery, frame-gap, idle-cleanup, and timeout checks. The main-thread
+compatibility fallback uses the same chunked byte parser.
+
+This removes the transient full-feed decoded-string peak in both worker and
+fallback paths. The transferred input buffer and parsed channel graph still
+coexist inside the worker, and the page still hydrates the combined graph;
+the source-staging milestone below removes that worker graph overlap. Measured
+device memory budgets remain open.
+
+### Parse-to-persistence source staging — 2026-08-31
+
+The M3U worker no longer retains the complete parsed source graph before result
+delivery. Parsing pauses at each 500-channel boundary, waits for one temporary
+IndexedDB batch to commit, and only then resumes decoding. Result pulls read and
+delete at most six staged batches per transaction, deliver each RPC response at
+the existing 500-record bound, and yield to rendering between those groups. Slow
+storage cannot grow an unbounded write queue, delivery prefetch stays bounded at
+3,000 records, and completed pulls leave no temporary source records behind.
+
+The staging store is separate from the published playlist cache, so an
+interrupted parse cannot replace or evict the previous complete snapshot.
+Each parse-session start clears orphaned staging records. IndexedDB-unavailable
+engines retain the bounded result-delivery protocol with the prior worker-memory
+path as a compatibility fallback.
+
+The production pipeline benchmark now asserts the staging mode, 500-record
+write batch size and count, six-batch read prefetch, maximum parser-buffered
+channel count, and IndexedDB write time. This removes full parsed-source
+residency in the normal worker path; the page still hydrates source results for
+cross-source merge and the final combined graph for playback. Staged device
+heap budgets remain Priority 2 work.
 
 ### Direct Home resume — 2026-08-30
 
@@ -208,18 +251,22 @@ Acceptance criteria:
 M3U bytes are transferred to the existing classic app worker for decoding and
 parsing, with download, parse, merge, and cache progress reported separately.
 The request is bounded and retains a main-thread compatibility fallback when
-the worker fails before taking ownership of the input buffer.
+the worker fails before taking ownership of the input buffer. Decoding now
+preserves parser state across bounded 64 KiB byte chunks instead of allocating
+one string for the complete feed. Parsed source records are staged through one
+backpressured IndexedDB writer and returned to the page in bounded batches.
 Move the remaining expensive playlist work off the UI thread while preserving
 the tolerant production parser and current cache format.
 
 - Keep the production-path M3U pipeline benchmark regression-gating worker
   round-trip duration and maximum page frame gap while retaining input transfer,
   parse, result clone/delivery, idle cleanup, and failure-timeout diagnostics.
-- Evaluate chunked decoding where the webOS 4 API surface permits it; retain a
-  bounded buffered fallback for legacy engines and providers that cannot stream.
-- Avoid cloning multiple full playlist copies or a complete parsed object tree
-  between the page and worker. Prefer bounded record batches or worker-owned
-  persistence, and return only progress and compact index summaries to the page.
+- Keep chunked decoding and its UTF-8/UTF-16 boundary fixtures regression-gated;
+  retain the transferred-buffer path for engines and providers that cannot
+  stream a response body.
+- Keep parse-to-persistence source staging regression-gated: no complete parsed
+  object tree may be retained in the normal worker path, and temporary records
+  must be removed as the page pulls each bounded result batch.
 - Keep one IndexedDB writer active during ingestion so cache reads and competing
   transactions cannot create an unbounded write queue.
 - Keep cancellation, stale-cache fallback, multi-source deduplication, and

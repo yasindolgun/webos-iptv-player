@@ -4,6 +4,8 @@ import {
   detectPlaylistFormat,
   parseM3U,
   parseM3UBytes,
+  parseM3UBytesInBatches,
+  parseM3UBytesWithMetrics,
 } from './m3u-parser';
 import { UNCATEGORIZED_GROUP } from '../types';
 
@@ -382,6 +384,79 @@ describe('parseM3U', () => {
     const utf16Be = encodeUtf16(source, false);
     expect(parseM3UBytes(utf16Le).channels[0].name).toBe('Alpha');
     expect(parseM3UBytes(utf16Be).channels[0].name).toBe('Alpha');
+  });
+
+  it('matches the text parser across small UTF-8 decode chunks', () => {
+    const source = [
+      '#EXTM3U url-tvg="http://host/guide.xml" max-conn="2"',
+      '#PLAYLIST:Fixture',
+      '#EXTINF:-1 tvg-id="ch1" group-title="Alpha;Bravo",Name é世界',
+      '#EXTVLCOPT:http-user-agent=Agent',
+      '#EXTHTTP:{"Referer":"http://host/ref"}',
+      'http://host/a',
+      '#EXTINF:-1,Second',
+      'http://host/b',
+    ].join('\r\n');
+    const bytes = new TextEncoder().encode(source);
+    const parsed = parseM3UBytesWithMetrics(
+      bytes,
+      'http://host/list.m3u',
+      {},
+      7,
+    );
+
+    expect(parsed.data).toEqual(parseM3U(source, 'http://host/list.m3u'));
+    expect(parsed.metrics).toEqual({
+      decodeChunkBytes: 7,
+      decodeChunks: Math.ceil(bytes.byteLength / 7),
+      encoding: 'utf-8',
+      maxDecodedChunkChars: expect.any(Number),
+    });
+    expect(parsed.metrics.maxDecodedChunkChars).toBeLessThanOrEqual(7);
+  });
+
+  it('keeps UTF-16 code units and lines intact across odd byte chunks', () => {
+    const source = '#EXTM3U\r\n#EXTINF:-1,Alpha\r\nhttp://host/a\r\n';
+    for (const littleEndian of [true, false]) {
+      const bytes = encodeUtf16(source, littleEndian);
+      const parsed = parseM3UBytesWithMetrics(bytes, '', {}, 5);
+
+      expect(parsed.data).toEqual(parseM3U(source));
+      expect(parsed.metrics.encoding).toBe(littleEndian ? 'utf-16le' : 'utf-16be');
+      expect(parsed.metrics.decodeChunks).toBe(Math.ceil((bytes.byteLength - 2) / 5));
+      expect(parsed.metrics.maxDecodedChunkChars).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it('pauses parsing at each bounded async result batch', async () => {
+    const entries = Array.from({ length: 1_001 }, (_, index) =>
+      `#EXTINF:-1,ch${String(index)}\nhttp://host/${String(index)}`);
+    const source = ['#EXTM3U', ...entries].join('\n');
+    const batches: number[] = [];
+    let activeWrites = 0;
+    let maximumActiveWrites = 0;
+
+    const parsed = await parseM3UBytesInBatches(
+      new TextEncoder().encode(source),
+      'http://host/list.m3u',
+      async channels => {
+        activeWrites++;
+        maximumActiveWrites = Math.max(maximumActiveWrites, activeWrites);
+        await Promise.resolve();
+        batches.push(channels.length);
+        activeWrites--;
+      },
+    );
+
+    const { channels: _channels, ...expected } = parseM3U(source, 'http://host/list.m3u');
+    expect(parsed.data).toEqual(expected);
+    expect(parsed.metrics).toMatchObject({
+      batches: 3,
+      channelCount: 1_001,
+      maxBufferedChannels: 500,
+    });
+    expect(batches).toEqual([500, 500, 1]);
+    expect(maximumActiveWrites).toBe(1);
   });
 });
 
