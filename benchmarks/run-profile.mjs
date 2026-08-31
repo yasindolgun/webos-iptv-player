@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import process from 'node:process';
-import { BENCHMARK_PROFILES } from './benchmark-profile.mjs';
+import {
+  BENCHMARK_PROFILES,
+  resolveNpmRun,
+} from './benchmark-profile.mjs';
 
 const tv = process.argv.includes('--tv');
 const profile = process.argv.slice(2).find(argument => !argument.startsWith('--'));
@@ -11,8 +14,8 @@ if (!profile || !BENCHMARK_PROFILES.includes(profile)) {
   );
 }
 
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const child = spawn(npmCommand, ['run', tv ? 'benchmark:tv' : 'benchmark'], {
+const invocation = resolveNpmRun(tv ? 'benchmark:tv' : 'benchmark');
+const child = spawn(invocation.command, invocation.args, {
   env: {
     ...process.env,
     BENCHMARK_PROFILE: profile,

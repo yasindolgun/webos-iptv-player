@@ -6,6 +6,34 @@ const PROFILE_SCALES = Object.freeze({
 
 export const BENCHMARK_PROFILES = Object.freeze(Object.keys(PROFILE_SCALES));
 
+export function resolveBenchmarkTimeout(scale) {
+  const units = Math.max(1, Math.ceil(scale / 50_000));
+  return units <= 2 ? units * 300_000 : units * 675_000;
+}
+
+export function resolveNpmRun(
+  script,
+  {
+    environment = process.env,
+    platform = process.platform,
+    execPath = process.execPath,
+  } = {},
+) {
+  if (environment.npm_execpath) {
+    return {
+      command: execPath,
+      args: [environment.npm_execpath, 'run', script],
+    };
+  }
+  if (platform === 'win32') {
+    return {
+      command: environment.ComSpec || 'cmd.exe',
+      args: ['/d', '/s', '/c', `npm run ${script}`],
+    };
+  }
+  return { command: 'npm', args: ['run', script] };
+}
+
 export function resolveBenchmarkProfile(environment = process.env) {
   const requestedProfile = environment.BENCHMARK_PROFILE;
   const requestedScale = environment.BENCHMARK_SCALE;

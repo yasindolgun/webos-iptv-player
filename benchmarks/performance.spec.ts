@@ -3,7 +3,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { readFile } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
 import path from 'node:path';
-import { resolveBenchmarkProfile } from './benchmark-profile.mjs';
+import {
+  resolveBenchmarkProfile,
+  resolveBenchmarkTimeout,
+} from './benchmark-profile.mjs';
 import {
   assertGroupBenchmarkScale,
   assertColdLoadBenchmark,
@@ -58,7 +61,15 @@ async function openLiveFromHome(page: Page): Promise<void> {
 }
 
 test(`records the ${PROFILE} application benchmark`, async ({ page, browserName }) => {
+  test.setTimeout(resolveBenchmarkTimeout(SCALE));
   test.skip(browserName !== 'chromium', 'The benchmark uses Chromium heap metrics');
+  const benchmarkStarted = Date.now();
+  const stage = (name: string): void => {
+    console.log(
+      `[benchmark ${PROFILE}] ${name} (${String(Date.now() - benchmarkStarted)}ms)`,
+    );
+  };
+  stage('prepare fixtures');
   await page.route('**/benchmark-seed.html', (route) => route.fulfill({
     contentType: 'text/html',
     body: '<!doctype html><title>Benchmark seed</title>',
@@ -106,6 +117,7 @@ test(`records the ${PROFILE} application benchmark`, async ({ page, browserName 
   const fixtureSetupMs = Date.now() - fixtureStarted;
 
   try {
+    stage('startup');
     const startupStarted = Date.now();
     await page.goto('/');
     await openLiveFromHome(page);
@@ -116,6 +128,7 @@ test(`records the ${PROFILE} application benchmark`, async ({ page, browserName 
     await page.addScriptTag({
       content: await readFile('test-output/benchmarks/parser-bundle.js', 'utf8'),
     });
+    stage('M3U pipeline');
     const m3uPipeline = await measureM3UPipelineBenchmark({
       text: coldPlaylist,
       timeoutMs: 1,
@@ -125,6 +138,7 @@ test(`records the ${PROFILE} application benchmark`, async ({ page, browserName 
         new Promise<void>(resolve => setTimeout(resolve, milliseconds)),
     });
     assertM3UPipelineBenchmark(m3uPipeline, SCALE);
+    stage('raw parsers');
     const parsers = await page.evaluate(runRawParserBenchmarks, { scale: SCALE });
     parsers.m3uPipeline = m3uPipeline;
     await cdp.send('HeapProfiler.collectGarbage');
@@ -142,6 +156,7 @@ test(`records the ${PROFILE} application benchmark`, async ({ page, browserName 
       delay: (milliseconds: number) =>
         new Promise<void>(resolve => setTimeout(resolve, milliseconds)),
     };
+    stage('XMLTV pipeline');
     const xmltvPipeline = await measureXMLTVPipelineComparison(
       xmltvPipelineOptions,
       xmltvPipelineIo,
@@ -149,6 +164,7 @@ test(`records the ${PROFILE} application benchmark`, async ({ page, browserName 
     parsers.xmltvPipelineBuffered = xmltvPipeline.buffered;
     parsers.xmltvPipeline = xmltvPipeline.streaming;
     await cdp.send('HeapProfiler.collectGarbage');
+    stage('UI suites');
     const suites = await page.evaluate(runBenchmarkSuites, {
       keySamples: KEY_SAMPLES,
       querySamples: QUERY_SAMPLES,
@@ -163,6 +179,7 @@ test(`records the ${PROFILE} application benchmark`, async ({ page, browserName 
     suites.interactions.magicRemote = pointerReport;
     assertBenchmarkScale(suites, SCALE);
 
+    stage('reopen memory');
     await cdp.send('HeapProfiler.collectGarbage');
     const beforeReopen = await cdp.send('Runtime.getHeapUsage');
     const reopenHeap: number[] = [];
@@ -176,12 +193,14 @@ test(`records the ${PROFILE} application benchmark`, async ({ page, browserName 
     const heap = await cdp.send('Runtime.getHeapUsage');
     // Runs last of the in-page work: its multi-megabyte feed would otherwise
     // skew the reopen heap samples measured above.
+    stage('XMLTV catalog');
     parsers.xmltvCatalog = await measureXMLTVCatalogBenchmark(SCALE, {
       evaluate: (fn, arg) => page.evaluate(fn as never, arg),
       collectGarbage: () => cdp.send('HeapProfiler.collectGarbage'),
       heapUsed: async () => (await cdp.send('Runtime.getHeapUsage')).usedSize,
     });
     assertXMLTVCatalogBenchmark(parsers.xmltvCatalog);
+    stage('M3U search');
     await page.evaluate(installM3USearchFixture);
     await page.reload();
     await openLiveFromHome(page);
@@ -190,6 +209,7 @@ test(`records the ${PROFILE} application benchmark`, async ({ page, browserName 
       { querySamples: QUERY_SAMPLES },
     );
     assertM3USearchBenchmark(suites.search.m3u);
+    stage('group transitions');
     await page.evaluate(installUniqueGroupFixture, SCALE);
     const groupStartupStarted = Date.now();
     await page.reload();
@@ -198,6 +218,7 @@ test(`records the ${PROFILE} application benchmark`, async ({ page, browserName 
     groups.startupMs = Date.now() - groupStartupStarted;
     assertGroupBenchmarkScale(groups, SCALE);
     suites.groups = groups;
+    stage('cold load');
     await page.evaluate(installColdLoadFixture, {
       accountId: FIXTURE.accountId,
       url: COLD_PLAYLIST_URL,
@@ -221,6 +242,7 @@ test(`records the ${PROFILE} application benchmark`, async ({ page, browserName 
     };
     assertColdLoadBenchmark(coldLoad, SCALE);
     suites.coldLoad = coldLoad;
+    stage('write report');
     const report = {
       version: 2,
       target: 'desktop-chromium',
@@ -256,6 +278,7 @@ test(`records the ${PROFILE} application benchmark`, async ({ page, browserName 
     await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
     console.log(`Benchmark report: ${outputPath}`);
   } finally {
+    stage('cleanup');
     try {
       await page.goto('/benchmark-seed.html');
       await page.evaluate(cleanupBenchmarkFixture, {

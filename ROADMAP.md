@@ -232,6 +232,16 @@ GC retained heap, final page heap, and TV renderer RSS measurements remain in
 the same report. The larger profiles are still opt-in until their runtime and
 real-device memory budgets have been established.
 
+A Windows follow-up made the staged launcher independent of direct `.cmd`
+process spawning and kept the raw XMLTV fixture inside the production parser's
+date-retention window at every named scale. The 100,000-item desktop profile now
+completes the full workload with bounded DOM windows and no retained-heap growth
+across its reopen cycles. The 200,000-item workload kept the page alive and
+loaded all 200,000 channels, but did not finalize its report inside a measured
+30-minute test budget. It now reports timestamped stage transitions and has a
+45-minute opt-in ceiling; a complete 200,000-item report and device budgets
+remain open.
+
 ## Planned priorities
 
 ### Priority 0: webOS 4 cold-start validation

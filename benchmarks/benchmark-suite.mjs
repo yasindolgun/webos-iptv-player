@@ -790,13 +790,19 @@ export async function runRawParserBenchmarks(options) {
     const derivedIndexes = await api.profileDerivedIndexes(m3uText);
 
     const base = Date.now() - 6 * 24 * 60 * 60 * 1000;
-    const xmltvParts = [
-      '<tv><channel id="ch1"><display-name>Alpha</display-name></channel>',
-    ];
-    for (let index = 0; index < options.scale; index++) {
-      const start = base + index * 20_000;
+    const xmltvChannelCount = Math.max(1, Math.ceil(options.scale / 50_000));
+    const xmltvParts = ['<tv>'];
+    for (let index = 0; index < xmltvChannelCount; index++) {
       xmltvParts.push(
-        `<programme start="${xmltvTime(start)}" stop="${xmltvTime(start + 20_000)}" channel="ch1">`,
+        `<channel id="ch${String(index)}"><display-name>Channel ${String(index)}</display-name></channel>`,
+      );
+    }
+    for (let index = 0; index < options.scale; index++) {
+      const channelIndex = index % xmltvChannelCount;
+      const slot = Math.floor(index / xmltvChannelCount);
+      const start = base + slot * 20_000;
+      xmltvParts.push(
+        `<programme start="${xmltvTime(start)}" stop="${xmltvTime(start + 20_000)}" channel="ch${String(channelIndex)}">`,
         `<title>Program ${String(index)}</title><desc>Description ${String(index)}</desc></programme>`,
       );
     }
@@ -2623,7 +2629,12 @@ export function assertBenchmarkScale(report, scale) {
   if (report.parsers.m3u.channels !== scale
       || report.parsers.derivedIndexes.channels !== scale
       || report.parsers.xmltv.programmes !== scale) {
-    throw new Error('Raw parser benchmark did not produce the requested scale');
+    throw new Error(
+      `Raw parser benchmark expected ${String(scale)} items; received `
+      + `M3U=${String(report.parsers.m3u.channels)}, `
+      + `indexes=${String(report.parsers.derivedIndexes.channels)}, `
+      + `XMLTV=${String(report.parsers.xmltv.programmes)}`,
+    );
   }
   if (report.parsers.derivedIndexes.transport !== 'worker'
       || report.parsers.derivedIndexes.frames < 1
