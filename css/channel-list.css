@@ -267,6 +267,21 @@
   background: var(--accent);
 }
 
+.channel-catchup-status {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+}
+
+.channel-catchup-status .epg-replay-glyph {
+  width: 18px;
+  height: 18px;
+}
+
 .recent-kind-badge {
   flex-shrink: 0;
   padding: 5px 10px;

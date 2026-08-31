@@ -236,6 +236,24 @@ describe('ChannelList.render', () => {
       .toContain('suspect');
   });
 
+  it('marks catch-up support separately from channel health', () => {
+    data.channels[0].catchupSource = 'http://host/archive/{utc}';
+    healthMock.records['http://host/a'] = 'healthy';
+    try {
+      list.render();
+
+      const row = channelItems()[0];
+      const catchup = row.querySelector('.channel-catchup-status');
+      const health = row.querySelector('.channel-health-status');
+      expect(catchup?.getAttribute('aria-label')).toBe('CATCH-UP');
+      expect(catchup?.querySelector('svg')).not.toBeNull();
+      expect(catchup?.nextElementSibling).toBe(health);
+      expect(channelItems()[1].querySelector('.channel-catchup-status')).toBeNull();
+    } finally {
+      data.channels[0].catchupSource = '';
+    }
+  });
+
   it('renders normal channel and group content without editor inputs', () => {
     list.render();
 

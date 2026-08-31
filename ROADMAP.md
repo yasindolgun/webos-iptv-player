@@ -92,7 +92,7 @@ This milestone bounds cross-thread result cloning, not total catalog residency.
 The worker still constructs the complete parsed graph before delivery and the
 page eventually hydrates every channel. Worker-owned IndexedDB persistence and
 single-writer backpressure are covered by the later update below; staged device
-memory budgets remain Priority 2 work.
+memory budgets remain Priority 1 work.
 
 ### Derived-index preparation — 2026-08-30
 
@@ -181,7 +181,7 @@ write batch size and count, six-batch read prefetch, maximum parser-buffered
 channel count, and IndexedDB write time. This removes full parsed-source
 residency in the normal worker path; the page still hydrates source results for
 cross-source merge and the final combined graph for playback. Staged device
-heap budgets remain Priority 2 work.
+heap budgets remain Priority 1 work.
 
 ### Direct Home resume — 2026-08-30
 
@@ -242,6 +242,32 @@ loaded all 200,000 channels, but did not finalize its report inside a measured
 45-minute opt-in ceiling; a complete 200,000-item report and device budgets
 remain open.
 
+### Player information and Live-list clarity — 2026-09-01
+
+The normal player OSD now keeps primary playback context concise, while an
+explicit Playback details view exposes resolution, codecs, declared bitrate,
+frame rate, buffer range, and active pipeline with their provenance. Audio,
+subtitle, sync, navigation, and transport controls retain the existing remote
+grammar, and the diagnostics view does not create a second media pipeline or a
+sustained high-frequency probe.
+
+Visible Live rows now show locally derived EPG progress on a bounded one-minute
+refresh while the view is active. Catch-up-capable channels use the shared
+inline replay SVG, separately from channel-health state, without changing the
+fixed virtual-row geometry or auto-tuning focused rows.
+
+### Playback and parse-session hardening — 2026-09-01
+
+Live playback now retries the current stream through a bounded recovery path
+before surfacing failure, rather than cascading into unrelated channels. VOD
+can retry without an incorrect MIME hint, and app suspension preserves resume
+state while releasing playback resources.
+
+Concurrent M3U parses now isolate their source-staging records and enforce the
+configured channel limit across emitted batches. A failed or superseded parse
+cannot consume another session's staged output or exceed the limit through
+batch boundaries.
+
 ## Planned priorities
 
 ### Priority 0: webOS 4 cold-start validation
@@ -272,48 +298,7 @@ Acceptance criteria:
 - The recorded device, firmware, app version, bundle hash, source scale, and
   budgets are sufficient to reproduce the result.
 
-### Priority 1: Large-source ingestion
-
-M3U bytes are transferred to the existing classic app worker for decoding and
-parsing, with download, parse, merge, and cache progress reported separately.
-The request is bounded and retains a main-thread compatibility fallback when
-the worker fails before taking ownership of the input buffer. Decoding now
-preserves parser state across bounded 64 KiB byte chunks instead of allocating
-one string for the complete feed. Parsed source records are staged through one
-backpressured IndexedDB writer and returned to the page in bounded batches.
-Move the remaining expensive playlist work off the UI thread while preserving
-the tolerant production parser and current cache format.
-
-- Keep the production-path M3U pipeline benchmark regression-gating worker
-  round-trip duration and maximum page frame gap while retaining input transfer,
-  parse, result clone/delivery, idle cleanup, and failure-timeout diagnostics.
-- Keep chunked decoding and its UTF-8/UTF-16 boundary fixtures regression-gated;
-  retain the transferred-buffer path for engines and providers that cannot
-  stream a response body.
-- Keep parse-to-persistence source staging regression-gated: no complete parsed
-  object tree may be retained in the normal worker path, and temporary records
-  must be removed as the page pulls each bounded result batch.
-- Keep one IndexedDB writer active during ingestion so cache reads and competing
-  transactions cannot create an unbounded write queue.
-- Keep cancellation, stale-cache fallback, multi-source deduplication, and
-  source-level error reporting intact.
-
-Acceptance criteria:
-
-- Cold-loading the benchmark playlist does not introduce a UI-thread task over
-  the agreed regression threshold.
-- Parsing produces byte-for-byte equivalent channel metadata for the existing
-  M3U parser fixtures.
-- Transferring the input buffer and persisting parsed output does not create a
-  second full-feed memory peak on the page.
-- Batch size is bounded and benchmarked; a slow IndexedDB write cannot cause
-  parsed records to accumulate without limit in worker memory.
-- Worker failure falls back safely or produces an actionable error; it never
-  leaves the loading view stuck.
-- `npm run benchmark:check`, the Chromium 53 simulation, and a real webOS 4
-  device remain release gates.
-
-### Priority 2: 200,000-item scale qualification
+### Priority 1: 200,000-item scale qualification
 
 Treat 200,000 items as a measured source-size target, not a promise that every
 full record remains resident in JavaScript memory.
@@ -349,7 +334,7 @@ Acceptance criteria:
 - Search and navigation remain responsive while background cache work runs.
 - The documented supported scale matches measured device results.
 
-### Priority 3: Cohesive 10-foot product experience
+### Priority 2: Cohesive 10-foot product experience
 
 Evolve the existing Home, catalog, player, and live-TV surfaces into one calm,
 content-first TV experience. This is a presentation and interaction pass over
@@ -395,25 +380,7 @@ Milestone 1 — Home content hub:
 - Add per-rail focus memory and stable keyed items. Hydrate only bounded visible
   ranges and do not make Home fetch or retain a complete catalog.
 
-Milestone 2 — Three-layer player information architecture:
-
-- The normal OSD now keeps only title, programme timing, progress or live edge,
-  next programme, and restrained resolution / dynamic-range badges. It still
-  auto-hides and detailed stream text no longer crowds the primary overlay.
-- Audio, subtitles, subtitle sync, A/V resync, and channel navigation remain in
-  the existing quick-menu and sidebar flows with the same OK, directional,
-  transport, color, and channel-key mapping.
-- Detailed resolution, codecs, declared bitrate, frame rate, current buffer
-  range, and active pipeline now live in an explicit Playback details view.
-  Every shown value is labelled observed, declared, parsed, or derived; unknown
-  fields are omitted instead of guessed.
-- Do not claim packet loss, server ping, codec profile/level, colorimetry, or
-  measured throughput unless the active pipeline supplies that exact value.
-- Native decode and HDR/Dolby passthrough remain untouched. The diagnostics
-  view reads the existing player state only when opened and adds neither a
-  second media pipeline nor sustained high-frequency probing.
-
-Milestone 3 — VOD detail hierarchy:
+Milestone 2 — VOD detail hierarchy:
 
 - Turn the current joined metadata line into restrained, structured labels for
   values that are actually present, without inventing capabilities from titles
@@ -425,16 +392,6 @@ Milestone 3 — VOD detail hierarchy:
 - Keep cast and crew text usable when structured portraits or identifiers are
   absent; external enrichment must remain optional rather than gate the detail
   page.
-
-Milestone 4 — Live-list clarity:
-
-- A restrained EPG progress indicator is now shown on visible channel rows. The
-  virtualized range refreshes once per minute only while Live is open, instead
-  of re-rendering the complete list every second.
-- Mark catch-up support with the shared inline SVG icon and keep channel-health
-  state visually distinct from stream capability metadata.
-- Do not auto-tune every focused row. Any video preview remains the separate,
-  opt-in real-device feasibility work described under Priority 5.
 
 Design constraints:
 
@@ -466,7 +423,7 @@ Acceptance criteria:
 - The final OSD, Home, detail, and live-list layouts pass real-TV checks for
   readability, animation cost, native-video contrast, and repeated navigation.
 
-### Priority 4: Parental controls
+### Priority 3: Parental controls
 
 Allow users to lock selected groups and channels without relying on unreliable
 provider naming conventions.
@@ -489,7 +446,7 @@ Acceptance criteria:
   stable channel and group identities where possible.
 - Remote, Magic Remote, and pointer entry all use the same prompt and policy.
 
-### Priority 5: Guide preview feasibility
+### Priority 4: Guide preview feasibility
 
 Prototype a small live preview in the EPG detail area, then keep it only if the
 native video plane behaves reliably across supported TVs.

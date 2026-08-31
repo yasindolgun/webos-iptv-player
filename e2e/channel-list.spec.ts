@@ -155,6 +155,29 @@ test('visible live rows show EPG progress inside their fixed box', async ({ page
   expect(bounds.bottom).toBeGreaterThanOrEqual(0);
 });
 
+test('live rows mark catch-up support with the shared replay icon', async ({ page }) => {
+  const m3u = [
+    '#EXTM3U',
+    '#EXTINF:-1 group-title="News" catchup="default" ' +
+      'catchup-source="http://host/archive/{utc}",Alpha',
+    'http://host/a',
+    '#EXTINF:-1 group-title="News",Bravo',
+    'http://host/b',
+  ].join('\n');
+  await routePlaylist(page, m3u);
+  await seedPlaylist(page);
+  await page.goto('/');
+
+  const rows = page.locator('.channel-main .channel-item');
+  await expect(rows.nth(0).locator('.channel-catchup-status')).toHaveAttribute(
+    'aria-label',
+    'CATCH-UP',
+  );
+  await expect(rows.nth(0).locator('.channel-catchup-status .epg-replay-glyph'))
+    .toBeVisible();
+  await expect(rows.nth(1).locator('.channel-catchup-status')).toHaveCount(0);
+});
+
 // Each result section has its own scroll box, so a lone Channels list has to
 // fill the view rather than stop at the height a second section would need.
 test('M3U-only Search fills the view when Channels is the only section', async ({ page }) => {

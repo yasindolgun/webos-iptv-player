@@ -23,6 +23,7 @@ import { groupIcon } from './group-icon';
 import { showToast } from './toast';
 import { getLocale, t, tp, type SupportedLocale } from '../i18n';
 import { ChannelListEditor } from './channel-list-editor';
+import { REPLAY_ICON } from './icons';
 import { VirtualList } from '../utils/virtual-list';
 import { VirtualScrollGuard } from '../utils/virtual-scroll';
 
@@ -540,6 +541,7 @@ export class ChannelList {
                 : '')}
         </div>
         ${this.editor.renderChannelEditStatus(ch)}
+        ${this.editor.isChannelEditing ? '' : this.renderCatchup(ch)}
         ${this.renderHealth(ch)}
         ${isPlaying ? raw('<div class="playing-indicator">&#9654;</div>') : ''}
       </div>
@@ -570,6 +572,7 @@ export class ChannelList {
               ${this.renderEpgProgress(nowPlaying)}
             ` : ''}
           </div>
+          ${this.renderCatchup(item.channel)}
           ${this.renderHealth(item.channel)}
           <div class="recent-kind-badge live">${t('common.live')}</div>
           ${isPlaying ? raw('<div class="playing-indicator">&#9654;</div>') : ''}
@@ -642,6 +645,16 @@ export class ChannelList {
     return html`
       <span class="channel-health-status channel-health-dot ${status}" title="${labels[status]}"
             aria-label="${labels[status]}"></span>
+    `;
+  }
+
+  private renderCatchup(ch: Channel): Safe | string {
+    if (!ch.catchupSource) return '';
+    const label = t('common.catchup');
+    return html`
+      <span class="channel-catchup-status" title="${label}" aria-label="${label}" role="img">
+        ${raw(REPLAY_ICON)}
+      </span>
     `;
   }
 
