@@ -161,7 +161,7 @@ test('adds and removes Movies and Series through their detail screens', async ({
   await expect.poll(() => storedWatchlist(page)).toEqual([]);
 });
 
-test('shows Resume on return and keeps three movie actions at a stable height', async ({ page }) => {
+test('uses one contextual primary movie action at a stable height', async ({ page }) => {
   await seedWatchlistCatalog(page, [movieEntry('10', 'Movie One', 1000)]);
   await routeLiveManifest(page);
   await neuterVideo(page);
@@ -179,9 +179,11 @@ test('shows Resume on return and keeps three movie actions at a stable height', 
     document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 461, bubbles: true })));
 
   await expect(page.locator('#view-movies')).toBeVisible();
-  await expect(page.locator('#view-movies [data-action="resume"]')).toBeVisible();
+  await expect(page.locator('#view-movies [data-action="play"][data-resume="true"]'))
+    .toContainText('Resume');
   const actions = page.locator('#view-movies .detail-btn');
-  await expect(actions).toHaveCount(3);
+  await expect(actions).toHaveCount(2);
+  await expect(page.locator('#view-movies .detail-btn-primary')).toHaveCount(1);
   const layout = await actions.evaluateAll((buttons) => buttons.map((button) => ({
     height: (button as HTMLElement).offsetHeight,
     top: (button as HTMLElement).offsetTop,
@@ -192,7 +194,7 @@ test('shows Resume on return and keeps three movie actions at a stable height', 
   expect(layout.every((item) => item.whiteSpace === 'nowrap')).toBe(true);
 });
 
-test('keeps three pseudo-localized movie actions on one row without clipping', async ({ page }) => {
+test('keeps contextual pseudo-localized movie actions on one row without clipping', async ({ page }) => {
   await seedWatchlistCatalog(page, [movieEntry('10', 'Movie One', 1000)]);
   await page.addInitScript(() => {
     localStorage.setItem('iptv_resume', JSON.stringify({
@@ -216,7 +218,7 @@ test('keeps three pseudo-localized movie actions on one row without clipping', a
   await focusAndSelect(page, '#view-movies [data-watchlist-item="10"]');
 
   const actions = page.locator('#view-movies .detail-btn');
-  await expect(actions).toHaveCount(3);
+  await expect(actions).toHaveCount(2);
   await expect(actions.first()).toContainText('[!!');
   const layout = await page.locator('#view-movies .detail-actions').evaluate((row) => ({
     clientWidth: row.clientWidth,

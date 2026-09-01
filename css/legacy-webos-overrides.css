@@ -34,6 +34,8 @@
   .tab-bar-inner > .tab-bar-account { margin-left: 52px; }
   .epg-prog-title > .epg-bell-glyph { margin-left: 18px; }
   .settings-field > .settings-item-hint { margin-top: 14px; }
+  .detail-facts { margin-bottom: 14px; }
+  .detail-facts > .detail-fact { margin-bottom: 10px; }
 }
 
 @supports not (backdrop-filter: blur(1px)) {
@@ -41,6 +43,7 @@
   .player-menu,
   .player-osd,
   .number-entry { background: rgb(10, 10, 15); }
+  .detail-backdrop-scrim { background: rgb(10, 10, 15); }
 }
 
 /*

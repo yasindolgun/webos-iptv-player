@@ -1,10 +1,18 @@
-import type { Action, ResumeEntry, XtreamAccountStatusSnapshot } from '../types';
+import type {
+  Action,
+  Reminder,
+  ResumeEntry,
+  WatchlistEntry,
+  XtreamAccountStatusSnapshot,
+} from '../types';
 import { SpatialNav } from '../navigation/spatial-nav';
 import { html, raw } from '../utils/dom';
 import { morph } from '../utils/morph';
 import { t } from '../i18n';
-import { formatLocalTime } from '../utils/time';
+import { formatLocalTime, formatTime } from '../utils/time';
 import { accountStatusDisplay } from './account-status';
+import type { RecentlyWatchedItem } from '../services/recently-watched';
+import { channelKey } from '../utils/channel';
 
 export type HomeAction = 'live' | 'movies' | 'series' | 'continue' | 'epg' | 'refresh' | 'settings';
 
@@ -15,12 +23,23 @@ export interface HomeState {
   lastRefreshAt: number | null;
   accountName: string;
   accountStatus: XtreamAccountStatusSnapshot | null;
+  recent: RecentlyWatchedItem[];
+  watchlist: WatchlistEntry[];
+  reminders: Reminder[];
 }
+
+export type HomeItem =
+  | { kind: 'recent'; item: RecentlyWatchedItem }
+  | { kind: 'watchlist'; item: WatchlistEntry }
+  | { kind: 'reminder'; item: Reminder };
 
 interface HomeHandlers {
   onAction: (action: HomeAction) => void;
+  onItem: (item: HomeItem) => void;
   onBack: () => void;
 }
+
+const RAIL_ITEM_LIMIT = 8;
 
 const ICONS: Record<HomeAction, string> = {
   live: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="m8 2 4 3 4-3M8 10h8M8 14h5"/></svg>',
@@ -41,24 +60,42 @@ export class Home {
     lastRefreshAt: null,
     accountName: '',
     accountStatus: null,
+    recent: [],
+    watchlist: [],
+    reminders: [],
   };
   private refreshing = false;
+  private focusKey = 'action:live';
 
   constructor(private container: HTMLElement, private handlers: HomeHandlers) {
     this.nav = new SpatialNav(container);
     container.setAttribute('data-self-activate', '');
     container.addEventListener('click', event => {
-      const card = (event.target as HTMLElement).closest<HTMLElement>('[data-home-action]');
-      if (!card || card.getAttribute('aria-disabled') === 'true') return;
-      this.nav.focus(card);
-      this.activate(card.dataset.homeAction as HomeAction);
+      const target = (event.target as HTMLElement)
+        .closest<HTMLElement>('[data-home-action], [data-home-item]');
+      if (!target || target.getAttribute('aria-disabled') === 'true') return;
+      this.nav.focus(target);
+      this.rememberFocus(target);
+      if (target.dataset.homeAction) {
+        this.activate(target.dataset.homeAction as HomeAction);
+      } else {
+        this.activateItem(target);
+      }
     });
   }
 
   open(state: HomeState): void {
     this.state = state;
     this.render();
-    this.nav.focusBySelector('[data-home-action="live"]');
+    const remembered = Array.from(
+      this.container.querySelectorAll<HTMLElement>('[data-home-focus-key]'),
+    ).find(element => element.dataset.homeFocusKey === this.focusKey);
+    if (remembered?.hasAttribute('data-focusable')) {
+      this.nav.focus(remembered);
+    } else {
+      this.focusKey = 'action:live';
+      this.nav.focusBySelector('[data-home-action="live"]');
+    }
   }
 
   update(state: HomeState): void {
@@ -77,7 +114,12 @@ export class Home {
     } else if (action === 'select') {
       const focused = this.nav.focused;
       if (focused && focused.getAttribute('aria-disabled') !== 'true') {
-        this.activate(focused.dataset.homeAction as HomeAction);
+        this.rememberFocus(focused);
+        if (focused.dataset.homeAction) {
+          this.activate(focused.dataset.homeAction as HomeAction);
+        } else {
+          this.activateItem(focused);
+        }
       }
     } else if (action === 'left' || action === 'right') {
       this.moveHorizontal(action);
@@ -87,8 +129,13 @@ export class Home {
   }
 
   private moveHorizontal(direction: 'left' | 'right'): void {
+    const focused = this.nav.focused;
+    if (!focused?.closest('.home-actions')) {
+      this.nav.move(direction);
+      return;
+    }
     const cards = Array.from(
-      this.container.querySelectorAll<HTMLElement>('[data-home-action][data-focusable]'),
+      this.container.querySelectorAll<HTMLElement>('.home-actions [data-home-action][data-focusable]'),
     );
     if (!cards.length) return;
     const current = cards.indexOf(this.nav.focused as HTMLElement);
@@ -105,6 +152,25 @@ export class Home {
     this.handlers.onAction(action);
   }
 
+  private rememberFocus(element: HTMLElement): void {
+    this.focusKey = element.dataset.homeFocusKey ?? 'action:live';
+  }
+
+  private activateItem(element: HTMLElement): void {
+    const key = element.dataset.homeItem ?? '';
+    const kind = element.dataset.homeItemKind;
+    if (kind === 'recent') {
+      const item = this.state.recent.find(value => this.recentKey(value) === key);
+      if (item) this.handlers.onItem({ kind, item });
+    } else if (kind === 'watchlist') {
+      const item = this.state.watchlist.find(value => this.watchlistKey(value) === key);
+      if (item) this.handlers.onItem({ kind, item });
+    } else if (kind === 'reminder') {
+      const item = this.state.reminders.find(value => this.reminderKey(value) === key);
+      if (item) this.handlers.onItem({ kind, item });
+    }
+  }
+
   private card(
     action: HomeAction,
     label: string,
@@ -115,6 +181,7 @@ export class Home {
     return html`
       <button type="button" class="home-card ${extraClass}" ${disabled ? '' : raw('data-focusable')}
               data-key="${action}" data-home-action="${action}"
+              data-home-focus-key="action:${action}"
               aria-disabled="${disabled ? 'true' : 'false'}">
         <span class="home-card-icon">${raw(ICONS[action])}</span>
         <span class="home-card-copy">
@@ -134,6 +201,79 @@ export class Home {
     if (!this.state.lastRefreshAt) return t('home.neverRefreshed');
     const formatted = formatLocalTime(new Date(this.state.lastRefreshAt));
     return t('home.lastRefreshed', { time: formatted });
+  }
+
+  private recentKey(item: RecentlyWatchedItem): string {
+    const base = channelKey(item.channel);
+    return item.kind === 'live' ? `live:${base}` : `catchup:${base}:${item.progress.progStart}`;
+  }
+
+  private watchlistKey(item: WatchlistEntry): string {
+    return `${item.accountId}|${item.kind}|${item.itemId}`;
+  }
+
+  private reminderKey(item: Reminder): string {
+    return `${item.channelKey}|${item.startMs}`;
+  }
+
+  private railItem(
+    kind: HomeItem['kind'],
+    key: string,
+    title: string,
+    detail: string,
+    image: string,
+  ): ReturnType<typeof html> {
+    return html`
+      <button type="button" class="home-rail-card" data-focusable
+              data-key="${kind}:${key}" data-home-item="${key}"
+              data-home-item-kind="${kind}" data-home-focus-key="${kind}:${key}">
+        <span class="home-rail-art">
+          ${image ? html`<img src="${image}" alt="">` : html`<span>${raw(ICONS.continue)}</span>`}
+        </span>
+        <span class="home-rail-copy">
+          <strong>${title}</strong>
+          <span>${detail}</span>
+        </span>
+      </button>
+    `;
+  }
+
+  private recentRailItem(item: RecentlyWatchedItem): ReturnType<typeof html> {
+    return item.kind === 'live'
+      ? this.railItem('recent', this.recentKey(item), item.channel.name, t('nav.live'), item.channel.logo)
+      : this.railItem(
+        'recent',
+        this.recentKey(item),
+        item.progress.title ?? item.channel.name,
+        item.channel.name,
+        item.progress.icon || item.channel.logo,
+      );
+  }
+
+  private watchlistRailItem(item: WatchlistEntry): ReturnType<typeof html> {
+    const section = item.kind === 'vod' || item.kind === 'm3u-vod'
+      ? t('nav.movies')
+      : t('nav.series');
+    return this.railItem('watchlist', this.watchlistKey(item), item.name, section, item.poster);
+  }
+
+  private reminderRailItem(item: Reminder): ReturnType<typeof html> {
+    const detail = `${formatTime(new Date(item.startMs))} · ${item.channelName}`;
+    return this.railItem('reminder', this.reminderKey(item), item.title, detail, '');
+  }
+
+  private rail(
+    key: string,
+    title: string,
+    items: ReturnType<typeof html>[],
+  ): ReturnType<typeof html> | '' {
+    if (!items.length) return '';
+    return html`
+      <section class="home-rail" data-key="rail:${key}">
+        <h2>${title}</h2>
+        <div class="home-rail-items" data-nav-container data-nav-enter="last-focused">${items}</div>
+      </section>
+    `;
   }
 
   private render(): void {
@@ -159,20 +299,37 @@ export class Home {
             <div class="home-version">${t('home.version', { version: __APP_VERSION__ })}</div>
           </div>
         </header>
-        <main class="home-grid" data-nav-container>
-          ${this.card('live', t('nav.live'), t('home.liveHint'), 'home-card-primary')}
-          ${this.card('movies', t('nav.movies'), '', '', !this.state.hasMovies)}
-          ${this.card('series', t('nav.series'), '', '', !this.state.hasSeries)}
-          ${this.card(
-            'continue',
-            t('catalog.continueWatching'),
-            resume?.name ?? t('home.continueEmpty'),
-            'home-card-wide',
-            !resume,
+        <main class="home-content">
+          <div class="home-grid home-actions" data-nav-container>
+            ${this.card('live', t('nav.live'), t('home.liveHint'), 'home-card-primary')}
+            ${this.card('movies', t('nav.movies'), '', '', !this.state.hasMovies)}
+            ${this.card('series', t('nav.series'), '', '', !this.state.hasSeries)}
+            ${this.card(
+              'continue',
+              t('catalog.continueWatching'),
+              resume?.name ?? t('home.continueEmpty'),
+              'home-card-wide',
+              !resume,
+            )}
+            ${this.card('epg', t('nav.epg'))}
+            ${this.card('refresh', this.refreshText(), this.lastRefreshText(), '', this.refreshing)}
+            ${this.card('settings', t('nav.settings'))}
+          </div>
+          ${this.rail(
+            'recent',
+            t('channel.recentlyWatched'),
+            this.state.recent.slice(0, RAIL_ITEM_LIMIT).map(item => this.recentRailItem(item)),
           )}
-          ${this.card('epg', t('nav.epg'))}
-          ${this.card('refresh', this.refreshText(), this.lastRefreshText(), '', this.refreshing)}
-          ${this.card('settings', t('nav.settings'))}
+          ${this.rail(
+            'watchlist',
+            t('common.watchlist'),
+            this.state.watchlist.slice(0, RAIL_ITEM_LIMIT).map(item => this.watchlistRailItem(item)),
+          )}
+          ${this.rail(
+            'reminders',
+            t('reminderManager.title'),
+            this.state.reminders.slice(0, RAIL_ITEM_LIMIT).map(item => this.reminderRailItem(item)),
+          )}
         </main>
         <footer class="home-footer">
           <span>${t('home.remoteHint')}</span>

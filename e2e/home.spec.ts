@@ -3,6 +3,7 @@ import {
   expect,
   seedPlaylist,
   routePlaylist,
+  routeLiveManifest,
   neuterVideo,
   type Page,
 } from './helpers';
@@ -39,6 +40,45 @@ async function seedResume(page: Page, entry: ResumeEntry): Promise<void> {
   }), entry);
 }
 
+async function seedHomeRailRecords(page: Page): Promise<void> {
+  const recentKey = channelKey('http://streams.example.com/one.m3u8');
+  const startMs = Date.now() + 60 * 60 * 1000;
+  await page.evaluate(({ chKey, start }) => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('iptv');
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction(['recently-watched', 'watchlist', 'reminders'], 'readwrite');
+      tx.objectStore('recently-watched').put({
+        key: `live:${chKey}`,
+        value: { channelKey: chKey, updatedAt: Date.now() },
+        updatedAt: Date.now(),
+      });
+      tx.objectStore('watchlist').put({
+        key: 'watch:x1|vod|10',
+        value: {
+          accountId: 'x1', kind: 'vod', itemId: '10', name: 'Movie One', poster: '',
+          rating: '', categoryId: '1', containerExtension: 'mp4', addedAt: Date.now(),
+        },
+        scope: 'x1|vod',
+        updatedAt: Date.now(),
+      });
+      tx.objectStore('reminders').put({
+        key: `reminder:${chKey}|${start}`,
+        value: {
+          channelKey: chKey, channelName: 'Channel One', title: 'Programme One',
+          startMs: start, stopMs: start + 60 * 60 * 1000,
+        },
+      });
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => reject(tx.error);
+    };
+  }), { chKey: recentKey, start: startMs });
+}
+
 function channelKey(url: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < url.length; index++) {
@@ -73,6 +113,12 @@ test('launches into the remote-friendly home dashboard', async ({ page }) => {
   expect(live).not.toBeNull();
   expect(movies).not.toBeNull();
   expect(movies!.x).toBeGreaterThan(live!.x);
+  const gridGap = await page.locator('.home-grid').evaluate((grid) => {
+    const first = grid.querySelector<HTMLElement>('[data-home-action="live"]')!;
+    const second = grid.querySelector<HTMLElement>('[data-home-action="movies"]')!;
+    return second.offsetLeft - first.offsetLeft - first.offsetWidth;
+  });
+  expect(Math.abs(gridGap - 14)).toBeLessThan(1.5);
 });
 
 test('opens Live with OK', async ({ page }) => {
@@ -115,6 +161,32 @@ test('opens and plays a movie from Home', async ({ page }) => {
   await page.locator('#view-movies [data-action="play"]').click();
 
   await expect(page.locator('#view-player')).toBeVisible();
+});
+
+test('opens local Recently Watched, Watchlist, and reminder rails', async ({ page }) => {
+  await seedXtream(page);
+  await routeLiveManifest(page);
+  await seedHomeRailRecords(page);
+  await page.goto('/');
+
+  await expect(page.locator('[data-home-item-kind="recent"]')).toContainText('Channel One');
+  await expect(page.locator('[data-home-item-kind="watchlist"]')).toContainText('Movie One');
+  await expect(page.locator('[data-home-item-kind="reminder"]')).toContainText('Programme One');
+
+  await page.locator('[data-home-item-kind="recent"]').click();
+  await expect(page.locator('#view-player')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#view-home')).toBeVisible();
+
+  await page.locator('[data-home-item-kind="watchlist"]').click();
+  await expect(page.locator('#view-movies .detail-title')).toHaveText('Movie One');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#view-home')).toBeVisible();
+
+  await page.locator('[data-home-item-kind="reminder"]').click();
+  await expect(page.locator('#view-reminders')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#view-home')).toBeVisible();
 });
 
 test('resumes an Xtream movie directly from Home', async ({ page }) => {

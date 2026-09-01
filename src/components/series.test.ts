@@ -296,6 +296,58 @@ describe('Series detail', () => {
     expect(toastMock.showToast).toHaveBeenLastCalledWith('Removed from Watchlist');
   });
 
+  it('renders provider facts and safe backdrop artwork without inventing missing fields', async () => {
+    catalogMock.loadSeriesInfo.mockResolvedValue({
+      ...SERIES_INFO,
+      plot: 'Series plot.', cast: 'Actor A', director: 'Dir A', genre: 'Drama',
+      releaseDate: '2021-06-02', rating: '8.2', poster: 'http://host/poster.jpg',
+      backdrop: 'http://host/backdrop.jpg',
+    });
+    const { view } = await openWith();
+    await openDetail(view);
+
+    expect(container.querySelector('.series-detail-plot')?.textContent).toBe('Series plot.');
+    expect(container.querySelector('.detail-facts')?.textContent).toContain('02/06/2021');
+    expect(container.querySelector('.detail-facts')?.textContent).toContain('Drama');
+    expect(container.querySelector('.detail-facts')?.textContent).toContain('8.2');
+    expect(container.querySelector<HTMLElement>('.detail-backdrop')?.style.backgroundImage)
+      .toContain('backdrop.jpg');
+    expect(container.querySelector('.detail-facts')?.textContent).not.toContain('Runtime');
+  });
+
+  it('uses one primary Play or Resume action for the next relevant episode', async () => {
+    catalogMock.loadSeriesInfo.mockResolvedValue(SERIES_INFO);
+    const { view, handlers } = await openWith();
+    await openDetail(view);
+
+    const primary = container.querySelector<HTMLElement>('[data-primary-episode="e1"]')!;
+    expect(primary.textContent).toContain('Play');
+    expect(primary.classList.contains('focused')).toBe(true);
+    expect(container.querySelectorAll('.detail-btn-primary')).toHaveLength(1);
+    primary.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));
+    view.handleAction('select');
+    expect(handlers.onPlayVod).toHaveBeenCalledWith(expect.objectContaining({
+      itemId: 'e1', resumeSecs: 0,
+    }));
+
+    storageMock.getResumeList.mockReturnValue([{
+      accountId: 'x1', kind: 'episode', itemId: 'e1', name: 'Episode One', poster: '',
+      ext: 'mp4', position: 450, duration: 1500, updatedAt: 2, seriesId: 's1',
+    }]);
+    storageMock.getResume.mockReturnValue({
+      accountId: 'x1', kind: 'episode', itemId: 'e1', name: 'Episode One', poster: '',
+      ext: 'mp4', position: 450, duration: 1500, updatedAt: 2, seriesId: 's1',
+    });
+    view.refreshPlaybackState();
+    const resume = container.querySelector<HTMLElement>('[data-primary-episode="e1"]')!;
+    expect(resume.textContent).toContain('Resume');
+    resume.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));
+    view.handleAction('select');
+    expect(handlers.onPlayVod).toHaveBeenLastCalledWith(expect.objectContaining({
+      itemId: 'e1', resumeSecs: 450,
+    }));
+  });
+
   it('renders a season selector and the first season\'s episodes, and plays from the start', async () => {
     catalogMock.loadSeriesInfo.mockResolvedValue(SERIES_INFO);
     const { view, handlers } = await openWith();

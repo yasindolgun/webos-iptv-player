@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ResumeEntry } from '../types';
+import type { Channel, Reminder, ResumeEntry, WatchlistEntry } from '../types';
 import { setLocale } from '../i18n';
-import { Home, type HomeAction } from './home';
+import { Home, type HomeAction, type HomeItem } from './home';
+import type { RecentlyWatchedItem } from '../services/recently-watched';
 
 const resume: ResumeEntry = {
   accountId: 'x1',
@@ -16,8 +17,29 @@ const resume: ResumeEntry = {
   updatedAt: 1000,
 };
 
+const channel: Channel = {
+  id: 'ch1', name: 'Alpha', logo: 'http://host/a.png', group: '', url: 'http://host/a',
+  extras: null, playlistIds: ['p1'], catchup: '', catchupSource: '', catchupDays: 0,
+};
+
+const recent: RecentlyWatchedItem = {
+  kind: 'live', channel, channelIndex: 0, updatedAt: 3000,
+};
+
+const watchlist: WatchlistEntry = {
+  accountId: 'x1', kind: 'vod', itemId: '10', name: 'Movie One', poster: '',
+  rating: '', categoryId: '1', addedAt: 2000,
+};
+
+const reminder: Reminder = {
+  channelKey: 'ch1', channelName: 'Alpha', title: 'Programme One',
+  startMs: new Date(2026, 0, 2, 3, 4).getTime(),
+  stopMs: new Date(2026, 0, 2, 4, 4).getTime(),
+};
+
 let container: HTMLElement;
 let onAction: ReturnType<typeof vi.fn<(action: HomeAction) => void>>;
+let onItem: ReturnType<typeof vi.fn<(item: HomeItem) => void>>;
 let onBack: ReturnType<typeof vi.fn>;
 let home: Home;
 
@@ -28,8 +50,9 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   onAction = vi.fn();
+  onItem = vi.fn();
   onBack = vi.fn();
-  home = new Home(container, { onAction, onBack });
+  home = new Home(container, { onAction, onItem, onBack });
 });
 
 function open(over: Partial<Parameters<Home['open']>[0]> = {}): void {
@@ -40,6 +63,9 @@ function open(over: Partial<Parameters<Home['open']>[0]> = {}): void {
     lastRefreshAt: null,
     accountName: '',
     accountStatus: null,
+    recent: [],
+    watchlist: [],
+    reminders: [],
     ...over,
   });
 }
@@ -168,5 +194,35 @@ describe('Home', () => {
     const status = container.querySelector('.home-account-status');
     expect(status?.textContent).toContain('02/01/2026');
     expect(status?.textContent).toContain('03/11/2026 04:05:06');
+  });
+
+  it('renders bounded local content rails and activates their items', () => {
+    open({
+      recent: Array.from({ length: 12 }, (_, index) => ({
+        ...recent,
+        channel: { ...channel, name: `Channel ${index}`, url: `http://host/${index}` },
+        updatedAt: 3000 - index,
+      })),
+      watchlist: [watchlist],
+      reminders: [reminder],
+    });
+
+    expect(container.querySelectorAll('[data-home-item-kind="recent"]')).toHaveLength(8);
+    expect(container.textContent).toContain('Watchlist');
+    expect(container.textContent).toContain('Program Reminders');
+
+    container.querySelector<HTMLElement>('[data-home-item-kind="watchlist"]')!.click();
+    expect(onItem).toHaveBeenCalledWith({ kind: 'watchlist', item: watchlist });
+  });
+
+  it('restores focus to the selected rail item when Home reopens', () => {
+    open({ recent: [recent] });
+    const item = container.querySelector<HTMLElement>('[data-home-item-kind="recent"]')!;
+    item.click();
+
+    open({ recent: [recent] });
+
+    expect(container.querySelector('[data-home-item-kind="recent"]')?.classList.contains('focused'))
+      .toBe(true);
   });
 });

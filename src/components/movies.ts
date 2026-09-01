@@ -119,14 +119,24 @@ export class Movies extends CatalogView<VodCategory, VodItem> {
     };
   }
 
+  async openWatchlistEntry(
+    account: PlaylistEntry,
+    entry: WatchlistEntry,
+    onDetailBack: () => void,
+  ): Promise<void> {
+    const opening = this.openItem(account, this.watchlistEntryToVod(entry), onDetailBack);
+    this.openedFromWatchlist = true;
+    await opening;
+  }
+
   protected selectExtra(el: HTMLElement): boolean {
     if (el.dataset.watchlistItem !== undefined) {
       const vod = this.watchlistToVod(el.dataset.watchlistItem);
       if (vod) void this.openDetail(vod, true);
       return true;
     }
-    if (el.dataset.action === 'play' || el.dataset.action === 'resume') {
-      this.play(el.dataset.action === 'resume');
+    if (el.dataset.action === 'play') {
+      this.play(el.dataset.resume === 'true');
       return true;
     }
     if (el.dataset.action === 'watchlist') {
@@ -236,31 +246,51 @@ export class Movies extends CatalogView<VodCategory, VodItem> {
     const mins = info && info.durationSecs > 0
       ? t('catalog.minutes', { count: Math.floor(info.durationSecs / 60) })
       : '';
-    const meta = [releaseDate, mins, info?.genre, vod.rating].filter((s) => !!s);
+    const facts = [
+      [t('catalog.releaseDate'), releaseDate],
+      [t('catalog.runtime'), mins],
+      [t('catalog.genre'), info?.genre ?? ''],
+      [t('catalog.rating'), vod.rating],
+    ].filter((fact) => !!fact[1]);
     const watchlisted = StorageService.isWatchlisted(a.id, 'vod', vod.streamId);
+    const backdrop = this.cssImageUrl(info?.backdrop ?? '');
 
     const prevKey = this.nav.focused?.getAttribute('data-key') ?? null;
     morph(this.container, html`
-      <div class="catalog-view movies-detail" data-nav-container>
-        <div class="detail-poster-wrap">${this.posterCell(vod.name, poster)}</div>
-        <div class="detail-body">
-          <h1 class="detail-title">${vod.name}</h1>
-          <div class="detail-meta">${meta.join('  ·  ')}</div>
-          ${info?.plot ? html`<p class="detail-plot">${info.plot}</p>` : ''}
-          ${info?.cast ? html`<div class="detail-cast"><span class="detail-label">${t('catalog.cast')}</span> ${info.cast}</div>` : ''}
-          ${info?.director ? html`<div class="detail-cast"><span class="detail-label">${t('catalog.director')}</span> ${info.director}</div>` : ''}
-          <div class="detail-actions">
-            ${saved ? html`
-              <button class="detail-btn detail-btn-primary" data-focusable data-key="resume" data-action="resume">
-                <span class="detail-btn-icon">${raw(PLAY_ICON)}</span><span>${t('common.resume')}</span>
-              </button>` : ''}
-            <button class="detail-btn ${saved ? '' : 'detail-btn-primary'}" data-focusable data-key="play" data-action="play">
-              <span class="detail-btn-icon">${raw(PLAY_ICON)}</span><span>${t(saved ? 'catalog.playFromStart' : 'catalog.play')}</span>
-            </button>
-            <button class="detail-btn" data-focusable data-key="watchlist" data-action="watchlist">
-              <span class="detail-btn-icon">${raw(watchlistIcon(watchlisted))}</span>
-              <span>${t(watchlisted ? 'catalog.removeWatchlist' : 'catalog.addWatchlist')}</span>
-            </button>
+      <div class="catalog-view catalog-detail movies-detail" data-nav-container>
+        ${backdrop ? html`
+          <div class="detail-backdrop" style="background-image: url('${backdrop}')">
+            <div class="detail-backdrop-scrim"></div>
+          </div>
+        ` : ''}
+        <div class="detail-layout">
+          <div class="detail-poster-wrap">${this.posterCell(vod.name, poster)}</div>
+          <div class="detail-body">
+            <h1 class="detail-title">${vod.name}</h1>
+            ${facts.length ? html`
+              <div class="detail-facts">
+                ${facts.map(([label, value]) => html`
+                  <span class="detail-fact">
+                    <small>${label}</small><strong>${value}</strong>
+                  </span>
+                `)}
+              </div>
+            ` : ''}
+            ${info?.plot ? html`<p class="detail-plot">${info.plot}</p>` : ''}
+            ${info?.cast ? html`<div class="detail-cast"><span class="detail-label">${t('catalog.cast')}</span> ${info.cast}</div>` : ''}
+            ${info?.director ? html`<div class="detail-cast"><span class="detail-label">${t('catalog.director')}</span> ${info.director}</div>` : ''}
+            <div class="detail-actions">
+              <button class="detail-btn detail-btn-primary" data-focusable data-key="play"
+                      data-action="play" data-resume="${saved ? 'true' : 'false'}">
+                <span class="detail-btn-icon">${raw(PLAY_ICON)}</span>
+                <span>${t(saved ? 'common.resume' : 'catalog.play')}</span>
+              </button>
+              <button class="detail-btn detail-btn-secondary" data-focusable data-key="watchlist"
+                      data-action="watchlist">
+                <span class="detail-btn-icon">${raw(watchlistIcon(watchlisted))}</span>
+                <span>${t(watchlisted ? 'catalog.removeWatchlist' : 'catalog.addWatchlist')}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

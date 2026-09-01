@@ -309,10 +309,11 @@ describe('Movies detail', () => {
     expect(toastMock.showToast).toHaveBeenLastCalledWith('Removed from Watchlist');
   });
 
-  it('renders plot/meta and a Play button, and plays from the start', async () => {
+  it('renders structured facts and a Play button, and plays from the start', async () => {
     catalogMock.loadVodInfo.mockResolvedValue({
       plot: 'A plot.', cast: 'Actor A', director: 'Dir A', genre: 'Drama',
-      releaseDate: '2020-05-01', durationSecs: 3600, poster: 'http://host:8080/p.jpg', imdbId: '', tmdbId: '', year: 0,
+      releaseDate: '2020-05-01', durationSecs: 3600, poster: 'http://host:8080/p.jpg',
+      backdrop: 'http://host:8080/b.jpg', imdbId: '', tmdbId: '', year: 0,
     });
     const { view, handlers } = await openWith([{ id: '1', name: 'Cat A' }], [vod('10', 'Movie One')]);
     const tile = container.querySelector('.catalog-tile[data-item-id="10"]') as HTMLElement;
@@ -321,8 +322,14 @@ describe('Movies detail', () => {
     await Promise.resolve(); await Promise.resolve();
 
     expect(container.querySelector('.detail-plot')?.textContent).toContain('A plot.');
-    expect(container.textContent).toContain('Drama');
-    expect(container.querySelector('.detail-meta')?.textContent).toContain('01/05/2020');
+    const facts = Array.from(container.querySelectorAll('.detail-fact'))
+      .map(fact => `${fact.querySelector('small')?.textContent}${fact.querySelector('strong')?.textContent}`);
+    expect(facts).toEqual(expect.arrayContaining([
+      'Release01/05/2020', 'Runtime60 min', 'GenreDrama',
+    ]));
+    expect(container.querySelector<HTMLElement>('.detail-backdrop')?.style.backgroundImage)
+      .toContain('b.jpg');
+    expect(container.querySelectorAll('.detail-btn')).toHaveLength(2);
 
     const play = container.querySelector('[data-action="play"]') as HTMLElement;
     play.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));
@@ -348,8 +355,9 @@ describe('Movies detail', () => {
     view.handleAction('select');
     await Promise.resolve(); await Promise.resolve();
 
-    const resume = container.querySelector('[data-action="resume"]') as HTMLElement;
+    const resume = container.querySelector('[data-action="play"][data-resume="true"]') as HTMLElement;
     expect(resume).not.toBeNull();
+    expect(resume.textContent).toContain('Resume');
     resume.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));
     view.handleAction('select');
     expect(handlers.onPlayVod).toHaveBeenCalledWith(expect.objectContaining({ resumeSecs: 900 }));
@@ -365,14 +373,17 @@ describe('Movies detail', () => {
     tile.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));
     view.handleAction('select');
     await Promise.resolve(); await Promise.resolve();
-    expect(container.querySelector('[data-action="resume"]')).toBeNull();
+    expect(container.querySelector('[data-action="play"]')?.getAttribute('data-resume'))
+      .toBe('false');
 
     storageMock.getResume.mockReturnValue({
       accountId: 'x1', kind: 'vod', itemId: '10', name: 'Movie One', poster: '',
       ext: 'mp4', position: 20, duration: 3600, updatedAt: 1,
     });
     view.refreshPlaybackState();
-    expect(container.querySelector('[data-action="resume"]')).not.toBeNull();
+    expect(container.querySelector('[data-action="play"]')?.getAttribute('data-resume'))
+      .toBe('true');
+    expect(container.querySelector('[data-action="play"]')?.textContent).toContain('Resume');
   });
 
   it('backs out of detail to the browse view', async () => {

@@ -22,6 +22,11 @@ async function seedSeries(page: import('@playwright/test').Page): Promise<void> 
     }
     if (url.includes('get_series_info')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        info: {
+          plot: 'Series plot.', cast: 'Actor A', director: 'Dir A', genre: 'Drama',
+          release_date: '2021-06-02', rating: '8.2',
+          backdrop_path: ['http://host.example.com/series-backdrop.jpg'],
+        },
         episodes: { '1': [
           { id: 10, title: 'Episode One', season: 1, episode_num: 1, container_extension: 'mp4', info: { plot: 'Ep plot.', duration_secs: 1500, movie_image: '' } },
         ] },
@@ -29,7 +34,7 @@ async function seedSeries(page: import('@playwright/test').Page): Promise<void> 
     }
     if (url.includes('get_series')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
-        { series_id: 1, name: 'Series One', cover: '', category_id: '1' },
+        { series_id: 1, name: 'Series One', cover: '', rating: '8', category_id: '1' },
       ]) });
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -68,6 +73,15 @@ test('browse Series, open a detail, and play an episode', async ({ page }) => {
   await page.keyboard.press('Enter');
   await expect(page.locator('#view-series .series-season-btn[data-season="1"]')).toContainText('Season 1');
   await expect(page.locator('#view-series .episode-row[data-episode-id="10"]')).toContainText('Episode One');
+  await expect(page.locator('#view-series .series-detail-plot')).toContainText('Series plot.');
+  await expect(page.locator('#view-series .detail-facts')).toContainText('02/06/2021');
+  await expect(page.locator('#view-series .detail-facts')).toContainText('Drama');
+  await expect(page.locator('#view-series .detail-backdrop')).toHaveCSS(
+    'background-image',
+    /series-backdrop\.jpg/,
+  );
+  await expect(page.locator('#view-series [data-primary-episode="10"]')).toContainText('Play');
+  await expect(page.locator('#view-series .detail-btn-primary')).toHaveCount(1);
 
   // Play the episode, then Back returns to the Series view.
   await page.locator('.episode-row[data-episode-id="10"]')

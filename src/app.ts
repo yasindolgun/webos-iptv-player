@@ -24,10 +24,11 @@ import { Movies } from './components/movies';
 import { Series } from './components/series';
 import { M3uCatalog } from './components/m3u-catalog';
 import { Search } from './components/search';
-import { Home, type HomeAction, type HomeState } from './components/home';
+import { Home, type HomeAction, type HomeItem, type HomeState } from './components/home';
 import { showToast } from './components/toast';
 import { showNumberEntry, hideNumberEntry } from './components/number-entry';
 import { ReminderService } from './services/reminder-service';
+import { RecentlyWatchedService } from './services/recently-watched';
 import { ReminderPrompt } from './components/reminder-prompt';
 import { ReminderManager } from './components/reminder-manager';
 import { setDisplayTz } from './utils/time';
@@ -55,6 +56,7 @@ import type {
   EpgSource,
   PlaylistEntry,
   ResumeEntry,
+  WatchlistEntry,
 } from './types';
 import { getLocale, initLocale, resolveLocale, setLocale, t, tp } from './i18n';
 import {
@@ -83,7 +85,7 @@ class App {
   private menu!: PlayerMenu;
   private reminderPrompt = new ReminderPrompt();
   private reminderManager!: ReminderManager;
-  private reminderManagerOrigin: 'settings' | 'epg' = 'settings';
+  private reminderManagerOrigin: 'home' | 'settings' | 'epg' = 'settings';
   private tabBar!: TabBar;
   private search!: Search;
   private movies!: Movies;
@@ -140,6 +142,7 @@ class App {
     );
     this.home = new Home(this.views.home, {
       onAction: (action) => this.handleHomeAction(action),
+      onItem: (item) => this.handleHomeItem(item),
       onBack: () => this.requestExit(),
     });
     this.player = new Player(
@@ -165,6 +168,8 @@ class App {
       if (this.reminderManagerOrigin === 'epg') {
         this.goBackTo('epg');
         this.epgGrid.focusReminderEntry();
+      } else if (this.reminderManagerOrigin === 'home') {
+        this.goHome();
       } else {
         this.goBackTo('settings');
         this.settings.focusReminderEntry();
@@ -839,6 +844,21 @@ class App {
       const entry = StorageService.getResumeList(accountId)[0];
       if (entry && (!resume || entry.updatedAt > resume.updatedAt)) resume = entry;
     }
+    const watchlist: WatchlistEntry[] = [];
+    if (account) {
+      watchlist.push(
+        ...StorageService.getWatchlist(account.id, 'vod'),
+        ...StorageService.getWatchlist(account.id, 'series'),
+      );
+    }
+    for (const accountId of accountIds) {
+      if (!accountId.startsWith('m3u:')) continue;
+      watchlist.push(
+        ...StorageService.getWatchlist(accountId, 'm3u-vod'),
+        ...StorageService.getWatchlist(accountId, 'm3u-series'),
+      );
+    }
+    watchlist.sort((a, b) => b.addedAt - a.addedAt);
     return {
       hasMovies: !!account || PlaylistService.getContentKindCount('movie') > 0,
       hasSeries: !!account || PlaylistService.getContentKindCount('series') > 0,
@@ -846,6 +866,9 @@ class App {
       lastRefreshAt: StorageService.getLastPlaylistRefreshAt(),
       accountName: account?.name ?? '',
       accountStatus: account ? StorageService.getXtreamAccountStatus(account.id) : null,
+      recent: RecentlyWatchedService.getItems(),
+      watchlist,
+      reminders: ReminderService.listManageable(),
     };
   }
 
@@ -894,6 +917,65 @@ class App {
       return;
     }
     if (action === 'refresh') void this.refreshDataFromHome();
+  }
+
+  private handleHomeItem(selection: HomeItem): void {
+    if (selection.kind === 'recent') {
+      const item = selection.item;
+      if (item.kind === 'live') {
+        this.playChannel(item.channelIndex);
+      } else {
+        void RecentlyWatchedService.catchupInfo(item).then(info => {
+          if (info) this.playChannel(item.channelIndex, info);
+        });
+      }
+      return;
+    }
+    if (selection.kind === 'reminder') {
+      this.openReminderManager('home');
+      return;
+    }
+    this.openHomeWatchlist(selection.item);
+  }
+
+  private openHomeWatchlist(entry: WatchlistEntry): void {
+    const section: CatalogSection = entry.kind === 'vod' || entry.kind === 'm3u-vod'
+      ? 'movies'
+      : 'series';
+    this.resetView(section);
+    if (entry.kind === 'vod' || entry.kind === 'series') {
+      const account = StorageService.getPlaylists().find(source =>
+        source.id === entry.accountId && source.source === 'xtream' && source.xtream);
+      if (!account) {
+        this.goHome();
+        return;
+      }
+      const source: CatalogSource = { kind: 'xtream', playlistId: account.id };
+      StorageService.setSelectedCatalogSource(section, source);
+      StorageService.setSelectedXtreamAccountId(account.id);
+      this.setCatalogSwitcher(section, source);
+      this.m3uCatalogSection = null;
+      const opened = section === 'movies'
+        ? this.movies.openWatchlistEntry(account, entry, () => this.goHome())
+        : this.series.openWatchlistEntry(account, entry, () => this.goHome());
+      opened.catch(err => log.error(
+        'Home Watchlist detail failed',
+        'event=home.watchlist.open.failed',
+        `operation=${section}`,
+        err,
+      ));
+      return;
+    }
+    const available = this.catalogSources(section);
+    const playlistId = entry.accountId.slice('m3u:'.length).split(',').find(id =>
+      available.some(source => source.kind === 'm3u' && source.playlistId === id));
+    if (!playlistId) {
+      this.goHome();
+      return;
+    }
+    const source: CatalogSource = { kind: 'm3u', playlistId };
+    StorageService.setSelectedCatalogSource(section, source);
+    this.openCatalog(section);
   }
 
   private async refreshDataFromHome(): Promise<void> {
@@ -992,7 +1074,7 @@ class App {
     });
   }
 
-  private openReminderManager(origin: 'settings' | 'epg'): void {
+  private openReminderManager(origin: 'home' | 'settings' | 'epg'): void {
     this.reminderManagerOrigin = origin;
     this.navigateTo('reminders');
     this.reminderManager.open();

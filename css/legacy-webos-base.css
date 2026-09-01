@@ -11,9 +11,11 @@
 @supports not (inset: 0) {
   .loading-container > * + * { margin-top: 24px; }
   .reminder-buttons > * + *, .catchup-resume-buttons > * + *, .confirmation-buttons > * + * { margin-left: 24px; }
-  .home-shell > * + * { margin-top: 34px; }
-  .home-grid > * + * { margin-left: 22px; }
+  .home-shell > * + * { margin-top: 18px; }
   .home-card-copy > * + * { margin-top: 4px; }
+  .home-rail-items > * + * { margin-left: 14px; }
+  .home-rail-card > * + * { margin-left: 13px; }
+  .home-rail-copy > * + * { margin-top: 5px; }
   .playlist-tabs > * + * { margin-left: 4px; }
   .group-item > * + * { margin-left: 12px; }
   .channel-list-scroll.recent-list > * + * { margin-top: 4px; }
@@ -104,10 +106,11 @@
   .search-program-row > * + * { margin-left: 24px; }
   .m3u-catalog-categories > * + * { margin-left: 12px; }
   .catalog-rail-track > * + * { margin-left: 20px; }
-  .movies-detail > * + * { margin-left: 56px; }
+  .detail-layout > * + * { margin-left: 56px; }
+  .detail-facts > * + * { margin-left: 10px; }
+  .detail-fact > * + * { margin-left: 7px; }
   .detail-actions > * + * { margin-left: 12px; }
   .detail-btn > * + * { margin-left: 10px; }
-  .series-detail-head > * + * { margin-left: 56px; }
   .series-seasons > * + * { margin-left: 16px; }
   .episode-row > * + * { margin-left: 20px; }
   .episode-title > * + * { margin-left: 16px; }

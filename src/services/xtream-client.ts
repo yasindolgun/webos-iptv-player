@@ -81,6 +81,15 @@ function toStr(v: unknown): string {
   return v === null || v === undefined ? '' : String(v);
 }
 
+function firstHttpImageUrl(value: unknown): string {
+  const candidates = Array.isArray(value) ? value : [value];
+  for (const candidate of candidates) {
+    const url = toStr(candidate).trim();
+    if (/^https?:\/\/\S+$/i.test(url)) return url;
+  }
+  return '';
+}
+
 function mapFetchError(err: unknown): XtreamRequestError {
   if (err instanceof XtreamRequestError) return err;
   if (err instanceof FetchTextError) {
@@ -362,6 +371,7 @@ export function createXtreamClient(creds: XtreamCredentials, accountId = '') {
       const info = (data as { info?: unknown }).info;
       if (!info || typeof info !== 'object') return null;
       const i = info as Record<string, unknown>;
+      const backdrop = firstHttpImageUrl(i.backdrop_path ?? i.backdrop);
       return {
         plot: toStr(i.plot),
         cast: toStr(i.cast),
@@ -374,6 +384,7 @@ export function createXtreamClient(creds: XtreamCredentials, accountId = '') {
         imdbId: toStr(i.imdb_id ?? i.imdb).replace(/^tt/i, ''),
         tmdbId: toStr(i.tmdb_id ?? i.tmdb),
         year: Number(toStr(i.releasedate ?? i.release_date).slice(0, 4)) || 0,
+        ...(backdrop ? { backdrop } : {}),
       };
     },
 
@@ -417,6 +428,10 @@ export function createXtreamClient(creds: XtreamCredentials, accountId = '') {
         signal,
       );
       if (!data || typeof data !== 'object') return null;
+      const detailRaw = (data as { info?: unknown }).info;
+      const detail = detailRaw && typeof detailRaw === 'object'
+        ? detailRaw as Record<string, unknown>
+        : {};
       const episodesRaw = (data as { episodes?: unknown }).episodes;
       const episodesBySeason: Record<number, Episode[]> = {};
       if (episodesRaw && typeof episodesRaw === 'object') {
@@ -442,7 +457,28 @@ export function createXtreamClient(creds: XtreamCredentials, accountId = '') {
         }
       }
       const seasons = Object.keys(episodesBySeason).map(Number).sort((a, b) => a - b);
-      return { seasons, episodesBySeason };
+      const metadata = {
+        plot: toStr(detail.plot),
+        cast: toStr(detail.cast),
+        director: toStr(detail.director),
+        genre: toStr(detail.genre),
+        releaseDate: toStr(detail.release_date ?? detail.releasedate),
+        rating: toStr(detail.rating),
+        poster: firstHttpImageUrl(detail.cover_big ?? detail.cover),
+        backdrop: firstHttpImageUrl(detail.backdrop_path ?? detail.backdrop),
+      };
+      return {
+        seasons,
+        episodesBySeason,
+        ...(metadata.plot ? { plot: metadata.plot } : {}),
+        ...(metadata.cast ? { cast: metadata.cast } : {}),
+        ...(metadata.director ? { director: metadata.director } : {}),
+        ...(metadata.genre ? { genre: metadata.genre } : {}),
+        ...(metadata.releaseDate ? { releaseDate: metadata.releaseDate } : {}),
+        ...(metadata.rating ? { rating: metadata.rating } : {}),
+        ...(metadata.poster ? { poster: metadata.poster } : {}),
+        ...(metadata.backdrop ? { backdrop: metadata.backdrop } : {}),
+      };
     },
   };
 }

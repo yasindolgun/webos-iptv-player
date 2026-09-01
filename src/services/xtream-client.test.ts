@@ -296,7 +296,8 @@ describe('XtreamClient VOD', () => {
   it('parses VOD info, tolerating alternate field names', async () => {
     fetchTextMock.mockResolvedValue(JSON.stringify({
       info: { plot: 'A plot', cast: 'Actor', director: 'Dir', genre: 'Drama',
-        release_date: '2020-01-01', duration_secs: 5400, cover_big: 'http://host/p.png' },
+        release_date: '2020-01-01', duration_secs: 5400, cover_big: 'http://host/p.png',
+        backdrop_path: ['http://host/b.jpg'] },
       movie_data: { stream_id: 10 },
     }));
     const info = await createXtreamClient(creds).getVodInfo('10');
@@ -309,7 +310,7 @@ describe('XtreamClient VOD', () => {
     expect(info).toEqual({
       plot: 'A plot', cast: 'Actor', director: 'Dir', genre: 'Drama',
       releaseDate: '2020-01-01', durationSecs: 5400, poster: 'http://host/p.png', subtitles: [],
-      imdbId: '', tmdbId: '', year: 2020,
+      imdbId: '', tmdbId: '', year: 2020, backdrop: 'http://host/b.jpg',
     });
   });
 
@@ -434,6 +435,11 @@ describe('XtreamClient Series', () => {
 
   it('parses series info into sorted seasons + episodesBySeason', async () => {
     fetchTextMock.mockResolvedValue(JSON.stringify({
+      info: {
+        plot: 'Series plot', cast: 'Actor', director: 'Dir', genre: 'Drama',
+        release_date: '2021-06-02', rating: '8.2', cover_big: 'http://host/c.jpg',
+        backdrop_path: ['http://host/b.jpg'],
+      },
       seasons: [],
       episodes: {
         '2': [{ id: '201', title: 'S2E1', episode_num: 1, container_extension: 'mkv',
@@ -450,6 +456,11 @@ describe('XtreamClient Series', () => {
       undefined,
     );
     expect(info!.seasons).toEqual([1, 2]);
+    expect(info).toMatchObject({
+      plot: 'Series plot', cast: 'Actor', director: 'Dir', genre: 'Drama',
+      releaseDate: '2021-06-02', rating: '8.2', poster: 'http://host/c.jpg',
+      backdrop: 'http://host/b.jpg',
+    });
     expect(info!.episodesBySeason[1]).toEqual([{
       id: '101', title: 'S1E1', season: 1, episode: 1, containerExtension: 'mp4',
       durationSecs: 1000, plot: 'p1', poster: 'http://host/1.png', subtitles: [],
@@ -468,7 +479,9 @@ describe('XtreamClient Series', () => {
   });
 
   it('getSeriesInfo returns empty seasons when episodes is absent', async () => {
-    fetchTextMock.mockResolvedValue(JSON.stringify({ info: { name: 'x' } }));
+    fetchTextMock.mockResolvedValue(JSON.stringify({
+      info: { name: 'x', backdrop_path: ['javascript:alert(1)'] },
+    }));
     const info = await createXtreamClient(creds).getSeriesInfo('7');
     expect(info).toEqual({ seasons: [], episodesBySeason: {} });
   });

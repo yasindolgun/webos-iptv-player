@@ -37,11 +37,15 @@ async function seedMovies(
     }
     if (url.includes('get_vod_streams')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
-        { stream_id: 10, name: 'Movie One', stream_icon: '', container_extension: 'mp4', category_id: '1' },
+        { stream_id: 10, name: 'Movie One', stream_icon: '', rating: '8.1',
+          container_extension: 'mp4', category_id: '1' },
       ]) });
     }
     if (url.includes('get_vod_info')) {
-      const info: Record<string, unknown> = { plot: 'A plot.', duration_secs: 3600 };
+      const info: Record<string, unknown> = {
+        plot: 'A plot.', duration_secs: 3600, genre: 'Drama', release_date: '2020-05-01',
+        backdrop_path: ['http://host.example.com/backdrop.jpg'],
+      };
       const subs: unknown[] = [];
       if (opts.subtitles) subs.push({ subtitle_id: '1', title: 'Track 1', language: 'l1',
         url: 'http://host.example.com:8080/subs/10.srt' });
@@ -94,6 +98,15 @@ test('browse Movies, open a detail, and start playback', async ({ page }) => {
     .evaluate((el) => el.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true })));
   await page.keyboard.press('Enter');
   await expect(page.locator('#view-movies .detail-plot')).toContainText('A plot.');
+  await expect(page.locator('#view-movies .detail-facts')).toContainText('01/05/2020');
+  await expect(page.locator('#view-movies .detail-facts')).toContainText('60 min');
+  await expect(page.locator('#view-movies .detail-facts')).toContainText('Drama');
+  await expect(page.locator('#view-movies .detail-facts')).toContainText('8.1');
+  await expect(page.locator('#view-movies .detail-backdrop')).toHaveCSS(
+    'background-image',
+    /backdrop\.jpg/,
+  );
+  await expect(page.locator('#view-movies .detail-btn-primary')).toHaveCount(1);
 
   // Play, then Back returns to the Movies view.
   await page.locator('[data-action="play"]')

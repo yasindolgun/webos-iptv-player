@@ -18,7 +18,8 @@ The app already provides the foundations that a large-catalog TV client needs:
 - LAN-only QR setup, M3U upload, and credential-free backup/restore
 - playback resume, episode completion, Continue Watching, Recently Watched,
   and Watchlist
-- a Home section with playback shortcuts, refresh status, and account-aware data
+- a content-first Home section with playback shortcuts, bounded local rails,
+  refresh status, and account-aware data
 - automatic next-episode and Watchlist playback queues with an Up Next countdown
 - bounded native, HLS, DASH, and catch-up recovery paths for transient failures
 - per-stream subtitle sync, remembered track picks, and global language defaults
@@ -268,6 +269,42 @@ configured channel limit across emitted batches. A failed or superseded parse
 cannot consume another session's staged output or exceed the limit through
 batch boundaries.
 
+### Home content hub — 2026-09-01
+
+Home now keeps Live as its first and fastest action while presenting the
+existing Movies, Series, Guide, Resume, refresh, and Settings shortcuts in a
+more compact launch surface. Recently Watched, Watchlist, and upcoming reminder
+rails appear only when local snapshot data exists, render at most eight items
+each, and do not load a catalog merely because Home opened.
+
+Recently Watched entries start live or resumable catch-up playback directly.
+Xtream Watchlist entries deep-link to their existing detail view, M3U entries
+open their matching local catalog, and reminder entries open management with a
+deterministic return to Home. Stable item keys, delegated activation, per-rail
+focus memory, and retained scroll containers preserve remote and Magic Remote
+behavior across updates and return navigation. The layout retains an explicit
+Grid fallback and is covered in both browser projects.
+
+### VOD detail hierarchy — 2026-09-01
+
+Movie and series detail screens now present provider facts as separate labelled
+values instead of flattening release date, runtime, genre, and rating into one
+ambiguous line. Unknown facts remain absent, while plot, cast, and director stay
+readable without assuming structured people identifiers or external enrichment.
+
+Movies expose one context-aware primary action: Play for a fresh item or Resume
+for saved progress. Series use the same hierarchy for the latest resumable or
+next unwatched episode. Watchlist remains secondary and episode-history cleanup
+is tertiary, so mutually exclusive playback starts no longer compete as parallel
+primary buttons.
+
+Dedicated provider backdrop fields are accepted only as HTTP(S) image URLs and
+are escaped before entering CSS. A shared scrim keeps text legible over supplied
+artwork; missing or rejected artwork deterministically falls back to the poster
+and selected theme without runtime palette extraction. Both detail types retain
+the existing bounded data requests, virtualized episode list, delegated
+activation, and webOS 4 margin fallbacks.
+
 ## Planned priorities
 
 ### Priority 0: webOS 4 cold-start validation
@@ -366,32 +403,6 @@ Metadata provenance:
   stream badge shown by the player.
 - Keep EPG progress, live-edge distance, resume state, and completion state as
   locally derived data with explicit time boundaries.
-
-Milestone 1 — Home content hub:
-
-- Replace the shortcut-dominant grid with a content-first layout while keeping
-  Live as the first and fastest action.
-- Keep the direct context-aware Resume action, then add bounded rails for
-  Recently Watched, Watchlist, and upcoming reminders when their data exists.
-- Keep Live, Movies, Series, and Guide entry points prominent; gracefully omit
-  Xtream-only sections for an M3U-only setup.
-- Retain account status, refresh state, and last-refresh time without competing
-  with the primary content action.
-- Add per-rail focus memory and stable keyed items. Hydrate only bounded visible
-  ranges and do not make Home fetch or retain a complete catalog.
-
-Milestone 2 — VOD detail hierarchy:
-
-- Turn the current joined metadata line into restrained, structured labels for
-  values that are actually present, without inventing capabilities from titles
-  or poster artwork.
-- Use one context-aware primary Play or Resume action and a quieter Watchlist
-  action. Avoid parallel primary buttons for mutually exclusive start modes.
-- Extend the existing hero scrim language to detail backdrops where the provider
-  supplies a safe image URL, with a deterministic poster or theme fallback.
-- Keep cast and crew text usable when structured portraits or identifiers are
-  absent; external enrichment must remain optional rather than gate the detail
-  page.
 
 Design constraints:
 

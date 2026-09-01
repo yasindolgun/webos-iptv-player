@@ -332,8 +332,12 @@ export abstract class CatalogView<C extends { id: string; name: string }, I> {
     if (title) title.textContent = name; // textContent escapes untrusted names
     // Poster sits inside a CSS url('…') string; percent-encode the characters
     // that could break out of it (matches renderBrowse's heroBg).
-    const bg = poster ? poster.replace(/["'()\\\s]/g, encodeURIComponent) : '';
+    const bg = this.cssImageUrl(poster);
     hero.style.backgroundImage = bg ? `url('${bg}')` : 'none';
+  }
+
+  protected cssImageUrl(url: string): string {
+    return url ? url.replace(/["'()\\\s]/g, encodeURIComponent) : '';
   }
 
   protected findItem(categoryId: string, id: string): I | null {
@@ -417,7 +421,7 @@ export abstract class CatalogView<C extends { id: string; name: string }, I> {
     // A poster URL sits inside a CSS url('…') string, where the html escaper's
     // entity encoding is decoded before CSS parses it; percent-encode the
     // characters that could break out of the string.
-    const heroBg = hero ? this.itemPoster(hero).replace(/["'()\\\s]/g, encodeURIComponent) : '';
+    const heroBg = hero ? this.cssImageUrl(this.itemPoster(hero)) : '';
     // Categories shown as their own poster rail; the "All Categories" rail lists
     // only the rest, so a category is never both a rail and a tile.
     const railCatIds: Record<string, true> = {};

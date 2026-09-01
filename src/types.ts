@@ -431,6 +431,8 @@ export interface VodInfo {
   imdbId: string;
   tmdbId: string;
   year: number;
+  /** Provider-supplied wide artwork; empty/absent means use the theme fallback. */
+  backdrop?: string;
 }
 
 export interface SeriesCategory {
@@ -462,6 +464,15 @@ export interface Episode {
 export interface SeriesInfo {
   seasons: number[];
   episodesBySeason: Record<number, Episode[]>;
+  plot?: string;
+  cast?: string;
+  director?: string;
+  genre?: string;
+  releaseDate?: string;
+  rating?: string;
+  poster?: string;
+  /** Provider-supplied wide artwork; empty/absent means use the theme fallback. */
+  backdrop?: string;
 }
 
 export type WatchlistKind = 'vod' | 'series' | 'm3u-vod' | 'm3u-series';

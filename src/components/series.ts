@@ -9,6 +9,7 @@ import { CHECK_ICON, PLAY_ICON, TRASH_ICON, watchlistIcon } from './icons';
 import { showToast } from './toast';
 import { t } from '../i18n';
 import { VirtualList } from '../utils/virtual-list';
+import { formatSourceDate } from '../utils/time';
 
 const EPISODE_GAP = 16;
 const EPISODE_NO_PLOT_ESTIMATE = 138;
@@ -133,9 +134,21 @@ export class Series extends CatalogView<SeriesCategory, SeriesItem> {
     };
   }
 
+  openWatchlistEntry(
+    account: PlaylistEntry,
+    entry: WatchlistEntry,
+    onDetailBack: () => void,
+  ): Promise<void> {
+    return this.openItem(account, this.watchlistEntryToSeries(entry), onDetailBack);
+  }
+
   protected selectExtra(el: HTMLElement): boolean {
     if (el.dataset.action === 'watchlist') { this.toggleWatchlist(); return true; }
     if (el.dataset.action === 'clear-episode-history') { this.clearEpisodeHistory(); return true; }
+    if (el.dataset.primaryEpisode !== undefined) {
+      this.playEpisode(el.dataset.primaryEpisode);
+      return true;
+    }
     if (el.dataset.resumeEpisode !== undefined) { this.playResume(el.dataset.resumeEpisode); return true; }
     if (el.dataset.season !== undefined) { this.selectSeason(Number(el.dataset.season)); return true; }
     if (el.dataset.episodeId !== undefined) { this.playEpisode(el.dataset.episodeId); return true; }
@@ -229,6 +242,19 @@ export class Series extends CatalogView<SeriesCategory, SeriesItem> {
       if (episode) return episode;
     }
     return null;
+  }
+
+  private primaryEpisode(): { episode: Episode; resume: boolean } | null {
+    const info = this.currentInfo;
+    const account = this.account;
+    if (!info || !account) return null;
+    for (const saved of StorageService.getResumeList(account.id)) {
+      if (saved.kind !== 'episode') continue;
+      const episode = this.findEpisode(saved.itemId);
+      if (episode) return { episode, resume: true };
+    }
+    const episode = this.nextUnwatchedEpisode();
+    return episode ? { episode, resume: false } : null;
   }
 
   private toggleEpisodeWatched(episodeId: string): void {
@@ -394,6 +420,15 @@ export class Series extends CatalogView<SeriesCategory, SeriesItem> {
     }
     const prevKey = this.nav.focused?.getAttribute('data-key') ?? null;
     const watchlisted = StorageService.isWatchlisted(a.id, 'series', series.seriesId);
+    const primary = this.primaryEpisode();
+    const releaseDate = info?.releaseDate ? formatSourceDate(info.releaseDate) : '';
+    const facts = [
+      [t('catalog.releaseDate'), releaseDate],
+      [t('catalog.genre'), info?.genre ?? ''],
+      [t('catalog.rating'), info?.rating || series.rating],
+    ].filter((fact) => !!fact[1]);
+    const poster = info?.poster || series.poster;
+    const backdrop = this.cssImageUrl(info?.backdrop ?? '');
     const previousScroller = this.container.querySelector<HTMLElement>('.series-detail');
     const previousEpisodes = this.container.querySelector<HTMLElement>('.series-episodes');
     this.episodeVirtualizer.setLeadingSize(
@@ -416,18 +451,42 @@ export class Series extends CatalogView<SeriesCategory, SeriesItem> {
     const episodeRange = this.episodeVirtualizer.getRange(episodes.length, episodeViewport);
 
     morph(this.container, html`
-      <div class="catalog-view series-detail" data-nav-container>
-        <div class="series-detail-head">
-          <div class="detail-poster-wrap series-detail-poster">${this.posterCell(series.name, series.poster)}</div>
+      <div class="catalog-view catalog-detail series-detail" data-nav-container>
+        ${backdrop ? html`
+          <div class="detail-backdrop" style="background-image: url('${backdrop}')">
+            <div class="detail-backdrop-scrim"></div>
+          </div>
+        ` : ''}
+        <div class="series-detail-head detail-layout">
+          <div class="detail-poster-wrap series-detail-poster">${this.posterCell(series.name, poster)}</div>
           <div class="detail-body">
             <h1 class="detail-title">${series.name}</h1>
-            ${series.rating ? html`<div class="detail-meta">${series.rating}</div>` : ''}
+            ${facts.length ? html`
+              <div class="detail-facts">
+                ${facts.map(([label, value]) => html`
+                  <span class="detail-fact">
+                    <small>${label}</small><strong>${value}</strong>
+                  </span>
+                `)}
+              </div>
+            ` : ''}
+            ${info?.plot ? html`<p class="detail-plot series-detail-plot">${info.plot}</p>` : ''}
+            ${info?.cast ? html`<div class="detail-cast"><span class="detail-label">${t('catalog.cast')}</span> ${info.cast}</div>` : ''}
+            ${info?.director ? html`<div class="detail-cast"><span class="detail-label">${t('catalog.director')}</span> ${info.director}</div>` : ''}
             <div class="detail-actions">
-              <button class="detail-btn" data-focusable data-key="watchlist" data-action="watchlist">
+              ${primary ? html`
+                <button class="detail-btn detail-btn-primary" data-focusable data-key="primary-play"
+                        data-primary-episode="${primary.episode.id}">
+                  <span class="detail-btn-icon">${raw(PLAY_ICON)}</span>
+                  <span>${t(primary.resume ? 'common.resume' : 'catalog.play')}</span>
+                </button>
+              ` : ''}
+              <button class="detail-btn detail-btn-secondary" data-focusable data-key="watchlist"
+                      data-action="watchlist">
                 <span class="detail-btn-icon">${raw(watchlistIcon(watchlisted))}</span>
                 <span>${t(watchlisted ? 'catalog.removeWatchlist' : 'catalog.addWatchlist')}</span>
               </button>
-              <button class="detail-btn" data-focusable data-key="episode-history"
+              <button class="detail-btn detail-btn-tertiary" data-focusable data-key="episode-history"
                       data-action="clear-episode-history">
                 <span class="detail-btn-icon">${raw(TRASH_ICON)}</span>
                 <span>${t('catalog.clearEpisodeHistory')}</span>
@@ -509,6 +568,7 @@ export class Series extends CatalogView<SeriesCategory, SeriesItem> {
       ? this.container.querySelector<HTMLElement>(`[data-focusable][data-key="${prevKey}"]`)
       : null;
     if (restore) this.nav.focus(restore);
+    else if (this.detailLoading) this.nav.focus(null);
     else if (!this.nav.focusFirst()) this.nav.focus(null);
   }
 
