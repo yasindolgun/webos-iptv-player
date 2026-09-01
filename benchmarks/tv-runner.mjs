@@ -8,7 +8,10 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { resolveBenchmarkProfile } from './benchmark-profile.mjs';
+import {
+  resolveBenchmarkProfile,
+  resolveBenchmarkReadyTimeout,
+} from './benchmark-profile.mjs';
 import {
   CdpClient,
   resolveCdpWebSocketUrl,
@@ -48,6 +51,7 @@ const EPG_URL = 'http://host/benchmark-epg';
 const BACKUP_KEY = '__tv_benchmark_backup__';
 const COLD_PLAYLIST_URL = 'http://host/cold-list.m3u';
 const { profile: PROFILE, scale: SCALE } = resolveBenchmarkProfile();
+const READY_TIMEOUT_MS = resolveBenchmarkReadyTimeout(SCALE);
 const KEY_SAMPLES = Number(process.env.BENCHMARK_KEY_SAMPLES ?? '30');
 const QUERY_SAMPLES = Number(process.env.BENCHMARK_QUERY_SAMPLES ?? '5');
 const PORT = Number(process.env.TV_CDP_PORT ?? '9998');
@@ -152,10 +156,11 @@ async function waitForLoad(client, action) {
 
 async function reloadApp(client, selectors = ['#view-channels']) {
   await waitForLoad(client, () => client.call('Page.reload', { ignoreCache: true }));
-  await evaluate(client, async (readySelectors) => {
+  await evaluate(client, async (options) => {
+    const readySelectors = options.selectors;
     const started = Date.now();
     let openedLive = false;
-    while (Date.now() - started < 30_000) {
+    while (Date.now() - started < options.timeoutMs) {
       for (const selector of readySelectors) {
         const element = document.querySelector(selector);
         if (element && !element.classList.contains('hidden')) return true;
@@ -170,7 +175,7 @@ async function reloadApp(client, selectors = ['#view-channels']) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     throw new Error(`Timed out waiting for ${readySelectors.join(' or ')}`);
-  }, selectors);
+  }, { selectors, timeoutMs: READY_TIMEOUT_MS });
 }
 
 async function installFixture(client) {

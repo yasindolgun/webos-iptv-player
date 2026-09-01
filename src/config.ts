@@ -86,6 +86,10 @@ export const CONFIG = {
     WATCHLIST_MAX_ITEMS: 200,            // per account and content type
   },
 
+  SEARCH: {
+    LIST_INDEX_BATCH_SIZE: 5_000,        // compact documents per backpressured worker message
+  },
+
   M3U: {
     CATALOG_SEARCH_RESULT_CAP: 50_000,   // cap worker result transfer for very broad queries
     CATALOG_FRAME_THRESHOLD: 2_500,      // prepare larger catalogs outside the interaction frame

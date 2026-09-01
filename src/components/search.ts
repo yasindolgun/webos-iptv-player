@@ -155,6 +155,7 @@ export class Search {
     if (!reset || !this.active || sessionId !== this.workerSession) return;
     const channelsIndexed = await this.indexWorker({
       sessionId,
+      channelRevision: PlaylistService.groupsRevision,
       channels: PlaylistService.channels.map(channel => [
         channel.name,
         channel.group,

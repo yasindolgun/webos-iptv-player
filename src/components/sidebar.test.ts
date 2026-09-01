@@ -75,6 +75,7 @@ vi.mock('../workers/app-worker-client', async () => {
   return {
     retainAppWorker: () => () => undefined,
     runAppWorkerTask: (task: string, payload: never) => {
+      if (task === 'search.channels.query') return Promise.resolve(null);
       if (task === 'list-search.index') return Promise.resolve(index.indexList(payload));
       if (task === 'list-search.query') return Promise.resolve(index.queryList(payload));
       if (task === 'list-search.release') return Promise.resolve(index.releaseList(payload));

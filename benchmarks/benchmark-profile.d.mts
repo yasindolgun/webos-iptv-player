@@ -1,6 +1,7 @@
 export const BENCHMARK_PROFILES: readonly string[];
 
 export function resolveBenchmarkTimeout(scale: number): number;
+export function resolveBenchmarkReadyTimeout(scale: number): number;
 
 export function resolveNpmRun(
   script: string,

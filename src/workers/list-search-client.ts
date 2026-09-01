@@ -2,6 +2,7 @@ import { retainAppWorker, runAppWorkerTask } from './app-worker-client';
 import type { ListSearchIndexRequest } from './tasks';
 import { createLogger } from '../utils/logger';
 import { runInFrameSlices } from '../utils/frame-slices';
+import { CONFIG } from '../config';
 
 const log = createLogger('ListSearchWorker');
 
@@ -89,23 +90,35 @@ export class WorkerListSearch<T> {
   private async index(source: T[]): Promise<boolean> {
     const sessionId = this.sessionId;
     try {
-      const documents: string[][] = new Array(source.length);
-      let index = 0;
-      const complete = source.length === 0 || await runInFrameSlices(() => {
-        documents[index] = this.fields(source[index]);
-        index++;
-        return index >= source.length;
-      }, {
-        shouldContinue: () => this.source === source && this.sessionId === sessionId,
-      });
-      if (!complete) return false;
-      const response = await runAppWorkerTask('list-search.index', {
-        owner: this.owner,
-        sessionId,
-        mode: this.mode,
-        documents,
-      });
-      const accepted = response.accepted && sessionId === this.sessionId;
+      const batchSize = CONFIG.SEARCH.LIST_INDEX_BATCH_SIZE;
+      let offset = 0;
+      let batches = 0;
+      do {
+        const end = Math.min(source.length, offset + batchSize);
+        const documents: string[][] = [];
+        let index = offset;
+        const prepared = source.length === 0 || await runInFrameSlices(() => {
+          documents.push(this.fields(source[index]));
+          index++;
+          return index >= end;
+        }, {
+          shouldContinue: () => this.source === source && this.sessionId === sessionId,
+        });
+        if (!prepared) return false;
+        const response = await runAppWorkerTask('list-search.index', {
+          owner: this.owner,
+          sessionId,
+          mode: this.mode,
+          documents,
+          offset,
+          reset: offset === 0,
+          complete: end >= source.length,
+        });
+        if (!response.accepted || sessionId !== this.sessionId) return false;
+        offset = end;
+        batches++;
+      } while (offset < source.length);
+      const accepted = sessionId === this.sessionId;
       if (accepted) {
         log.info(
           'List search index ready',
@@ -114,6 +127,8 @@ export class WorkerListSearch<T> {
           `owner=${this.owner}`,
           `session=${String(sessionId)}`,
           `documents=${String(source.length)}`,
+          `batch_size=${String(batchSize)}`,
+          `batches=${String(batches)}`,
         );
       }
       return accepted;

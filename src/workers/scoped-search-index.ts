@@ -29,6 +29,7 @@ type ListIndex =
 interface ListState {
   sessionId: number;
   index: ListIndex;
+  ready: boolean;
 }
 
 interface PreparedMappingDocument extends MappingSearchDocument {
@@ -45,26 +46,43 @@ export class ScopedSearchIndex {
   private mappings = new Map<string, MappingState>();
 
   indexList(request: ListSearchIndexRequest): SearchIndexResponse {
-    const index: ListIndex = request.mode === 'fields'
-      ? {
-          mode: 'fields',
-          index: request.documents.map((fields, itemIndex) =>
-            prepareSearchItem(itemIndex, () => fields)),
-        }
-      : {
-          mode: 'names',
-          index: prepareNameSearchItems(request.documents.map((fields, itemIndex) => ({
-            index: itemIndex,
-            name: fields[0] ?? '',
-          }))),
-        };
-    this.lists.set(request.owner, { sessionId: request.sessionId, index });
+    const offset = request.offset ?? 0;
+    const reset = request.reset ?? true;
+    const complete = request.complete ?? true;
+    let state = this.lists.get(request.owner);
+    if (reset) {
+      const index: ListIndex = request.mode === 'fields'
+        ? { mode: 'fields', index: [] }
+        : { mode: 'names', index: { items: [], values: [] } };
+      state = { sessionId: request.sessionId, index, ready: false };
+      this.lists.set(request.owner, state);
+    }
+    if (!state || state.sessionId !== request.sessionId
+        || state.index.mode !== request.mode) return { accepted: false };
+    const length = state.index.mode === 'fields'
+      ? state.index.index.length
+      : state.index.index.items.length;
+    if (offset !== length) return { accepted: false };
+    if (state.index.mode === 'fields') {
+      for (let index = 0; index < request.documents.length; index++) {
+        const fields = request.documents[index];
+        state.index.index.push(prepareSearchItem(offset + index, () => fields));
+      }
+    } else {
+      const prepared = prepareNameSearchItems(request.documents.map((fields, index) => ({
+        index: offset + index,
+        name: fields[0] ?? '',
+      })));
+      state.index.index.items.push(...prepared.items);
+      state.index.index.values.push(...prepared.values);
+    }
+    state.ready = complete;
     return { accepted: true };
   }
 
   queryList(request: ListSearchQueryRequest): SearchRankedIndices | null {
     const state = this.lists.get(request.owner);
-    if (!state || state.sessionId !== request.sessionId) return null;
+    if (!state || state.sessionId !== request.sessionId || !state.ready) return null;
     if (state.index.mode === 'fields') {
       const result = rankPreparedTopK(
         state.index.index,

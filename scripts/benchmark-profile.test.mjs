@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BENCHMARK_PROFILES,
   resolveBenchmarkProfile,
+  resolveBenchmarkReadyTimeout,
   resolveBenchmarkTimeout,
   resolveNpmRun,
 } from '../benchmarks/benchmark-profile.mjs';
@@ -35,6 +36,13 @@ describe('benchmark profiles', () => {
     [200_000, 2_700_000],
   ])('allows the %i-item workload %ims to finish', (scale, timeout) => {
     expect(resolveBenchmarkTimeout(scale)).toBe(timeout);
+  });
+
+  it('keeps readiness bounded while allowing staged profile startup', () => {
+    expect(resolveBenchmarkReadyTimeout(50_000)).toBe(30_000);
+    expect(resolveBenchmarkReadyTimeout(100_000)).toBe(60_000);
+    expect(resolveBenchmarkReadyTimeout(200_000)).toBe(120_000);
+    expect(resolveBenchmarkReadyTimeout(400_000)).toBe(120_000);
   });
 
   it('rejects unknown and conflicting profiles', () => {

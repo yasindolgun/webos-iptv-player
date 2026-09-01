@@ -5,6 +5,7 @@ import { gzipSync } from 'node:zlib';
 import path from 'node:path';
 import {
   resolveBenchmarkProfile,
+  resolveBenchmarkReadyTimeout,
   resolveBenchmarkTimeout,
 } from './benchmark-profile.mjs';
 import {
@@ -52,12 +53,13 @@ const FIXTURE = {
 };
 const COLD_PLAYLIST_URL = 'http://host/cold-list.m3u';
 const XMLTV_PIPELINE_URL = 'http://host/benchmark-guide.xml.gz';
+const READY_TIMEOUT_MS = resolveBenchmarkReadyTimeout(SCALE);
 
 async function openLiveFromHome(page: Page): Promise<void> {
   const live = page.locator('[data-home-action="live"]');
-  await expect(live).toBeVisible({ timeout: 30_000 });
+  await expect(live).toBeVisible({ timeout: READY_TIMEOUT_MS });
   await live.click();
-  await expect(page.locator('#view-channels')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('#view-channels')).toBeVisible({ timeout: READY_TIMEOUT_MS });
 }
 
 test(`records the ${PROFILE} application benchmark`, async ({ page, browserName }) => {
@@ -69,6 +71,12 @@ test(`records the ${PROFILE} application benchmark`, async ({ page, browserName 
       `[benchmark ${PROFILE}] ${name} (${String(Date.now() - benchmarkStarted)}ms)`,
     );
   };
+  page.on('console', (message) => {
+    const text = message.text();
+    if (text.startsWith('[benchmark-ui]')) {
+      console.log(`[benchmark ${PROFILE}] ${text.slice('[benchmark-ui] '.length)}`);
+    }
+  });
   stage('prepare fixtures');
   await page.route('**/benchmark-seed.html', (route) => route.fulfill({
     contentType: 'text/html',

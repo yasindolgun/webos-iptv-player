@@ -240,6 +240,7 @@ const handlers: WorkerTaskHandlers<AppWorkerTasks> = {
   'xmltv.load': request => fetchAndParseXMLTVInWorker(request),
   'search.index': request => searchIndex.index(request),
   'search.query': request => searchIndex.query(request),
+  'search.channels.query': request => searchIndex.queryChannels(request),
   'search.catalog.load': async request => {
     searchCatalogSession?.controller.abort();
     const controller = new AbortController();

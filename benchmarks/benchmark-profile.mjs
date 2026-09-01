@@ -11,6 +11,11 @@ export function resolveBenchmarkTimeout(scale) {
   return units <= 2 ? units * 300_000 : units * 675_000;
 }
 
+export function resolveBenchmarkReadyTimeout(scale) {
+  const units = Math.max(1, Math.ceil(scale / 50_000));
+  return Math.min(120_000, units * 30_000);
+}
+
 export function resolveNpmRun(
   script,
   {

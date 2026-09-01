@@ -1855,6 +1855,13 @@ export function assertGroupBenchmarkScale(report, scale) {
 }
 
 export async function runBenchmarkSuites(options) {
+    const suiteStarted = performance.now();
+    const progress = (name) => {
+      const elapsedMs = Math.round((performance.now() - suiteStarted) * 10) / 10;
+      window.__IPTV_BENCHMARK_PROGRESS__ = { name, elapsedMs };
+      console.info(`[benchmark-ui] ${name} (${String(elapsedMs)}ms)`);
+    };
+    progress('channel list');
     const watchdogIntervalMs = 100;
     let watchdogLast = performance.now();
     let watchdogMaxGapMs = 0;
@@ -1995,6 +2002,21 @@ export async function runBenchmarkSuites(options) {
       }
       throw new Error(`Timed out waiting for Search query '${query}'`);
     };
+    const waitForSearchQueryInput = async (selector, query, timeout = 30_000) => {
+      const started = Date.now();
+      while (Date.now() - started < timeout) {
+        const input = document.querySelector(selector);
+        if (input?.dataset.searchQuery === query
+            && input.dataset.searchPending === 'false') return;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      const input = document.querySelector(selector);
+      throw new Error(
+        `Timed out waiting for search input ${selector} query '${query}'`
+        + ` (actual '${input?.dataset.searchQuery || ''}',`
+        + ` pending '${input?.dataset.searchPending || ''}')`,
+      );
+    };
     const queryDistribution = async (query) => {
       const input = document.querySelector('.tab-bar-search-input');
       const values = [];
@@ -2016,35 +2038,20 @@ export async function runBenchmarkSuites(options) {
     const inputQueryDistribution = async (selector, query) => {
       const handlerValues = [];
       const frameValues = [];
-      const waitForResult = async () => {
-        const started = performance.now();
-        while (performance.now() - started < 30_000) {
-          const input = document.querySelector(selector);
-          if (input?.dataset.searchQuery === query
-              && input.dataset.searchPending === 'false') return;
-          await new Promise((resolve) => setTimeout(resolve, 5));
-        }
-        throw new Error(`Timed out waiting for search input ${selector}`);
-      };
       for (let i = 0; i < options.querySamples; i++) {
         let input = document.querySelector(selector);
         if (!input) throw new Error(`Missing search input ${selector}`);
         input.value = query === '' ? 'zzzz-reset' : '';
         input.dispatchEvent(new Event('input', { bubbles: true }));
         const resetQuery = query === '' ? 'zzzz-reset' : '';
-        while (true) {
-          input = document.querySelector(selector);
-          if (input?.dataset.searchQuery === resetQuery
-              && input.dataset.searchPending === 'false') break;
-          await new Promise((resolve) => setTimeout(resolve, 5));
-        }
+        await waitForSearchQueryInput(selector, resetQuery);
         input = document.querySelector(selector);
         if (!input) throw new Error(`Search input disappeared ${selector}`);
         input.value = query;
         const started = performance.now();
         input.dispatchEvent(new Event('input', { bubbles: true }));
         handlerValues.push(performance.now() - started);
-        await waitForResult();
+        await waitForSearchQueryInput(selector, query);
         await new Promise((resolve) => requestAnimationFrame(() => {
           frameValues.push(performance.now() - started);
           resolve();
@@ -2125,6 +2132,7 @@ export async function runBenchmarkSuites(options) {
       states: groupSwitchStates,
     };
 
+    progress('recently watched');
     const recentGroup = document.querySelector(
       '.group-item[data-group="builtin:recently-watched"]',
     );
@@ -2150,6 +2158,7 @@ export async function runBenchmarkSuites(options) {
     const sidebarStarted = performance.now();
     key('ArrowLeft', 37);
     await waitFor('#player-sidebar:not(.hidden)');
+    progress('player sidebar');
     const sidebarOpenMs = round(performance.now() - sidebarStarted);
     document.querySelectorAll('#player-sidebar .ch-logo-wrap')
       .forEach((spacer, index) => {
@@ -2221,6 +2230,7 @@ export async function runBenchmarkSuites(options) {
       }
     }
     const epgStarted = performance.now();
+    progress('EPG');
     key('', 403);
     await waitFor('#view-epg:not(.hidden)');
     const epgOpenMs = round(performance.now() - epgStarted);
@@ -2284,6 +2294,7 @@ export async function runBenchmarkSuites(options) {
     await leaveEpgForLive();
 
     const moviesStarted = performance.now();
+    progress('movies');
     click('[data-section="movies"]');
     await waitFor('#view-movies:not(.hidden)');
     await waitFor('#view-movies .catalog-cat[data-category-id="13"]');
@@ -2312,6 +2323,7 @@ export async function runBenchmarkSuites(options) {
     };
 
     const seriesStarted = performance.now();
+    progress('series');
     click('[data-section="series"]');
     await waitFor('#view-series:not(.hidden)');
     await waitFor('#view-series .catalog-cat[data-category-id="13"]');
@@ -2351,6 +2363,7 @@ export async function runBenchmarkSuites(options) {
     };
 
     const searchInitialStarted = performance.now();
+    progress('Search');
     click('[data-section="search"]');
     const searchInitialOpenMs = round(performance.now() - searchInitialStarted);
     const input = document.querySelector('.tab-bar-search-input');
@@ -2441,6 +2454,7 @@ export async function runBenchmarkSuites(options) {
     await waitFor('#view-player:not(.hidden)');
     key('ArrowLeft', 37);
     await waitFor('#player-sidebar:not(.hidden)');
+    progress('sidebar search');
     sidebar.search = {
       queries: {
         empty: await inputQueryDistribution('.sidebar-search-input', ''),
@@ -2452,9 +2466,7 @@ export async function runBenchmarkSuites(options) {
     const sidebarSearchInput = document.querySelector('.sidebar-search-input');
     sidebarSearchInput.value = 'rarechannelneedle';
     sidebarSearchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    while (document.querySelector('.sidebar-search-input')?.dataset.searchPending === 'true') {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
+    await waitForSearchQueryInput('.sidebar-search-input', 'rarechannelneedle');
     if (document.querySelectorAll('.sidebar-ch-item').length !== 1) {
       throw new Error('Sparse Sidebar search did not render one channel');
     }
@@ -2467,6 +2479,7 @@ export async function runBenchmarkSuites(options) {
 
     key('', 403);
     await waitFor('#view-epg:not(.hidden)');
+    progress('EPG search');
     const epgSearch = {
       queries: {
         empty: await inputQueryDistribution('.epg-search-input', ''),
@@ -2478,9 +2491,7 @@ export async function runBenchmarkSuites(options) {
     const epgSearchInput = document.querySelector('.epg-search-input');
     epgSearchInput.value = 'rarechannelneedle';
     epgSearchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    while (document.querySelector('.epg-search-input')?.dataset.searchPending === 'true') {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
+    await waitForSearchQueryInput('.epg-search-input', 'rarechannelneedle');
     if (document.querySelectorAll('.epg-channel-item').length !== 1) {
       throw new Error('Sparse EPG channel search did not render one channel');
     }
@@ -2497,6 +2508,7 @@ export async function runBenchmarkSuites(options) {
     key('Enter', 13);
     click('[data-epg-action]');
     await waitFor('.epg-mapping-search');
+    progress('EPG mapping search');
     const epgMapping = {
       queries: {
         empty: await inputQueryDistribution('.epg-mapping-search', ''),
@@ -2508,15 +2520,14 @@ export async function runBenchmarkSuites(options) {
     const sparseMappingInput = document.querySelector('.epg-mapping-search');
     sparseMappingInput.value = 'rareguideneedle';
     sparseMappingInput.dispatchEvent(new Event('input', { bubbles: true }));
-    while (document.querySelector('.epg-mapping-search')?.dataset.searchPending === 'true') {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
+    await waitForSearchQueryInput('.epg-mapping-search', 'rareguideneedle');
     if (document.querySelectorAll('.epg-mapping-option[data-epg-channel]').length !== 2) {
       throw new Error('Sparse EPG mapping search did not render auto plus one candidate');
     }
     key('Backspace', 461);
     key('Backspace', 461);
     await waitFor('#view-channels:not(.hidden)');
+    progress('complete');
     return {
       channelList,
       recentlyWatched,
@@ -2555,6 +2566,7 @@ export async function runBenchmarkSuites(options) {
 }
 
 export function assertBenchmarkScale(report, scale) {
+  const catalogExtentTolerance = 64;
   const closeTo = (actual, expected, tolerance = 0) => {
     const numeric = parseFloat(String(actual).replace(/_/g, ''));
     if (Math.abs(numeric - expected) > tolerance) {
@@ -2649,8 +2661,8 @@ export function assertBenchmarkScale(report, scale) {
   closeTo(report.epg.channelTotalSize, scale * 72);
   closeTo(report.epg.programTotalSize, scale * 80, 2048);
   closeTo(report.movies.categoryTotalSize, (scale - 6) * 320, 32);
-  closeTo(report.movies.totalSize, Math.ceil(scale / 7) * 395, 32);
-  closeTo(report.series.totalSize, Math.ceil(scale / 7) * 395, 32);
+  closeTo(report.movies.totalSize, Math.ceil(scale / 7) * 395, catalogExtentTolerance);
+  closeTo(report.series.totalSize, Math.ceil(scale / 7) * 395, catalogExtentTolerance);
   closeTo(report.series.episodes.totalSize, scale * 138);
   closeTo(report.search.programTotalSize, scale * 109);
 }

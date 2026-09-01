@@ -22,6 +22,7 @@ import { showToast } from './toast';
 import { VirtualList } from '../utils/virtual-list';
 import { VirtualScrollGuard } from '../utils/virtual-scroll';
 import { WorkerListSearch } from '../workers/list-search-client';
+import { runAppWorkerTask } from '../workers/app-worker-client';
 import { createLogger } from '../utils/logger';
 import { ChannelHealthService } from '../services/channel-health';
 
@@ -375,7 +376,13 @@ export class Sidebar {
     const source = this.searchScopedChannels();
     let channels: Channel[];
     try {
-      channels = await this.channelSearch.query(source, query);
+      let shared: Awaited<ReturnType<typeof this.querySharedChannels>> = null;
+      if (source === PlaylistService.channels) shared = await this.querySharedChannels(query);
+      channels = shared ?? await this.channelSearch.query(
+        source,
+        query,
+        CONFIG.XTREAM.SEARCH_RESULT_CAP,
+      );
     } catch (error) {
       if (generation !== this.channelSearchGeneration || !this.isVisible) return;
       log.error(
@@ -396,6 +403,23 @@ export class Sidebar {
     this.channelSearchPending = false;
     this.channelSource = null;
     this.render();
+  }
+
+  private async querySharedChannels(query: string): Promise<Channel[] | null> {
+    const result = await runAppWorkerTask('search.channels.query', {
+      query,
+      limit: CONFIG.XTREAM.SEARCH_RESULT_CAP,
+      channelCount: PlaylistService.channels.length,
+      channelRevision: PlaylistService.groupsRevision,
+      mode: 'fields',
+    });
+    if (!result) return null;
+    const channels: Channel[] = [];
+    for (const index of result.indices) {
+      const channel = PlaylistService.getByIndex(index);
+      if (channel) channels.push(channel);
+    }
+    return channels;
   }
 
   private searchScopedChannels(): Channel[] {

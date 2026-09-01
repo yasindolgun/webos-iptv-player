@@ -82,6 +82,47 @@ describe('ScopedSearchIndex', () => {
     expect(result?.hasMore).toBe(true);
   });
 
+  it('publishes incremental list indexes only after the final contiguous batch', () => {
+    const index = new ScopedSearchIndex();
+    expect(index.indexList({
+      owner: 'sidebar',
+      sessionId: 5,
+      mode: 'names',
+      documents: [['Alpha'], ['Bravo']],
+      offset: 0,
+      reset: true,
+      complete: false,
+    }).accepted).toBe(true);
+    expect(index.queryList({
+      owner: 'sidebar',
+      sessionId: 5,
+      query: 'alpha',
+    })).toBeNull();
+    expect(index.indexList({
+      owner: 'sidebar',
+      sessionId: 5,
+      mode: 'names',
+      documents: [['Charlie']],
+      offset: 3,
+      reset: false,
+      complete: true,
+    }).accepted).toBe(false);
+    expect(index.indexList({
+      owner: 'sidebar',
+      sessionId: 5,
+      mode: 'names',
+      documents: [['Charlie']],
+      offset: 2,
+      reset: false,
+      complete: true,
+    }).accepted).toBe(true);
+    expect(index.queryList({
+      owner: 'sidebar',
+      sessionId: 5,
+      query: 'charlie',
+    })?.indices).toEqual([2]);
+  });
+
   it('preserves EPG mapping source and selected ordering', () => {
     const index = new ScopedSearchIndex();
     index.indexMapping({

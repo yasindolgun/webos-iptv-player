@@ -25,6 +25,7 @@ import { getLocale, t, tp, type SupportedLocale } from '../i18n';
 import { VirtualList } from '../utils/virtual-list';
 import { VirtualScrollGuard } from '../utils/virtual-scroll';
 import { WorkerListSearch } from '../workers/list-search-client';
+import { runAppWorkerTask } from '../workers/app-worker-client';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('EpgGrid');
@@ -256,7 +257,15 @@ export class EpgGrid {
     const source = this.visibleChannels;
     let results: VisibleChannel[];
     try {
-      results = await this.channelSearch.query(source, query);
+      let shared: VisibleChannel[] | null = null;
+      if (this.selectedGroup === 'builtin:all' && !this.selectedPlaylist) {
+        shared = await this.querySharedChannels(query);
+      }
+      results = shared ?? await this.channelSearch.query(
+        source,
+        query,
+        CONFIG.XTREAM.SEARCH_RESULT_CAP,
+      );
     } catch (error) {
       if (generation !== this.channelSearchGeneration) return;
       log.error(
@@ -277,6 +286,23 @@ export class EpgGrid {
     this.channelSearchResultQuery = query;
     this.channelSearchPending = false;
     this.render();
+  }
+
+  private async querySharedChannels(query: string): Promise<VisibleChannel[] | null> {
+    const result = await runAppWorkerTask('search.channels.query', {
+      query,
+      limit: CONFIG.XTREAM.SEARCH_RESULT_CAP,
+      channelCount: PlaylistService.channels.length,
+      channelRevision: PlaylistService.groupsRevision,
+      mode: 'names',
+    });
+    if (!result) return null;
+    const channels: VisibleChannel[] = [];
+    for (const index of result.indices) {
+      const channel = PlaylistService.getByIndex(index);
+      if (channel) channels.push({ channel, globalIndex: index });
+    }
+    return channels;
   }
 
   private getGroupOptions(): GroupOption[] {

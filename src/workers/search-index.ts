@@ -14,6 +14,7 @@ import type {
   SearchQueryResponse,
   SearchRankedDocuments,
   SearchRankedIndices,
+  SharedChannelSearchRequest,
 } from './tasks';
 
 interface IndexedName {
@@ -24,6 +25,8 @@ interface IndexedName {
 export class SearchWorkerIndex {
   private sessionId: number | null = null;
   private channels: PreparedSearchItem<number>[] = [];
+  private channelNames: PreparedNameSearchIndex<IndexedName> = { items: [], values: [] };
+  private channelRevision: number | null = null;
   private programmes: PreparedSearchItem<number>[] = [];
   private movies: PreparedNameSearchIndex<IndexedName> = { items: [], values: [] };
   private series: PreparedNameSearchIndex<IndexedName> = { items: [], values: [] };
@@ -32,6 +35,8 @@ export class SearchWorkerIndex {
     if (request.reset) {
       this.sessionId = request.sessionId;
       this.channels = [];
+      this.channelNames = { items: [], values: [] };
+      this.channelRevision = null;
       this.programmes = [];
       this.movies = { items: [], values: [] };
       this.series = { items: [], values: [] };
@@ -39,7 +44,14 @@ export class SearchWorkerIndex {
       return { accepted: false };
     }
 
-    if (request.channels) this.channels = prepareFields(request.channels);
+    if (request.channels) {
+      this.channels = prepareFields(request.channels);
+      this.channelNames = prepareNameSearchItems(request.channels.map((fields, index) => ({
+        id: String(index),
+        name: fields[0] ?? '',
+      })));
+      this.channelRevision = request.channelRevision ?? null;
+    }
     if (request.programmes) this.programmes = prepareFields(request.programmes);
     return { accepted: true };
   }
@@ -67,6 +79,23 @@ export class SearchWorkerIndex {
         ? rankedNames(this.series, request.query, request.limit)
         : emptyResult(),
     };
+  }
+
+  queryChannels(request: SharedChannelSearchRequest): SearchRankedIndices | null {
+    if (this.channelRevision !== request.channelRevision
+        || this.channels.length !== request.channelCount) return null;
+    if (request.mode === 'names') {
+      const result = rankPreparedNamesTopK(
+        this.channelNames,
+        request.query,
+        request.limit,
+      );
+      return {
+        indices: result.items.map(item => Number(item.id)),
+        hasMore: result.hasMore,
+      };
+    }
+    return rankedFields(this.channels, request.query, request.limit);
   }
 }
 

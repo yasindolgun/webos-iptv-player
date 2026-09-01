@@ -76,4 +76,43 @@ describe('SearchWorkerIndex', () => {
       hasMore: true,
     });
   });
+
+  it('shares current channel indexes without accepting stale playlist revisions', () => {
+    const index = new SearchWorkerIndex();
+    index.index({
+      sessionId: 3,
+      reset: true,
+      channelRevision: 7,
+      channels: [['XAlpha', 'Alpha Group'], ['Bravo', 'Alpha Group']],
+    });
+
+    expect(index.queryChannels({
+      query: 'alpha',
+      limit: 10,
+      channelCount: 2,
+      channelRevision: 7,
+      mode: 'fields',
+    })?.indices).toEqual([0, 1]);
+    expect(index.queryChannels({
+      query: 'alpha',
+      limit: 10,
+      channelCount: 2,
+      channelRevision: 7,
+      mode: 'names',
+    })?.indices).toEqual([0]);
+    expect(index.queryChannels({
+      query: 'alpha',
+      limit: 10,
+      channelCount: 2,
+      channelRevision: 8,
+      mode: 'fields',
+    })).toBeNull();
+    expect(index.queryChannels({
+      query: 'alpha',
+      limit: 10,
+      channelCount: 3,
+      channelRevision: 7,
+      mode: 'fields',
+    })).toBeNull();
+  });
 });

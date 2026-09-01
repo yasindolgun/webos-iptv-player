@@ -43,6 +43,7 @@ export interface SearchIndexRequest {
   reset?: boolean;
   channels?: string[][];
   programmes?: string[][];
+  channelRevision?: number;
 }
 
 export interface SearchIndexResponse {
@@ -59,6 +60,14 @@ export interface SearchQueryRequest {
 export interface SearchRankedIndices {
   indices: number[];
   hasMore: boolean;
+}
+
+export interface SharedChannelSearchRequest {
+  query: string;
+  limit: number;
+  channelCount: number;
+  channelRevision: number;
+  mode: 'fields' | 'names';
 }
 
 export interface SearchCatalogDocument {
@@ -109,6 +118,9 @@ export interface ListSearchIndexRequest {
   sessionId: number;
   mode: 'fields' | 'names';
   documents: string[][];
+  offset?: number;
+  reset?: boolean;
+  complete?: boolean;
 }
 
 export interface ListSearchQueryRequest {
@@ -258,6 +270,10 @@ export interface AppWorkerTasks {
   'search.query': {
     request: SearchQueryRequest;
     response: SearchQueryResponse | null;
+  };
+  'search.channels.query': {
+    request: SharedChannelSearchRequest;
+    response: SearchRankedIndices | null;
   };
   'search.catalog.load': {
     request: SearchCatalogLoadRequest;
