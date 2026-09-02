@@ -163,6 +163,10 @@ export const KeyHandler = {
       }
 
       const action = ACTION_MAP[keyCode];
+      if (action === 'back' && e.repeat) {
+        e.preventDefault();
+        return;
+      }
       cancelNumber();
       if (action) {
         e.preventDefault();

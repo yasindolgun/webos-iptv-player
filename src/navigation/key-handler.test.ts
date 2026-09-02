@@ -118,6 +118,25 @@ describe('KeyHandler', () => {
       expect(handler).toHaveBeenCalledWith('back');
     });
 
+    it('ignores repeat keydown events for back', () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        keyCode: K.BACK,
+        repeat: false,
+        bubbles: true,
+        cancelable: true,
+      } as KeyboardEventInit));
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith('back');
+
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        keyCode: K.BACK,
+        repeat: true,
+        bubbles: true,
+        cancelable: true,
+      } as KeyboardEventInit));
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
     it('reports how long a direction remains held and resets it on keyup', () => {
       press(K.RIGHT);
       expect(handler).toHaveBeenLastCalledWith('right');

@@ -825,6 +825,10 @@ class App {
     const target = previous === fallback
       ? this.navigator.goBack(fallback)
       : fallback;
+    if (target === 'home') {
+      this.goHome();
+      return;
+    }
     if (previous !== fallback) {
       this.replaceView(target);
       return;
@@ -834,6 +838,10 @@ class App {
 
   private goBack(fallback: ViewName): void {
     const target = this.navigator.goBack(fallback);
+    if (target === 'home') {
+      this.goHome();
+      return;
+    }
     this.showView(target);
   }
 
@@ -885,6 +893,7 @@ class App {
     this.series.deactivate();
     this.search.deactivate();
     this.player.stop();
+    this.backPressTime = 0;
     this.resetView('home');
     this.home.open(this.homeState());
   }
@@ -903,7 +912,7 @@ class App {
 
   private requestExit(): void {
     const now = Date.now();
-    if (now - this.backPressTime < 3000) {
+    if (this.backPressTime > 0 && now - this.backPressTime < 3000) {
       void this.exitApp();
     } else {
       this.backPressTime = now;

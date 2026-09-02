@@ -232,12 +232,31 @@ test('opens and plays a series episode from Home', async ({ page }) => {
 });
 
 test('Back from Live returns to Home instead of exiting', async ({ page }) => {
+  await page.evaluate(() => {
+    const state = window as unknown as {
+      __exitCalls: number;
+      webOS?: { platformBack?: () => void };
+    };
+    state.__exitCalls = 0;
+    state.webOS = state.webOS ?? {};
+    state.webOS.platformBack = () => { state.__exitCalls++; };
+  });
+
   await page.keyboard.press('Enter');
   await expect(page.locator('#view-channels')).toBeVisible();
 
   await page.evaluate(() =>
     document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 461, bubbles: true })));
   await expect(page.locator('#view-home')).toBeVisible();
+  await expect(page.locator('[data-home-action="live"]')).toHaveClass(/focused/);
+  expect(await page.evaluate(() =>
+    (window as unknown as { __exitCalls: number }).__exitCalls)).toBe(0);
+
+  await page.evaluate(() =>
+    document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 461, bubbles: true })));
+  await expect(page.locator('.toast.visible')).toContainText('Press back again');
+  expect(await page.evaluate(() =>
+    (window as unknown as { __exitCalls: number }).__exitCalls)).toBe(0);
 });
 
 test('Back on Home requires a second press to exit', async ({ page }) => {
