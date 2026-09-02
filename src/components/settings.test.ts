@@ -13,6 +13,7 @@ const {
   uploadMock,
   xtreamMock,
   healthMock,
+  telemetryMock,
 } = vi.hoisted(() => {
   const state = {
     playlists: [] as {
@@ -46,6 +47,7 @@ const {
       opensubtitles: { apiKey: '', username: '', password: '', token: '', tokenTs: 0 },
       assrt: { apiKey: '' },
     },
+    telemetry: { enabled: false, endpoint: '' },
   };
   return {
     state,
@@ -80,6 +82,7 @@ const {
       getLastPlaylistRefreshAt: vi.fn(() => state.lastPlaylistRefreshAt),
       getOnlineSubtitleConfig: vi.fn(() => state.onlineSubtitles),
       getPlaybackTrackPreferences: vi.fn(() => state.trackPreferences),
+      getTelemetryConfig: vi.fn(() => ({ ...state.telemetry })),
       getSelectedXtreamAccountId: vi.fn(() => null),
       getXtreamAccountStatus: vi.fn(() => null),
       getShowHiddenChannels: vi.fn(() => state.showHidden),
@@ -104,6 +107,9 @@ const {
       setOnlineSubtitleConfig: vi.fn((cfg: any) => { state.onlineSubtitles = cfg; }),
       setPlaybackTrackPreferences: vi.fn((value: typeof state.trackPreferences) => {
         state.trackPreferences = value;
+      }),
+      setTelemetryConfig: vi.fn((value: typeof state.telemetry) => {
+        state.telemetry = { ...value };
       }),
       remove: vi.fn(),
       clearRecentlyWatched: vi.fn(),
@@ -141,6 +147,11 @@ const {
       })),
       reset: vi.fn(),
     },
+    telemetryMock: {
+      capture: vi.fn(),
+      configure: vi.fn(),
+      test: vi.fn(async () => {}),
+    },
   };
 });
 
@@ -167,6 +178,7 @@ vi.mock('../services/reminder-service', () => ({
 }));
 vi.mock('../services/setup-client', () => ({ SetupClient: setupMock }));
 vi.mock('../services/channel-health', () => ({ ChannelHealthService: healthMock }));
+vi.mock('../services/telemetry', () => ({ Telemetry: telemetryMock }));
 
 import { Settings } from './settings';
 import { setLocale } from '../i18n';
@@ -194,6 +206,7 @@ beforeEach(() => {
     subtitleMode: 'forced',
     subtitleLanguage: '',
   };
+  state.telemetry = { enabled: false, endpoint: '' };
   PlaylistService.epgSources = [];
   PlaylistService.allChannels = [];
   PlaylistService.channels = [];
@@ -238,6 +251,36 @@ describe('Settings.render', () => {
       .toContain('Choose category');
     expect(container.querySelector('.settings-nav-help')?.textContent)
       .toContain('Enter / return');
+  });
+
+  it('renders and saves the Raspberry Pi diagnostics address', () => {
+    state.telemetry = { enabled: true, endpoint: 'http://192.168.1.50:4318' };
+    settings.render();
+
+    const input = container.querySelector<HTMLInputElement>('#telemetry-endpoint')!;
+    expect(input.value).toBe('http://192.168.1.50:4318');
+    expect(container.querySelector('#telemetry-enabled .toggle-option.active')?.textContent)
+      .toBe('ON');
+
+    input.value = '192.168.1.51';
+    click('#save-settings');
+    expect(storageMock.setTelemetryConfig).toHaveBeenCalledWith({
+      enabled: true,
+      endpoint: '192.168.1.51',
+    });
+    expect(telemetryMock.configure).toHaveBeenCalledWith({
+      enabled: true,
+      endpoint: '192.168.1.51',
+    });
+  });
+
+  it('sends a real test event to the entered diagnostics address', async () => {
+    settings.render();
+    container.querySelector<HTMLInputElement>('#telemetry-endpoint')!.value = '192.168.1.50';
+    click('#test-telemetry');
+    await vi.waitFor(() => expect(telemetryMock.test).toHaveBeenCalledWith('192.168.1.50'));
+    expect(container.querySelector('#telemetry-test-status')?.textContent)
+      .toContain('Test event received');
   });
 
   it('starts a manual channel health check from the Channels section', async () => {

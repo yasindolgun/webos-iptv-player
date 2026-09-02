@@ -1,3 +1,5 @@
+import { Telemetry, type TelemetryLevel } from '../services/telemetry';
+
 /**
  * Tagged logger with timing helpers.
  *
@@ -37,15 +39,22 @@ export interface TaggedLogger {
 
 export function createLogger(tag: string): TaggedLogger {
   const prefix = `[${tag}]`;
+  const remote = (level: TelemetryLevel, args: unknown[]) => {
+    Telemetry.capture(level, tag, args);
+  };
   return {
-    debug: (...args) => { if (should('debug')) console.log(prefix, ...args); },
-    info:  (...args) => { if (should('info'))  console.log(prefix, ...args); },
-    warn:  (...args) => { if (should('warn'))  console.warn(prefix, ...args); },
-    error: (...args) => { if (should('error')) console.error(prefix, ...args); },
+    debug: (...args) => { if (should('debug')) { console.log(prefix, ...args); remote('debug', args); } },
+    info:  (...args) => { if (should('info'))  { console.log(prefix, ...args); remote('info', args); } },
+    warn:  (...args) => { if (should('warn'))  { console.warn(prefix, ...args); remote('warn', args); } },
+    error: (...args) => { if (should('error')) { console.error(prefix, ...args); remote('error', args); } },
     time(label: string) {
       const start = Date.now();
       return () => {
-        if (should('info')) console.log(prefix, `${label}: ${Date.now() - start}ms`);
+        if (should('info')) {
+          const elapsedMs = Date.now() - start;
+          console.log(prefix, `${label}: ${elapsedMs}ms`);
+          Telemetry.capture('info', tag, [{ label, elapsedMs }], `timing.${label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`);
+        }
       };
     },
   };

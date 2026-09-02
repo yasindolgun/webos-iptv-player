@@ -806,6 +806,18 @@ export const StorageService = {
     set('locale', locale);
   },
 
+  getTelemetryConfig(): { enabled: boolean; endpoint: string } {
+    const endpoint = get<unknown>('telemetry_endpoint', '');
+    return {
+      enabled: get<boolean>('telemetry_enabled', false),
+      endpoint: typeof endpoint === 'string' ? endpoint.slice(0, 500) : '',
+    };
+  },
+  setTelemetryConfig(config: { enabled: boolean; endpoint: string }): void {
+    set('telemetry_enabled', config.enabled);
+    set('telemetry_endpoint', config.endpoint.trim().slice(0, 500));
+  },
+
   getPlaybackTrackPreferences(): PlaybackTrackPreferences {
     const stored = get<Partial<PlaybackTrackPreferences>>('playback_track_preferences', {});
     const subtitleMode = stored.subtitleMode === 'off'

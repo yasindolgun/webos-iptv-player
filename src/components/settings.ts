@@ -13,6 +13,7 @@ import {
 } from '../services/idb-cache';
 import { UploadClient, uploadIdFromUrl } from '../services/upload-client';
 import { SetupClient } from '../services/setup-client';
+import { Telemetry } from '../services/telemetry';
 import { ReminderService } from '../services/reminder-service';
 import {
   ChannelHealthService,
@@ -530,6 +531,7 @@ export class Settings {
     const textSize = StorageService.getTextSize();
     const localePreference = StorageService.getLocalePreference();
     const trackPreferences = StorageService.getPlaybackTrackPreferences();
+    const telemetry = StorageService.getTelemetryConfig();
     const preferredSubtitle = trackPreferences.subtitleMode === 'language'
       ? `language:${trackPreferences.subtitleLanguage}`
       : trackPreferences.subtitleMode;
@@ -577,6 +579,31 @@ export class Settings {
                   <h3 class="settings-section-title">${t('settings.deviceSetup')}</h3>
                   <div class="source-box setup-box-info device-setup-card"
                        id="setup-info">${t('settings.checkingSetup')}</div>
+                </div>
+              </div>
+
+              <div class="settings-section">
+                <h3 class="settings-section-title">${t('settings.telemetryTitle')}</h3>
+                <div class="settings-item">
+                  <div class="settings-item-title">${t('settings.telemetryEnabled')}</div>
+                  ${toggleGroup('telemetry-enabled', [
+                    { value: 'on', label: t('settings.on') },
+                    { value: 'off', label: t('settings.off') },
+                  ], telemetry.enabled ? 'on' : 'off')}
+                </div>
+                <div class="settings-item">
+                  <div class="settings-item-title">${t('settings.telemetryEndpoint')}</div>
+                  <input type="text" class="settings-input" data-focusable
+                         id="telemetry-endpoint" value="${telemetry.endpoint}"
+                         placeholder="192.168.1.50">
+                  <div class="settings-item-hint">${t('settings.telemetryHint')}</div>
+                </div>
+                <div class="settings-item settings-item--action">
+                  <button class="btn btn-secondary" data-focusable id="test-telemetry">
+                    ${t('settings.telemetryTest')}
+                  </button>
+                  <div class="settings-item-hint" id="telemetry-test-status"
+                       aria-live="polite"></div>
                 </div>
               </div>
             </div>
@@ -1219,6 +1246,8 @@ export class Settings {
       this.onSave('cancel');
     } else if (el.id === 'refresh-data') {
       void this.refreshData();
+    } else if (el.id === 'test-telemetry') {
+      void this.testTelemetryConnection(el);
     } else if (el.id === 'clear-cache') {
       this.confirmationPrompt.show({
         title: t('settings.clearCacheTitle'),
@@ -1433,6 +1462,23 @@ export class Settings {
         err,
       );
       showToast(t('settings.resetFailed'));
+    }
+  }
+
+  private async testTelemetryConnection(button: HTMLElement): Promise<void> {
+    const input = $('#telemetry-endpoint', this.container) as HTMLInputElement | null;
+    const status = $('#telemetry-test-status', this.container);
+    if (!input || !status) return;
+    button.setAttribute('disabled', '');
+    morph(status, html`${t('settings.telemetryTesting')}`);
+    try {
+      await Telemetry.test(input.value);
+      morph(status, html`${t('settings.telemetryTestSuccess')}`);
+    } catch (err) {
+      log.warn('Telemetry connection test failed', 'event=telemetry.connection.test.failed', err);
+      morph(status, html`${t('settings.telemetryTestFailed')}`);
+    } finally {
+      button.removeAttribute('disabled');
     }
   }
 
@@ -1933,6 +1979,14 @@ export class Settings {
   }
 
   private save(): void {
+    const telemetryEndpoint = ($('#telemetry-endpoint', this.container) as HTMLInputElement | null)
+      ?.value.trim() ?? '';
+    const telemetryEnabled = $('#telemetry-enabled .toggle-option.active', this.container)
+      ?.dataset.value === 'on';
+    const telemetryConfig = { enabled: telemetryEnabled, endpoint: telemetryEndpoint };
+    StorageService.setTelemetryConfig(telemetryConfig);
+    Telemetry.configure(telemetryConfig);
+
     // Read row-by-row so each row's stable id (data-id) is preserved; a row
     // added before this build has none, so mint one.
     const rows = $$('#playlist-entries .settings-row:not(.playlist-header-row)', this.container) as HTMLElement[];

@@ -48,6 +48,7 @@ import {
 import { truncate } from './utils/text';
 import { $, show, hide } from './utils/dom';
 import { createLogger, installGlobalErrorHandlers, logEnvironment } from './utils/logger';
+import { Telemetry } from './services/telemetry';
 import type {
   Action,
   ActionEvent,
@@ -1869,6 +1870,7 @@ class App {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  Telemetry.start();
   installGlobalErrorHandlers();
   logEnvironment(CONFIG.VERSION);
   const app = new App();
