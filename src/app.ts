@@ -129,10 +129,14 @@ class App {
       () => {
         const sources = this.epgSources();
         if (!sources.length) return;
-        void EpgService.load(sources, PlaylistService.allChannels)
+        void EpgService.load(
+          sources,
+          PlaylistService.allChannels,
+          undefined,
+          () => this.refreshEpgDependentViews(),
+        )
           .then(() => {
-            this.channelList.render();
-            void this.search.refreshPrograms();
+            this.refreshEpgDependentViews();
           })
           .catch(err => log.error('EPG mapping reload failed:', err));
       },
@@ -285,7 +289,6 @@ class App {
 
     done();
     this.loadChannelsAfterUploadSync = StorageService.getPlaylists().length === 0;
-    const bundledServiceReady = this.startBundledService();
     this.bindBundledServiceLifecycle();
     this.bindReminderLifecycle();
     // Register a retail-safe callback immediately. If Developer Mode is
@@ -294,6 +297,9 @@ class App {
     await this.loadData();
     // Cold launch from a "Watch now" alert: channels are loaded now, so tune.
     this.handleLaunchParams(this.coldLaunchParams());
+    // Spawning the service process can synchronously stall Luna on a cold TV.
+    // Keep LAN setup off the critical path so cached channels render first.
+    const bundledServiceReady = this.startBundledService();
     void bundledServiceReady
       .then((started) => started ? this.finishBundledServiceInit() : undefined)
       .catch(err => log.error('Bundled service initialization failed:', err));
@@ -729,20 +735,20 @@ class App {
       }
 
       if (epgSources.length) {
-        EpgService.load(epgSources, PlaylistService.allChannels)
+        EpgService.load(
+          epgSources,
+          PlaylistService.allChannels,
+          undefined,
+          () => this.refreshEpgDependentViews(),
+        )
           .then(() => {
-            this.applyDisplayTz();
-            this.channelList.render();
-            this.settings.refreshEpgSourceDiagnostics();
-            void this.search.refreshPrograms();
+            this.refreshEpgDependentViews();
           })
           .catch(err => log.error('EPG load failed:', err));
-        this.epgRefreshTimer = setInterval(() => EpgService.refresh()
+        this.epgRefreshTimer = setInterval(() =>
+          EpgService.refresh(() => this.refreshEpgDependentViews())
           .then(() => {
-            this.applyDisplayTz();
-            this.channelList.render();
-            this.settings.refreshEpgSourceDiagnostics();
-            void this.search.refreshPrograms();
+            this.refreshEpgDependentViews();
           })
           .catch(err => log.error('EPG refresh failed:', err)),
         CONFIG.EPG_REFRESH_INTERVAL);
@@ -1067,12 +1073,20 @@ class App {
     this.epgGrid.focusChannel(this.player.getCurrentIndex());
     this.navigateTo('epg');
     this.epgGrid.render();
-    EpgService.refresh().then(() => {
-      this.applyDisplayTz();
+    const renderEpg = () => {
+      this.refreshEpgDependentViews();
       this.epgGrid.render();
-      this.settings.refreshEpgSourceDiagnostics();
-      void this.search.refreshPrograms();
+    };
+    EpgService.refresh(renderEpg).then(() => {
+      renderEpg();
     });
+  }
+
+  private refreshEpgDependentViews(): void {
+    this.applyDisplayTz();
+    this.channelList.render();
+    this.settings.refreshEpgSourceDiagnostics();
+    void this.search.refreshPrograms();
   }
 
   private openReminderManager(origin: 'home' | 'settings' | 'epg'): void {

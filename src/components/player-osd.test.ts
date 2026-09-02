@@ -125,6 +125,7 @@ describe('PlayerOsd', () => {
       streamInfo: {
         resolution: { tier: 'hd', label: 'Info 1' },
         hdr: 'HDR',
+        drm: 'PlayReady',
       },
     });
     osd.show();
@@ -133,6 +134,7 @@ describe('PlayerOsd', () => {
     expect(container.textContent).toContain('Programme 2');
     expect(container.textContent).toContain('Info 1');
     expect(container.textContent).toContain('HDR');
+    expect(container.textContent).toContain('PlayReady');
     expect(container.textContent).not.toContain('4.5 Mbps');
     expect(container.textContent).not.toContain('Codec 1');
 

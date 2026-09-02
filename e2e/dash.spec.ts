@@ -176,18 +176,27 @@ test('routes an MPD through dash.js and separates OSD facts from details', async
 
 test('loads the real dash.js engine in the desktop preview', async ({ page }) => {
   test.skip(isChromium53(), 'dash.js is a modern-browser desktop preview dependency');
+  let manifestRequests = 0;
   await routePlaylist(page, DASH_M3U);
-  await page.route(DASH_URL, route => route.fulfill({
-    status: 200,
-    contentType: 'application/dash+xml',
-    body: DASH_MPD,
-  }));
+  await page.route(DASH_URL, route => {
+    manifestRequests++;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/dash+xml',
+      body: DASH_MPD,
+    });
+  });
   await seedPlaylist(page);
   await page.goto('/');
-  await expect(page.locator('#view-channels')).toBeVisible();
-  await page.keyboard.press('Enter');
-  await expect(page.locator('#view-player')).toBeVisible();
   await page.waitForFunction(() =>
     typeof (window as unknown as { __dashjs?: { MediaPlayer?: unknown } })
       .__dashjs?.MediaPlayer === 'function');
+  await expect(page.locator('#view-channels')).toBeVisible();
+
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#view-player')).toBeVisible();
+
+  // PlayerPipeline fetches track metadata first; the real dash.js instance then
+  // makes its own manifest request while initializing playback.
+  await expect.poll(() => manifestRequests).toBeGreaterThanOrEqual(2);
 });

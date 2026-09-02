@@ -52,6 +52,7 @@ interface PlayerStreamFacts {
   bitrate: PlayerDiagnosticValue | null;
   videoCodec: PlayerDiagnosticValue | null;
   audioCodec: PlayerDiagnosticValue | null;
+  drm: string;
 }
 
 export class Player {
@@ -1211,6 +1212,7 @@ export class Player {
       [bitrateLabel(lvl?.bitrate ?? 0), 'declared'],
       [bitrateLabel(variant?.bitrate ?? 0), 'declared'],
     ]);
+    const drm = this.pipeline.drmLabel();
     return {
       osdResolution,
       resolution,
@@ -1219,15 +1221,17 @@ export class Player {
       bitrate,
       videoCodec,
       audioCodec,
+      drm,
     };
   }
 
   private streamInfo(): PlayerOsdStreamInfo | null {
     const facts = this.streamFacts();
-    if (!(facts.osdResolution || facts.hdr)) return null;
+    if (!(facts.osdResolution || facts.hdr || facts.drm)) return null;
     return {
       resolution: facts.osdResolution,
       hdr: facts.hdr?.value ?? '',
+      drm: facts.drm,
     };
   }
 

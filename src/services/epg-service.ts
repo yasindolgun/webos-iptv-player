@@ -122,6 +122,7 @@ class EpgServiceImpl {
     sources: EpgSource[],
     channels?: Channel[],
     playlistIds?: readonly string[],
+    onDataPublished?: () => void,
   ): Promise<void> {
     const selectedPlaylistIds = playlistIds
       ? Array.from(new Set(playlistIds)).sort()
@@ -137,7 +138,12 @@ class EpgServiceImpl {
       selectedPlaylistIds,
     ]);
     if (this.loadPromise && signature === this.loadSignature) return this.loadPromise;
-    const promise = this.performLoad(sources, channels, selectedPlaylistIds);
+    const promise = this.performLoad(
+      sources,
+      channels,
+      selectedPlaylistIds,
+      onDataPublished,
+    );
     this.loadSignature = signature;
     this.loadPromise = promise;
     const clear = () => {
@@ -151,6 +157,7 @@ class EpgServiceImpl {
     sources: EpgSource[],
     channels?: Channel[],
     playlistIds?: readonly string[],
+    onDataPublished?: () => void,
   ): Promise<void> {
     const revision = ++this.revision;
     this.loadStateValue = sources.length ? 'loading' : 'idle';
@@ -162,24 +169,23 @@ class EpgServiceImpl {
       ? this.sources.filter(source => source.kind === 'manual'
         || source.playlistIds.some(id => selected.has(id)))
       : this.sources;
-    await Promise.all(sourcesToLoad.map((source) => this.loadSource(source, revision)));
+    await Promise.all(sourcesToLoad.map((source) =>
+      this.loadSource(source, revision, onDataPublished)));
     if (revision !== this.revision) return;
-    this.rebuildIndexes();
-    this.loaded = this.sources.length > 0;
     this.loadStateValue = !this.sources.length
       ? 'idle'
       : this.sources.some(source => this.states.has(source.url)) ? 'ready' : 'failed';
-    this.mappingRevisionValue++;
+    this.publish(revision);
   }
 
-  async refresh(): Promise<void> {
+  async refresh(onDataPublished?: () => void): Promise<void> {
     while (this.loadPromise) {
       const loading = this.loadPromise;
       await loading;
       if (this.loadPromise === loading) break;
     }
     if (this.refreshPromise) return this.refreshPromise;
-    const promise = this.performRefresh();
+    const promise = this.performRefresh(onDataPublished);
     this.refreshPromise = promise;
     try {
       await promise;
@@ -188,7 +194,7 @@ class EpgServiceImpl {
     }
   }
 
-  private async performRefresh(): Promise<void> {
+  private async performRefresh(onDataPublished?: () => void): Promise<void> {
     const sourcesToRefresh = this.sources.filter((source) => {
       const state = this.states.get(source.url);
       return !state || state.needsRefresh
@@ -199,11 +205,9 @@ class EpgServiceImpl {
     const revision = ++this.revision;
     this.mappedChannelIds = ChannelCustomizationService.epgChannelIds();
     await Promise.all(sourcesToRefresh.map(source =>
-      this.fetchSource(source, this.filterFor(source), revision)));
+      this.fetchSource(source, this.filterFor(source), revision, onDataPublished)));
     if (revision !== this.revision) return;
-    this.rebuildIndexes();
-    this.loaded = this.sources.length > 0;
-    this.mappingRevisionValue++;
+    this.publish(revision);
   }
 
   getNowPlaying(channelId: string): Programme | null {
@@ -463,7 +467,11 @@ class EpgServiceImpl {
     }
   }
 
-  private async loadSource(source: EpgSource, revision: number): Promise<void> {
+  private async loadSource(
+    source: EpgSource,
+    revision: number,
+    onDataPublished?: () => void,
+  ): Promise<void> {
     if (revision !== this.revision) return;
     const filter = this.filterFor(source);
     if (filter && isEmptyFilter(filter)) {
@@ -471,6 +479,7 @@ class EpgServiceImpl {
       this.channelIdsByName.delete(source.url);
       return;
     }
+    let cachedDataReady = false;
     try {
       const cached = await getCachedEpg(source.url);
       if (revision !== this.revision) return;
@@ -499,17 +508,28 @@ class EpgServiceImpl {
             'channels with programmes, age', Math.round(age / 60000), 'min');
           return;
         }
+        cachedDataReady = true;
       }
     } catch (err) {
       log.warn('Cache read failed:', source.url, err);
     }
-    await this.fetchSource(source, filter, revision);
+    if (cachedDataReady) this.publish(revision, onDataPublished);
+    await this.fetchSource(source, filter, revision, onDataPublished);
+  }
+
+  private publish(revision: number, onPublished?: () => void): void {
+    if (revision !== this.revision) return;
+    this.rebuildIndexes();
+    this.loaded = this.sources.length > 0;
+    this.mappingRevisionValue++;
+    onPublished?.();
   }
 
   private async fetchSource(
     source: EpgSource,
     filter = this.filterFor(source),
     revision = this.revision,
+    onDataPublished?: () => void,
   ): Promise<void> {
     if (revision !== this.revision) return;
     if (filter && isEmptyFilter(filter)) {
@@ -544,6 +564,7 @@ class EpgServiceImpl {
         needsRefresh: false,
       });
       this.sourceErrors.delete(source.url);
+      if (onDataPublished) this.publish(revision, onDataPublished);
       log.info('Loaded', source.url, '|', Object.keys(result.channels).length, 'channels,',
         programmeCount, 'programmes', filter ? `(of ${String(stats.programmesSeen)} seen)` : '');
       if (programmeCount > 0) {

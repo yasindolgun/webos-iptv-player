@@ -4,7 +4,7 @@
   "private": true,
   "license": "Apache-2.0",
   "comment:browserslist": "The gate's target = the FLOOR of the supported fleet: webOS 4 = Chromium 53. Drives stylelint/doiuse (CSS) and eslint-plugin-compat (JS APIs); esbuild uses its own 'chrome53' syntax target. A static gate can only check the floor (eslint-plugin-compat flags not-yet-added APIs, NOT ones removed by newer engines), so forward-compat on newer TVs is left to the Playwright e2e, which runs on a current Chromium.",
-  "comment:@mdn/browser-compat-data": "Pinned exact, and declared even though eslint-plugin-compat already pulls it in: scripts/chromium-53-simulation.mjs derives the chromium-53-simulation removal set from it, so a floating range would change what the e2e suite deletes on any lockfile refresh, with no code change to review. Two versions exist in the tree (eslint-plugin-compat's and ast-metadata-inferer's); this makes which one we resolve explicit rather than a hoisting accident.",
+  "comment:@mdn/browser-compat-data": "Pinned exact, and declared even though eslint-plugin-compat also pulls it in: scripts/chromium-53-simulation.mjs derives the chromium-53-simulation removal set from this direct version, so a floating range would change what the e2e suite deletes on any lockfile refresh, with no code change to review. Multiple versions exist in the tree for other tooling; the direct dependency makes the simulation's version explicit rather than a hoisting accident.",
   "browserslist": [
     "chrome 53"
   ],
@@ -42,27 +42,27 @@
     "benchmark:tv:cleanup": "node benchmarks/tv-runner.mjs --cleanup"
   },
   "devDependencies": {
-    "@mdn/browser-compat-data": "6.1.5",
+    "@mdn/browser-compat-data": "8.0.13",
     "@playwright/test": "^1.62.1",
-    "@types/node": "^26.1.2",
-    "@typescript-eslint/parser": "^8.65.0",
-    "@vitest/coverage-v8": "4.1.10",
+    "@types/node": "^26.4.0",
+    "@typescript-eslint/parser": "^8.68.0",
+    "@vitest/coverage-v8": "4.1.11",
     "dashjs": "^5.2.1",
-    "esbuild": "^0.28.1",
-    "eslint": "^10.8.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.9.1",
     "eslint-plugin-compat": "^7.0.2",
     "fake-indexeddb": "^6.2.5",
-    "hls.js": "^1.6.16",
+    "hls.js": "^1.7.1",
     "jsdom": "^30.0.1",
-    "mpegts.js": "^1.8.0",
-    "postcss": "^8.5.25",
+    "mpegts.js": "^1.8.2",
+    "postcss": "^8.5.26",
     "stylelint": "^17.14.1",
     "stylelint-no-unsupported-browser-features": "^8.1.1",
     "typescript": "^5.7.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "dependencies": {
-    "assjs": "^0.1.9",
+    "assjs": "^0.1.10",
     "fflate": "^0.8.3",
     "iso-639-1": "^3.1.6",
     "iso-639-2": "^3.0.2",

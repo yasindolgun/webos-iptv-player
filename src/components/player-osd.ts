@@ -30,6 +30,7 @@ export interface PlayerOsdStreamInfo {
     label: string;
   } | null;
   hdr: string;
+  drm: string;
 }
 
 export interface PlayerOsdOptions {
@@ -398,6 +399,7 @@ export class PlayerOsd {
             }</span>`
           : ''}
         ${info.hdr ? html`<span class="si-badge si-badge--hdr">${info.hdr}</span>` : ''}
+        ${info.drm ? html`<span class="si-pill">${info.drm}</span>` : ''}
       </div>
     `;
   }
