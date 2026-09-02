@@ -9,3 +9,6 @@ test-output/
 
 # Built JS service for the IPK
 build/
+
+# Raspberry Pi telemetry credentials
+ops/telemetry/.env
