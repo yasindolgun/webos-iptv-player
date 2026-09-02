@@ -12,3 +12,6 @@ build/
 
 # Raspberry Pi telemetry credentials
 ops/telemetry/.env
+
+# Provisioned Grafana dashboards
+!ops/telemetry/grafana/dashboards/*.json

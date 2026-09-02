@@ -1,0 +1,160 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "panels": [
+    {
+      "datasource": { "type": "loki", "uid": "$datasource" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({app=\"webos-iptv-player\", level=\"error\"}[24h]))",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Errors in 24 hours",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "$datasource" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({app=\"webos-iptv-player\", event=~\"playback.stall.*\"}[24h]))",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Playback stalls in 24 hours",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "$datasource" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({app=\"webos-iptv-player\", event=\"performance.event_loop_lag\"}[24h]))",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "UI freezes in 24 hours",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "$datasource" },
+      "gridPos": { "h": 15, "w": 24, "x": 0, "y": 5 },
+      "id": 4,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{app=\"webos-iptv-player\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest IPTV events",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["iptv", "webos"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Data Source",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "loki",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "browser",
+  "title": "webOS IPTV Overview",
+  "uid": "webos-iptv-overview",
+  "version": 2
+}
