@@ -28,6 +28,10 @@ export class SearchWorkerIndex {
   private channelNames: PreparedNameSearchIndex<IndexedName> = { items: [], values: [] };
   private channelRevision: number | null = null;
   private programmes: PreparedSearchItem<number>[] = [];
+  private localMovies: SearchCatalogDocument[] = [];
+  private localSeries: SearchCatalogDocument[] = [];
+  private remoteMovies: SearchCatalogDocument[] = [];
+  private remoteSeries: SearchCatalogDocument[] = [];
   private movies: PreparedNameSearchIndex<IndexedName> = { items: [], values: [] };
   private series: PreparedNameSearchIndex<IndexedName> = { items: [], values: [] };
 
@@ -38,6 +42,10 @@ export class SearchWorkerIndex {
       this.channelNames = { items: [], values: [] };
       this.channelRevision = null;
       this.programmes = [];
+      this.localMovies = [];
+      this.localSeries = [];
+      this.remoteMovies = [];
+      this.remoteSeries = [];
       this.movies = { items: [], values: [] };
       this.series = { items: [], values: [] };
     } else if (request.sessionId !== this.sessionId) {
@@ -53,6 +61,13 @@ export class SearchWorkerIndex {
       this.channelRevision = request.channelRevision ?? null;
     }
     if (request.programmes) this.programmes = prepareFields(request.programmes);
+    if (request.localMovieIndices) {
+      this.localMovies = localCatalogDocuments(request.channels, request.localMovieIndices);
+    }
+    if (request.localSeriesIndices) {
+      this.localSeries = localCatalogDocuments(request.channels, request.localSeriesIndices);
+    }
+    if (request.localMovieIndices || request.localSeriesIndices) this.rebuildCatalog();
     return { accepted: true };
   }
 
@@ -62,9 +77,15 @@ export class SearchWorkerIndex {
     series: SearchCatalogDocument[],
   ): SearchIndexResponse {
     if (sessionId !== this.sessionId) return { accepted: false };
-    this.movies = prepareNames(movies);
-    this.series = prepareNames(series);
+    this.remoteMovies = movies;
+    this.remoteSeries = series;
+    this.rebuildCatalog();
     return { accepted: true };
+  }
+
+  private rebuildCatalog(): void {
+    this.movies = prepareNames(this.localMovies.concat(this.remoteMovies));
+    this.series = prepareNames(this.localSeries.concat(this.remoteSeries));
   }
 
   query(request: SearchQueryRequest): SearchQueryResponse | null {
@@ -105,6 +126,19 @@ function prepareFields(documents: string[][]): PreparedSearchItem<number>[] {
 
 function prepareNames(documents: SearchCatalogDocument[]): PreparedNameSearchIndex<IndexedName> {
   return prepareNameSearchItems(documents);
+}
+
+function localCatalogDocuments(
+  channels: string[][] | undefined,
+  indices: number[],
+): SearchCatalogDocument[] {
+  if (!channels) return [];
+  const documents: SearchCatalogDocument[] = [];
+  for (const index of indices) {
+    const fields = channels[index];
+    if (fields) documents.push({ id: `m3u:${String(index)}`, name: fields[0] ?? '' });
+  }
+  return documents;
 }
 
 function rankedFields(

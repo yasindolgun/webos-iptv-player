@@ -77,6 +77,35 @@ describe('SearchWorkerIndex', () => {
     });
   });
 
+  it('merges local M3U catalog documents with the Xtream catalog', () => {
+    const index = new SearchWorkerIndex();
+    const channels = Array.from({ length: 9 }, (_, itemIndex) => [`Item ${String(itemIndex)}`]);
+    channels[4] = ['Alpha Local Movie'];
+    channels[8] = ['Alpha Local Series'];
+    index.index({
+      sessionId: 1,
+      reset: true,
+      channels,
+      localMovieIndices: [4],
+      localSeriesIndices: [8],
+    });
+    index.catalog(
+      1,
+      [{ id: 'm1', name: 'Alpha Remote Movie' }],
+      [{ id: 's1', name: 'Alpha Remote Series' }],
+    );
+
+    const result = index.query({
+      sessionId: 1,
+      query: 'alpha',
+      limit: 10,
+      includeCatalog: true,
+    });
+
+    expect(result?.movies.documents.map(item => item.id)).toEqual(['m3u:4', 'm1']);
+    expect(result?.series.documents.map(item => item.id)).toEqual(['m3u:8', 's1']);
+  });
+
   it('shares current channel indexes without accepting stale playlist revisions', () => {
     const index = new SearchWorkerIndex();
     index.index({

@@ -101,7 +101,7 @@ test('M3U channel results retain visible space above matching programmes', async
   await enterSearch(page);
   await page.locator('.tab-bar-search-input').fill('one');
 
-  const channel = page.locator('#view-search .search-channel-row').first();
+  const channel = page.locator('#view-search [data-channel-index="0"]').first();
   const programme = page.locator('#view-search .search-program-row').first();
   await expect(channel).toContainText('Channel One');
   await expect(programme).toContainText('Programme One');
@@ -109,9 +109,39 @@ test('M3U channel results retain visible space above matching programmes', async
     const channelBox = await channel.boundingBox();
     const programmeBox = await programme.boundingBox();
     if (!channelBox || !programmeBox) return false;
-    return channelBox.height >= 80
+    return channelBox.height >= 120
       && channelBox.y + channelBox.height <= programmeBox.y;
   }).toBe(true);
+});
+
+test('unified search separates M3U channels, movies, and series', async ({ page }) => {
+  const playlist = `#EXTM3U
+#EXTINF:-1 group-title="News",Alpha News
+http://host/a
+#EXTINF:-1 group-title="Movies",Alpha Movie
+http://host/b.mp4
+#EXTINF:-1 group-title="Series Drama",Alpha Series S01E01
+http://host/c.mp4`;
+  await page.route('**/catalog.m3u', route =>
+    route.fulfill({ status: 200, contentType: 'application/x-mpegurl', body: playlist }));
+  await page.addInitScript(() => {
+    localStorage.setItem('iptv_playlists', JSON.stringify([
+      { id: 'p1', name: 'P', url: 'http://host/catalog.m3u' },
+    ]));
+  });
+
+  await page.goto('/');
+  await expect(page.locator('#view-channels')).toBeVisible();
+  await enterSearch(page);
+  await page.locator('.tab-bar-search-input').fill('alpha');
+
+  await expect(page.locator('#view-search [data-channel-index="0"]'))
+    .toContainText('Alpha News');
+  await expect(page.locator('#view-search [data-m3u-channel-index="1"]'))
+    .toContainText('Alpha Movie');
+  await expect(page.locator('#view-search [data-m3u-channel-index="2"]'))
+    .toContainText('Alpha Series S01E01');
+  await expect(page.locator('.search-result-summary')).toContainText('1');
 });
 
 test('unified search matches channels, movies, and series; a channel result plays', async ({ page }) => {

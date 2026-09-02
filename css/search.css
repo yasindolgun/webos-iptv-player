@@ -5,8 +5,13 @@
   width: 1920px;
   height: 100%;
   box-sizing: border-box;
-  padding: 40px 80px 60px;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 72px 52px;
   overflow-y: auto;
+  background:
+    radial-gradient(circle at 82% 0, rgb(var(--accent-rgb) / 0.1), transparent 34%),
+    var(--bg-primary);
 }
 .search-bar { margin-bottom: 32px; }
 .search-input {
@@ -21,8 +26,94 @@
   outline: none;
 }
 .search-input.focused { border-color: var(--accent, #3ea6ff); }
-.search-results { display: block; }
+.search-results {
+  display: block;
+  min-height: 0;
+}
 .search-empty { margin-top: 40px; }
+
+.search-results-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 82px;
+  margin-bottom: 22px;
+  padding: 14px 20px;
+  background: linear-gradient(135deg, var(--bg-card), var(--bg-secondary));
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 16px 38px rgb(0 0 0 / 0.16);
+}
+
+.search-results-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.search-results-heading span {
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.search-results-heading strong {
+  max-width: 720px;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 34px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result-summary {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.search-result-summary span {
+  padding: 8px 12px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 17px;
+}
+
+.search-result-summary strong {
+  margin-left: 5px;
+  color: var(--text-primary);
+}
+
+.search-loading {
+  display: flex;
+  height: 260px;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--text-secondary);
+  font-size: 24px;
+}
+
+.search-loading-dot {
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 18px var(--accent-glow);
+  animation: search-loading-pulse 900ms ease-in-out infinite alternate;
+}
+
+@keyframes search-loading-pulse {
+  from { opacity: 0.35; transform: scale(0.75); }
+  to { opacity: 1; transform: scale(1); }
+}
 
 .search-virtual-section { margin-bottom: 28px; }
 
@@ -39,11 +130,11 @@
    they share its height and bottom padding instead of stopping at the cap
    above: a lone Channels list fills the screen, and with Programs alongside
    it the two shrink in proportion to their contents. */
-.search-view.search-lists { padding-bottom: 0; }
+.search-view.search-lists { padding-bottom: 24px; }
 .search-lists .search-results {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1 1 auto;
 }
 .search-lists .search-virtual-section {
   display: flex;
@@ -106,8 +197,9 @@
   align-items: center;
   gap: 24px;
   padding: 12px 20px;
-  border: 2px solid transparent;
-  border-radius: 8px;
+  background: linear-gradient(90deg, var(--bg-secondary), var(--catalog-surface));
+  border: 2px solid var(--border);
+  border-radius: 12px;
   cursor: pointer;
 }
 .search-channel-row.focused {
@@ -147,9 +239,9 @@
   gap: 24px;
   min-height: 72px;
   padding: 12px 20px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background: var(--catalog-surface);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--catalog-surface), var(--bg-secondary));
   cursor: pointer;
 }
 .search-program-row.focused {
@@ -193,4 +285,26 @@
 .search-program-row.state-live .search-program-action {
   color: #fff;
   background: var(--accent);
+}
+
+.search-catalog-results .catalog-rail,
+.search-catalog-results .search-virtual-section {
+  padding: 18px 20px 10px;
+  background: rgb(var(--accent-rgb) / 0.035);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.search-catalog-results .catalog-rail-title {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+}
+
+.search-catalog-results .catalog-tile.focused .catalog-poster-wrap {
+  transform: translateY(-3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-loading-dot { animation: none; }
 }

@@ -1564,7 +1564,12 @@ export class Settings {
         maxScrollTop,
       ),
     );
-    target.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'smooth' });
+    if (typeof document.documentElement.style.scrollBehavior === 'string') {
+      target.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'smooth' });
+    } else {
+      // webOS 4 has no native smooth scrolling; use the measured pane offset directly.
+      main.scrollTop = targetScrollTop;
+    }
     this.watchCategoryScroll(main, category, targetScrollTop);
   }
 

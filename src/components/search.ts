@@ -37,6 +37,7 @@ const SEARCH_LIST_VIEWPORT = 420;
 const SEARCH_RAIL_VIEWPORT = 1760;
 const SEARCH_ROW_OVERSCAN = 6;
 const SEARCH_RAIL_OVERSCAN = 4;
+const M3U_RESULT_PREFIX = 'm3u:';
 
 export interface SearchHandlers {
   onRevealTabBar: () => void;
@@ -44,6 +45,7 @@ export interface SearchHandlers {
   onPlayChannel: (index: number, catchup?: CatchupInfo) => void;
   onOpenMovie: (account: PlaylistEntry, vod: VodItem) => void;
   onOpenSeries: (account: PlaylistEntry, series: SeriesItem) => void;
+  onPlayM3u: (channel: Channel) => void;
 }
 
 interface ProgramResult {
@@ -95,6 +97,11 @@ export class Search {
   private workerIndexedAccountId: string | null = null;
   private catalogMovieCount = 0;
   private catalogSeriesCount = 0;
+  private localMovieCount = 0;
+  private localSeriesCount = 0;
+  private remoteMovieCount = 0;
+  private remoteSeriesCount = 0;
+  private baseIndexReady = false;
   private catalogLoadPendingSession: number | null = null;
   private releaseWorker: (() => void) | null = null;
   private readonly scrollGuard = new VirtualScrollGuard();
@@ -125,19 +132,29 @@ export class Search {
     this.cancelScheduledQuery();
     if (this.catalogReadyFor !== account?.id) {
       this.catalogReadyFor = null;
-      this.catalogMovieCount = 0;
-      this.catalogSeriesCount = 0;
+      this.remoteMovieCount = 0;
+      this.remoteSeriesCount = 0;
       this.movieDetails.clear();
       this.seriesDetails.clear();
     }
+    const localMovieIndices = this.localCatalogIndices('movie');
+    const localSeriesIndices = this.localCatalogIndices('series');
+    this.localMovieCount = localMovieIndices.length;
+    this.localSeriesCount = localSeriesIndices.length;
+    this.catalogMovieCount = this.localMovieCount + this.remoteMovieCount;
+    this.catalogSeriesCount = this.localSeriesCount + this.remoteSeriesCount;
     this.account = account;
     this.query = '';
     this.resultLimit = CONFIG.XTREAM.SEARCH_INITIAL_RESULTS;
     this.render();
-    if (reuseWorkerIndex) return;
+    if (reuseWorkerIndex) {
+      this.baseIndexReady = true;
+      return;
+    }
 
     const sessionId = ++this.workerSession;
     this.invalidateWorkerIndex();
+    this.baseIndexReady = false;
     const workerReset = new Promise<boolean>((resolve, reject) => {
       requestAnimationFrame(() => {
         if (!this.active || sessionId !== this.workerSession) {
@@ -161,10 +178,13 @@ export class Search {
         channel.group,
         channel.sourceName ?? '',
       ]),
+      localMovieIndices,
+      localSeriesIndices,
     });
     if (!channelsIndexed || !this.active || sessionId !== this.workerSession) return;
     await this.buildProgramIndex(false, sessionId);
     if (!this.active) return;
+    this.baseIndexReady = true;
     const completedProgramGeneration = this.programIndexGeneration;
     if (this.query.trim()) await this.startQuery(++this.queryGeneration);
     await catalogLoad;
@@ -210,7 +230,9 @@ export class Search {
     this.indexedChannels = null;
     this.indexedProgrammes = null;
     if (!this.active) return;
+    this.baseIndexReady = false;
     await this.buildProgramIndex(true, this.workerSession);
+    this.baseIndexReady = this.active;
     if (this.active && this.query.trim()) {
       await this.startQuery(++this.queryGeneration);
     }
@@ -278,8 +300,10 @@ export class Search {
           || sessionId !== this.workerSession
           || this.account?.id !== account.id) return;
       this.catalogReadyFor = account.id;
-      this.catalogMovieCount = response.movieCount;
-      this.catalogSeriesCount = response.seriesCount;
+      this.remoteMovieCount = response.movieCount;
+      this.remoteSeriesCount = response.seriesCount;
+      this.catalogMovieCount = this.localMovieCount + this.remoteMovieCount;
+      this.catalogSeriesCount = this.localSeriesCount + this.remoteSeriesCount;
       log.debug(
         'catalog index loaded',
         response.movieCount,
@@ -313,6 +337,9 @@ export class Search {
       this.handlers.onPlayChannel(parseInt(el.dataset.channelIndex, 10));
     } else if (el.dataset.programIndex !== undefined) {
       void this.activateProgram(parseInt(el.dataset.programIndex, 10));
+    } else if (el.dataset.m3uChannelIndex !== undefined) {
+      const channel = PlaylistService.channels[parseInt(el.dataset.m3uChannelIndex, 10)];
+      if (channel) this.handlers.onPlayM3u(channel);
     } else if (this.account && el.dataset.streamId !== undefined) {
       void this.activateMovie(el.dataset.streamId);
     } else if (this.account && el.dataset.seriesId !== undefined) {
@@ -447,6 +474,17 @@ export class Search {
   }
 
   private movieTile(document: SearchCatalogDocument): ReturnType<typeof html> {
+    const local = this.localCatalogChannel(document.id);
+    if (local) {
+      const index = PlaylistService.indexOf(local);
+      return html`
+        <div class="catalog-tile" data-focusable data-key="v:${document.id}"
+             data-m3u-channel-index="${String(index)}">
+          <div class="catalog-poster-wrap">${this.posterCell(document.name, local.logo)}</div>
+          <div class="catalog-tile-name">${document.name}</div>
+        </div>
+      `;
+    }
     const v = this.movieDetails.get(document.id);
     return html`
       <div class="catalog-tile" data-focusable data-key="v:${document.id}" data-stream-id="${document.id}">
@@ -457,6 +495,17 @@ export class Search {
   }
 
   private seriesTile(document: SearchCatalogDocument): ReturnType<typeof html> {
+    const local = this.localCatalogChannel(document.id);
+    if (local) {
+      const index = PlaylistService.indexOf(local);
+      return html`
+        <div class="catalog-tile" data-focusable data-key="s:${document.id}"
+             data-m3u-channel-index="${String(index)}">
+          <div class="catalog-poster-wrap">${this.posterCell(document.name, local.logo)}</div>
+          <div class="catalog-tile-name">${document.name}</div>
+        </div>
+      `;
+    }
     const s = this.seriesDetails.get(document.id);
     return html`
       <div class="catalog-tile" data-focusable data-key="s:${document.id}" data-series-id="${document.id}">
@@ -464,6 +513,18 @@ export class Search {
         <div class="catalog-tile-name">${document.name}</div>
       </div>
     `;
+  }
+
+  private localCatalogIndices(kind: 'movie' | 'series'): number[] {
+    return PlaylistService.getByContentKind(kind)
+      .map(channel => PlaylistService.indexOf(channel))
+      .filter(index => index >= 0);
+  }
+
+  private localCatalogChannel(id: string): Channel | null {
+    if (id.indexOf(M3U_RESULT_PREFIX) !== 0) return null;
+    const index = parseInt(id.slice(M3U_RESULT_PREFIX.length), 10);
+    return Number.isFinite(index) ? PlaylistService.channels[index] ?? null : null;
   }
 
   private async activateMovie(id: string): Promise<void> {
@@ -491,12 +552,14 @@ export class Search {
       'movies',
       this.visibleMovies,
       this.movieVirtualizer,
-    ).map(document => document.id).filter(id => !this.movieDetails.has(id));
+    ).map(document => document.id).filter(id =>
+      id.indexOf(M3U_RESULT_PREFIX) !== 0 && !this.movieDetails.has(id));
     const seriesIds = this.catalogWindow(
       'series',
       this.visibleSeries,
       this.seriesVirtualizer,
-    ).map(document => document.id).filter(id => !this.seriesDetails.has(id));
+    ).map(document => document.id).filter(id =>
+      id.indexOf(M3U_RESULT_PREFIX) !== 0 && !this.seriesDetails.has(id));
     if (!movieIds.length && !seriesIds.length) return;
     try {
       await this.hydrateCatalogIds(movieIds, seriesIds, sessionId);
@@ -642,6 +705,11 @@ export class Search {
     const query = this.query;
     const sessionId = this.workerSession;
     if (!query.trim()) return;
+    if (!this.baseIndexReady) {
+      this.queryPending = true;
+      this.render();
+      return;
+    }
     if (!preserveOffsets) {
       this.queryPending = true;
       this.render();
@@ -653,7 +721,7 @@ export class Search {
         sessionId,
         query,
         limit: this.resultLimit,
-        includeCatalog: !!this.account,
+        includeCatalog: !!this.account || this.catalogMovieCount > 0 || this.catalogSeriesCount > 0,
       });
     } catch (error) {
       if (generation !== this.queryGeneration || !this.active) return;
@@ -700,6 +768,8 @@ export class Search {
 
   private queryLocally(query: string): SearchQueryResponse {
     const channels = PlaylistService.searchLocalRanked(query, this.resultLimit);
+    const movies = this.queryLocalCatalog('movie', query);
+    const series = this.queryLocalCatalog('series', query);
     const programmes = rankPreparedTopK(
       prepareSearchItems(this.programIndex, result => [
         result.programme.title,
@@ -721,13 +791,32 @@ export class Search {
         hasMore: programmes.hasMore,
       },
       movies: {
-        documents: [],
-        hasMore: false,
+        documents: movies.items.map(channel => this.localCatalogDocument(channel)),
+        hasMore: movies.hasMore,
       },
       series: {
-        documents: [],
-        hasMore: false,
+        documents: series.items.map(channel => this.localCatalogDocument(channel)),
+        hasMore: series.hasMore,
       },
+    };
+  }
+
+  private queryLocalCatalog(kind: 'movie' | 'series', query: string) {
+    return rankPreparedTopK(
+      prepareSearchItems(PlaylistService.getByContentKind(kind), channel => [
+        channel.name,
+        channel.group,
+        channel.sourceName ?? '',
+      ]),
+      query,
+      this.resultLimit,
+    );
+  }
+
+  private localCatalogDocument(channel: Channel): SearchCatalogDocument {
+    return {
+      id: `${M3U_RESULT_PREFIX}${String(PlaylistService.indexOf(channel))}`,
+      name: channel.name,
     };
   }
 
@@ -751,6 +840,8 @@ export class Search {
           result.channel.name,
           result.channel.group,
         ]),
+        localMovieIndices: this.localCatalogIndices('movie'),
+        localSeriesIndices: this.localCatalogIndices('series'),
       });
       if (!indexed) return null;
       if (this.account) {
@@ -760,15 +851,17 @@ export class Search {
         });
         if (!catalog.accepted) return null;
         this.catalogReadyFor = this.account.id;
-        this.catalogMovieCount = catalog.movieCount;
-        this.catalogSeriesCount = catalog.seriesCount;
+        this.remoteMovieCount = catalog.movieCount;
+        this.remoteSeriesCount = catalog.seriesCount;
+        this.catalogMovieCount = this.localMovieCount + this.remoteMovieCount;
+        this.catalogSeriesCount = this.localSeriesCount + this.remoteSeriesCount;
       }
       this.markWorkerIndexReady(this.account);
       const response = await runAppWorkerTask('search.query', {
         sessionId,
         query,
         limit: this.resultLimit,
-        includeCatalog: !!this.account,
+        includeCatalog: !!this.account || this.catalogMovieCount > 0 || this.catalogSeriesCount > 0,
       });
       if (response) {
         log.info(
@@ -792,7 +885,8 @@ export class Search {
   }
 
   private applyQueryResponse(response: SearchQueryResponse): void {
-    this.visibleChannels = itemsAt(PlaylistService.channels, response.channels.indices);
+    this.visibleChannels = itemsAt(PlaylistService.channels, response.channels.indices)
+      .filter(channel => channel.contentKind !== 'movie' && channel.contentKind !== 'series');
     this.visiblePrograms = itemsAt(this.programIndex, response.programmes.indices);
     this.visibleMovies = response.movies.documents;
     this.visibleSeries = response.series.documents;
@@ -841,6 +935,7 @@ export class Search {
     this.workerIndexedChannels = null;
     this.workerIndexedProgrammes = null;
     this.workerIndexedAccountId = null;
+    this.baseIndexReady = false;
     this.catalogReadyFor = null;
     if (wasReady) {
       log.debug(
@@ -957,11 +1052,11 @@ export class Search {
 
   private render(): void {
     const q = this.query.trim();
-    const isXtream = !!this.account;
+    const hasCatalog = !!this.account || this.catalogMovieCount > 0 || this.catalogSeriesCount > 0;
 
     const hasResults = this.visibleChannels.length > 0 || this.visiblePrograms.length > 0
       || this.visibleMovies.length > 0 || this.visibleSeries.length > 0;
-    const hasMixedLists = !isXtream
+    const hasMixedLists = !hasCatalog
       && this.visibleChannels.length > 0
       && this.visiblePrograms.length > 0;
     const channelSection = this.visibleChannels.length
@@ -987,11 +1082,16 @@ export class Search {
     // so the empty-query case renders nothing.
     // Xtream: horizontal poster rails for catalog results. M3U-only channels and
     // EPG programs use compact rows so their metadata remains readable.
-    const resultsBody = !q || this.queryPending
+    const resultsBody = !q
       ? html``
+      : this.queryPending
+        ? html`<div class="search-loading">
+            <span class="search-loading-dot"></span>
+            <span>${t('common.loading')}</span>
+          </div>`
       : !hasResults
         ? html`<p class="catalog-hint search-empty">${t('search.empty')}</p>`
-        : isXtream
+        : hasCatalog
           ? html`
                 ${this.visibleChannels.length
                   ? this.virtualRail(
@@ -1029,10 +1129,26 @@ export class Search {
 
     // The query box lives in the tab bar; this view renders results only.
     morph(this.container, html`
-      <div class="search-view ${isXtream ? '' : 'search-lists'} ${
+      <div class="search-view ${hasCatalog ? 'search-catalog-results' : 'search-lists'} ${
         hasMixedLists ? 'search-lists-mixed' : ''
       }" data-nav-container data-search-query="${q}"
            data-search-pending="${this.queryPending ? 'true' : 'false'}">
+        ${q ? html`
+          <header class="search-results-header">
+            <div class="search-results-heading">
+              <span>${t('nav.search')}</span>
+              <strong>${q}</strong>
+            </div>
+            <div class="search-result-summary">
+              <span>${t('common.channels')} <strong>${String(this.visibleChannels.length)}</strong></span>
+              <span>${t('search.programs')} <strong>${String(this.visiblePrograms.length)}</strong></span>
+              ${hasCatalog ? html`
+                <span>${t('common.movies')} <strong>${String(this.visibleMovies.length)}</strong></span>
+                <span>${t('common.series')} <strong>${String(this.visibleSeries.length)}</strong></span>
+              ` : ''}
+            </div>
+          </header>
+        ` : ''}
         <div class="search-results">${resultsBody}</div>
       </div>
     `);

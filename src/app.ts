@@ -264,6 +264,7 @@ class App {
             err,
           ));
       },
+      onPlayM3u: (channel) => this.playM3uVod(channel, true, 'search'),
     });
     this.tabBar = new TabBar({
       onSwitch: (section) => this.switchSection(section),
@@ -1214,11 +1215,11 @@ class App {
   private playM3uVod(
     channel: Channel,
     resume: boolean,
-    origin: 'movies' | 'series',
+    origin: 'movies' | 'series' | 'search',
     returnHome = false,
   ): void {
     const accountId = m3uAccountId(channel);
-    const kind = origin === 'series' ? 'episode' : 'vod';
+    const kind = channel.contentKind === 'series' ? 'episode' : 'vod';
     const itemId = m3uItemKey(channel);
     const saved = StorageService.getResume(accountId, kind, itemId);
     this.tabBar.blur();
@@ -1239,7 +1240,7 @@ class App {
         }
         this.goBack(origin);
         if (origin === 'movies') this.m3uMovies.refreshPlaybackState();
-        else this.m3uSeries.refreshPlaybackState();
+        else if (origin === 'series') this.m3uSeries.refreshPlaybackState();
       },
     });
   }

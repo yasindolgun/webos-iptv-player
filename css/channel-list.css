@@ -2,16 +2,22 @@
   position: relative;
   display: flex;
   height: 100%;
-  background: var(--bg-primary);
+  gap: 18px;
+  padding: 18px;
+  background:
+    radial-gradient(circle at 78% 0, rgb(var(--accent-rgb) / 0.08), transparent 38%),
+    var(--bg-primary);
 }
 
 .sidebar {
   width: 380px;
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
+  background: linear-gradient(165deg, var(--bg-card), var(--bg-secondary) 58%);
+  border: 1px solid var(--border);
+  border-radius: 18px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 0 18px 44px rgb(0 0 0 / 0.16);
 }
 
 .sidebar-header {
@@ -92,7 +98,7 @@
 }
 
 .group-item.active {
-  background: var(--bg-tertiary);
+  background: rgb(var(--accent-rgb) / 0.1);
   border-color: var(--accent-dim);
 }
 
@@ -133,7 +139,11 @@
   flex: 1;
   overflow-y: auto;
   overflow-anchor: none;
-  padding: 8px 16px;
+  padding: 10px 14px;
+  background: rgb(var(--accent-rgb) / 0.025);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 18px 44px rgb(0 0 0 / 0.1);
 }
 
 .has-channel-hints .channel-main {
@@ -177,6 +187,8 @@
   transition: var(--transition);
   gap: 16px;
   height: 84px;
+  background: linear-gradient(90deg, var(--bg-secondary), var(--catalog-surface));
+  border-color: var(--border);
 }
 
 .channel-item.playing {
@@ -410,15 +422,16 @@
   font-size: 24px;
 }
 
-.edit-hints {
+.channel-view .edit-hints {
   position: absolute;
   right: 0;
   bottom: 0;
-  left: 380px;
+  left: 416px;
   z-index: 10;
   display: flex;
   align-items: center;
   gap: 24px;
+  margin-left: 0;
   padding: 12px 20px;
   border-top: 1px solid var(--border);
   background: var(--bg-secondary);

@@ -16,11 +16,12 @@
   .home-rail-items > * + * { margin-left: 14px; }
   .home-rail-card > * + * { margin-left: 13px; }
   .home-rail-copy > * + * { margin-top: 5px; }
+  .channel-view > * + * { margin-left: 18px; }
   .playlist-tabs > * + * { margin-left: 4px; }
   .group-item > * + * { margin-left: 12px; }
   .channel-list-scroll.recent-list > * + * { margin-top: 4px; }
   .channel-item > * + * { margin-left: 16px; }
-  .edit-hints > * + * { margin-left: 24px; }
+  .channel-view .edit-hints > * + * { margin-left: 24px; }
   .edit-hint > * + * { margin-left: 8px; }
   .edit-action[data-edit-action="yellow"] > * + * { margin-left: 0; }
   .epg-mapping-search-wrap > * + * { margin-left: 12px; }
@@ -65,7 +66,7 @@
   .settings-nav-item > * + * { margin-left: 14px; }
   .settings-nav-help > * + * { margin-top: 8px; }
   .settings-nav-help-row > * + * { margin-left: 9px; }
-  .settings-general-row > * + * { margin-left: 0; }
+  .settings-general-row > * + * { margin-left: 20px; }
   .settings-row > * + * { margin-left: 16px; }
   .epg-offset-controls > * + * { margin-left: 10px; }
   .epg-offset-stepper > * + * { margin-left: 10px; }
@@ -100,11 +101,15 @@
   .reminder-manager-time > * + * { margin-left: 10px; }
   .reminder-manager-empty > * + * { margin-top: 22px; }
   .tab-bar-inner > * + * { margin-left: 32px; }
+  .search-results-heading > * + * { margin-left: 16px; }
+  .search-result-summary > * + * { margin-left: 10px; }
+  .search-loading > * + * { margin-left: 14px; }
   .search-list > * + * { margin-top: 8px; }
   .search-channel-row > * + * { margin-left: 24px; }
   .search-program-list > * + * { margin-top: 8px; }
   .search-program-row > * + * { margin-left: 24px; }
   .m3u-catalog-categories > * + * { margin-left: 12px; }
+  .m3u-catalog-grid .catalog-tile > * + * { margin-left: 20px; }
   .catalog-rail-track > * + * { margin-left: 20px; }
   .detail-layout > * + * { margin-left: 56px; }
   .detail-facts > * + * { margin-left: 10px; }

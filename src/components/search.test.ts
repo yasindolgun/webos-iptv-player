@@ -21,6 +21,8 @@ const {
   catalogMock: { loadAllVodStreams: vi.fn(), loadAllSeries: vi.fn() },
   playlistMock: {
     channels: [] as unknown[],
+    groupsRevision: 0,
+    getByContentKind: vi.fn(),
     search: vi.fn(() => [] as unknown[]),
     searchRanked: vi.fn(),
     indexOf: vi.fn(() => 0),
@@ -128,6 +130,10 @@ beforeEach(() => {
   workerMock.catalogController = null;
   workerMock.catalogs.clear();
   playlistMock.channels = [];
+  playlistMock.groupsRevision = 0;
+  playlistMock.getByContentKind.mockImplementation((kind: string) =>
+    playlistMock.channels.filter((channel: unknown) =>
+      (channel as { contentKind?: string }).contentKind === kind));
   playlistMock.search.mockReturnValue([]);
   playlistMock.searchRanked.mockImplementation((query: string, limit: number) => {
     const items = playlistMock.search(query);
@@ -145,7 +151,14 @@ beforeEach(() => {
 });
 
 function mkHandlers() {
-  return { onRevealTabBar: vi.fn(), onBack: vi.fn(), onPlayChannel: vi.fn(), onOpenMovie: vi.fn(), onOpenSeries: vi.fn() };
+  return {
+    onRevealTabBar: vi.fn(),
+    onBack: vi.fn(),
+    onPlayChannel: vi.fn(),
+    onOpenMovie: vi.fn(),
+    onOpenSeries: vi.fn(),
+    onPlayM3u: vi.fn(),
+  };
 }
 
 async function openWith(opts: { vod?: unknown[]; series?: unknown[] } = {}) {
@@ -645,6 +658,26 @@ describe('Search (M3U-only, no account)', () => {
     const cells = container.querySelectorAll<HTMLElement>('.search-virtual-list-cell');
     expect(cells[0].style.top).toBe('0px');
     expect(cells[1].style.top).toBe('88px');
+  });
+
+  it('searches M3U movies and series in their catalog rails', async () => {
+    const movie = { ...chan('Alpha Movie'), contentKind: 'movie' as const };
+    const episode = { ...chan('Alpha Series S01E01'), contentKind: 'series' as const };
+    playlistMock.channels = [movie, episode];
+    playlistMock.indexOf.mockImplementation((channel: unknown) =>
+      playlistMock.channels.indexOf(channel));
+    const { view, handlers } = await openM3U();
+
+    await view.setQuery('alpha');
+
+    expect(container.querySelector('[data-search-virtual="movies"]')?.textContent)
+      .toContain('Alpha Movie');
+    expect(container.querySelector('[data-search-virtual="series"]')?.textContent)
+      .toContain('Alpha Series S01E01');
+    const tile = container.querySelector<HTMLElement>('[data-m3u-channel-index="0"]');
+    tile?.dispatchEvent(new CustomEvent('nav:hover', { bubbles: true }));
+    view.handleAction('select');
+    expect(handlers.onPlayM3u).toHaveBeenCalledWith(movie);
   });
 
   it('plays a channel row on select', async () => {
