@@ -590,7 +590,9 @@ class PlaylistServiceImpl {
         Infinity,
       ),
     })).sort((a, b) => a.rank - b.rank || a.index - b.index);
-    allChannels.splice(0, allChannels.length, ...orderedChannels.map(entry => entry.channel));
+    for (let index = 0; index < orderedChannels.length; index++) {
+      allChannels[index] = orderedChannels[index].channel;
+    }
 
     this.allChannels = allChannels;
     this.epgSources = epgSources;

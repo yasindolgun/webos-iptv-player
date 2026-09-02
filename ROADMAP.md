@@ -25,7 +25,8 @@ The app already provides the foundations that a large-catalog TV client needs:
 - per-stream subtitle sync, remembered track picks, and global language defaults
 - non-blocking Xtream expiry and connection status with checked timestamps
 - remote, Magic Remote, accessibility, localization, and webOS 4 fallbacks
-- a production-path benchmark at 50,000 items under CPU throttling
+- named production-path desktop benchmarks through 200,000 items under CPU
+  throttling, with matching opt-in TV profiles
 
 ## Completed engineering milestones
 
@@ -235,13 +236,28 @@ real-device memory budgets have been established.
 
 A Windows follow-up made the staged launcher independent of direct `.cmd`
 process spawning and kept the raw XMLTV fixture inside the production parser's
-date-retention window at every named scale. The 100,000-item desktop profile now
+date-retention window at every named scale. The 100,000-item desktop profile
 completes the full workload with bounded DOM windows and no retained-heap growth
-across its reopen cycles. The 200,000-item workload kept the page alive and
-loaded all 200,000 channels, but did not finalize its report inside a measured
-30-minute test budget. It now reports timestamped stage transitions and has a
-45-minute opt-in ceiling; a complete 200,000-item report and device budgets
-remain open.
+across its reopen cycles. The 200,000-item profile reports timestamped stage
+transitions and has a 45-minute opt-in ceiling.
+
+### 200,000-item desktop scale report — 2026-09-02
+
+The complete 200,000-item desktop workload now finishes in 10.9 minutes under
+4x CPU throttling. Its report records a 31.8-second cached startup, a 17.2-second
+network cold load, 184.7 MiB final used heap, and only 0.2 MiB retained growth
+across three reopen cycles. The largest measured event-loop gap was 2.78
+seconds, below the profile's five-second freeze threshold. Channel, group, EPG,
+catalog, Search, and episode views all retained bounded DOM windows.
+
+The final cold-load failure exposed a variadic array update that passed all
+200,000 ordered channels to `splice` as function arguments and exhausted the
+JavaScript call stack. The merge now writes the sorted references back by index,
+and a 200,000-channel unit case pins that production refresh path.
+
+This closes the missing desktop report and cold-load correctness gap. The
+profile remains opt-in: representative webOS 4 runs, device-specific memory and
+responsiveness budgets, and promotion to a required CI gate remain open.
 
 ### Player information and Live-list clarity — 2026-09-01
 

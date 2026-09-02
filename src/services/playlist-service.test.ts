@@ -96,6 +96,26 @@ describe('PlaylistService.refresh', () => {
     expect(channels.map(c => c.name)).toEqual(['Alpha', 'Bravo', 'Charlie']);
   });
 
+  it('orders a 200,000-channel refresh without a variadic array call', async () => {
+    storageMock.getPlaylists.mockReturnValue([
+      { id: 'a', name: 'Large', url: 'http://host/large.m3u' },
+    ]);
+    const lines = ['#EXTM3U'];
+    for (let index = 0; index < 200_000; index++) {
+      lines.push(
+        `#EXTINF:-1 tvg-id="ch${String(index)}" group-title="Group",Channel ${String(index)}`,
+        `http://host/${String(index)}`,
+      );
+    }
+    fetchTextMock.mockResolvedValue(lines.join('\n'));
+
+    const channels = await PlaylistService.refresh();
+
+    expect(channels).toHaveLength(200_000);
+    expect(channels[0].name).toBe('Channel 0');
+    expect(channels[199_999].name).toBe('Channel 199999');
+  }, 15_000);
+
   it('loads every distinct EPG URL declared by a playlist', async () => {
     fetchTextMock.mockResolvedValue(
       '#EXTM3U url-tvg="http://host/a.xml,http://host/b.xml"\n'

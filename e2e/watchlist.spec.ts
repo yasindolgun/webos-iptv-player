@@ -220,15 +220,28 @@ test('keeps contextual pseudo-localized movie actions on one row without clippin
   const actions = page.locator('#view-movies .detail-btn');
   await expect(actions).toHaveCount(2);
   await expect(actions.first()).toContainText('[!!');
-  const layout = await page.locator('#view-movies .detail-actions').evaluate((row) => ({
-    clientWidth: row.clientWidth,
-    scrollWidth: row.scrollWidth,
-    buttons: Array.from(row.querySelectorAll<HTMLElement>('.detail-btn')).map((button) => ({
-      clientWidth: button.clientWidth,
-      scrollWidth: button.scrollWidth,
-      top: button.offsetTop,
-    })),
-  }));
+  let layout: {
+    clientWidth: number;
+    scrollWidth: number;
+    buttons: Array<{ clientWidth: number; scrollWidth: number; top: number }>;
+  } | null = null;
+  await expect.poll(async () => {
+    layout = await actions.evaluateAll((buttons) => {
+      const row = buttons[0]?.parentElement as HTMLElement | null;
+      if (!row || !row.isConnected || buttons.length !== 2) return null;
+      return {
+        clientWidth: row.clientWidth,
+        scrollWidth: row.scrollWidth,
+        buttons: buttons.map((item) => ({
+          clientWidth: item.clientWidth,
+          scrollWidth: item.scrollWidth,
+          top: item.offsetTop,
+        })),
+      };
+    });
+    return layout?.buttons.length ?? 0;
+  }).toBe(2);
+  if (!layout) throw new Error('Movie detail actions did not settle');
   expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
   expect(layout.buttons.every(button => button.scrollWidth <= button.clientWidth + 1)).toBe(true);
   expect(new Set(layout.buttons.map(button => button.top)).size).toBe(1);
