@@ -324,6 +324,7 @@ export const FR_MESSAGES = {
   'settings.telemetryTesting': 'Envoi d’un événement de test…',
   'settings.telemetryTestSuccess': 'Événement de test reçu par le serveur.',
   'settings.telemetryTestFailed': 'Le serveur n’a pas accepté l’événement de test.',
+  'settings.telemetryInvalidEndpoint': 'Saisissez une adresse HTTP(S) valide sans identifiants, paramètres de requête ni fragment.',
   'settings.refreshAll': 'Actualiser la liste et le guide',
   'settings.refreshingData': 'Actualisation des données…', 'settings.refreshProgress': '{completed} sources sur {total} actualisées',
   'settings.refreshPhaseDownload': 'Téléchargement de la liste…', 'settings.refreshPhaseParse': 'Analyse de la liste…',

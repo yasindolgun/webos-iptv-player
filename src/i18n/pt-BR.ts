@@ -324,6 +324,7 @@ export const PT_BR_MESSAGES = {
   'settings.telemetryTesting': 'Enviando evento de teste…',
   'settings.telemetryTestSuccess': 'Evento de teste recebido pelo servidor.',
   'settings.telemetryTestFailed': 'O servidor não aceitou o evento de teste.',
+  'settings.telemetryInvalidEndpoint': 'Digite um endereço HTTP(S) válido sem credenciais, parâmetros de consulta ou fragmento.',
   'settings.refreshAll': 'Atualizar lista e guia',
   'settings.refreshingData': 'Atualizando dados…', 'settings.refreshProgress': '{completed} de {total} fontes atualizadas',
   'settings.refreshPhaseDownload': 'Baixando lista…', 'settings.refreshPhaseParse': 'Analisando lista…',

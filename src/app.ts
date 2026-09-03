@@ -369,6 +369,7 @@ class App {
       showToast(t('app.saveFailed'));
       return;
     }
+    await Telemetry.end();
     this.stopBundledService();
     window.close();
   }

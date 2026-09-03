@@ -321,6 +321,7 @@ export const ZH_CN_MESSAGES = {
   'settings.telemetryTesting': '正在发送测试事件…',
   'settings.telemetryTestSuccess': '服务器已收到测试事件。',
   'settings.telemetryTestFailed': '服务器未接受测试事件。',
+  'settings.telemetryInvalidEndpoint': '请输入有效的 HTTP(S) 服务器地址，不含凭据、查询参数或片段。',
   'settings.refreshAll': '刷新播放列表和节目指南',
   'settings.refreshingData': '正在刷新数据…', 'settings.refreshProgress': '已刷新 {completed}/{total} 个来源',
   'settings.refreshPhaseDownload': '正在下载播放列表…', 'settings.refreshPhaseParse': '正在解析播放列表…',

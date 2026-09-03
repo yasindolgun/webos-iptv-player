@@ -110,6 +110,7 @@ const {
       }),
       setTelemetryConfig: vi.fn((value: typeof state.telemetry) => {
         state.telemetry = { ...value };
+        return true;
       }),
       remove: vi.fn(),
       clearRecentlyWatched: vi.fn(),
@@ -254,33 +255,73 @@ describe('Settings.render', () => {
   });
 
   it('renders and saves the Raspberry Pi diagnostics address', () => {
-    state.telemetry = { enabled: true, endpoint: 'http://192.168.1.50:4318' };
+    state.telemetry = { enabled: true, endpoint: 'http://host:4318/api/v1/events' };
     settings.render();
 
     const input = container.querySelector<HTMLInputElement>('#telemetry-endpoint')!;
-    expect(input.value).toBe('http://192.168.1.50:4318');
+    expect(input.value).toBe('http://host:4318/api/v1/events');
     expect(container.querySelector('#telemetry-enabled .toggle-option.active')?.textContent)
       .toBe('ON');
 
-    input.value = '192.168.1.51';
+    input.value = 'host:9000';
     click('#save-settings');
     expect(storageMock.setTelemetryConfig).toHaveBeenCalledWith({
       enabled: true,
-      endpoint: '192.168.1.51',
+      endpoint: 'http://host:9000/api/v1/events',
     });
     expect(telemetryMock.configure).toHaveBeenCalledWith({
       enabled: true,
-      endpoint: '192.168.1.51',
+      endpoint: 'http://host:9000/api/v1/events',
     });
   });
 
   it('sends a real test event to the entered diagnostics address', async () => {
     settings.render();
-    container.querySelector<HTMLInputElement>('#telemetry-endpoint')!.value = '192.168.1.50';
+    container.querySelector<HTMLInputElement>('#telemetry-endpoint')!.value = 'host';
     click('#test-telemetry');
-    await vi.waitFor(() => expect(telemetryMock.test).toHaveBeenCalledWith('192.168.1.50'));
+    await vi.waitFor(() => expect(telemetryMock.test).toHaveBeenCalledWith('host'));
     expect(container.querySelector('#telemetry-test-status')?.textContent)
       .toContain('Test event received');
+    expect(storageMock.setTelemetryConfig).not.toHaveBeenCalled();
+    expect(telemetryMock.configure).not.toHaveBeenCalled();
+  });
+
+  it('discards unsaved diagnostics edits on Cancel', () => {
+    state.telemetry = { enabled: true, endpoint: 'http://host:4318/api/v1/events' };
+    settings.render();
+    container.querySelector<HTMLInputElement>('#telemetry-endpoint')!.value = 'host:9000';
+    click('#telemetry-enabled .toggle-option[data-value="off"]');
+    click('#cancel-settings');
+    expect(storageMock.setTelemetryConfig).not.toHaveBeenCalled();
+    expect(telemetryMock.configure).not.toHaveBeenCalled();
+    settings.render();
+    expect(container.querySelector<HTMLInputElement>('#telemetry-endpoint')!.value)
+      .toBe('http://host:4318/api/v1/events');
+    expect(container.querySelector('#telemetry-enabled .toggle-option.active')?.getAttribute('data-value'))
+      .toBe('on');
+  });
+
+  it('keeps telemetry and the form unchanged when settings cannot be stored', () => {
+    settings.render();
+    container.querySelector<HTMLInputElement>('#telemetry-endpoint')!.value = 'host:9000';
+    click('#telemetry-enabled .toggle-option[data-value="on"]');
+    storageMock.setTelemetryConfig.mockReturnValueOnce(false);
+    click('#save-settings');
+    expect(telemetryMock.configure).not.toHaveBeenCalled();
+    expect(storageMock.setPlaylists).not.toHaveBeenCalled();
+    expect(toastMock.showToast).toHaveBeenCalledWith('Unable to save changes. Please try again.');
+    expect(container.querySelector<HTMLInputElement>('#telemetry-endpoint')!.value).toBe('host:9000');
+    expect(state.telemetry).toEqual({ enabled: false, endpoint: '' });
+  });
+
+  it.each(['', 'ftp://host', 'host?token=secret'])('refuses to enable an invalid diagnostics address %s', endpoint => {
+    settings.render();
+    container.querySelector<HTMLInputElement>('#telemetry-endpoint')!.value = endpoint;
+    click('#telemetry-enabled .toggle-option[data-value="on"]');
+    click('#save-settings');
+    expect(storageMock.setTelemetryConfig).not.toHaveBeenCalled();
+    expect(telemetryMock.configure).not.toHaveBeenCalled();
+    expect(toastMock.showToast).toHaveBeenCalledWith(expect.stringContaining('valid HTTP(S)'));
   });
 
   it('starts a manual channel health check from the Channels section', async () => {

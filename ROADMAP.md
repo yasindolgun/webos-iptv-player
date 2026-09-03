@@ -6,6 +6,11 @@ bundled LAN service architecture. Items are ordered by expected user impact and
 implementation risk. Planned priorities are not release promises or fixed
 calendar dates.
 
+Immediate focus: the post-`bc4f0ce` stabilization review is now Priority 0.
+Its six workstreams and final integration gate take precedence over new
+features and Priority 1+ work. Real webOS 4 cold-start validation remains a
+separate Priority 0 requirement.
+
 ## Current foundation
 
 The app already provides the foundations that a large-catalog TV client needs:
@@ -322,6 +327,79 @@ the existing bounded data requests, virtualized episode list, delegated
 activation, and webOS 4 margin fallbacks.
 
 ## Planned priorities
+
+### Priority 0: Post-bc4f0ce stabilization
+
+Review baseline: `bc4f0ce` exclusive through `37b1568` inclusive, reviewed on
+2026-09-03. The [detailed review](docs/post-bc4f0ce-review.md) records the
+change map, evidence, reproduction steps, affected code, test gaps, and
+acceptance criteria. Implementation status is tracked below; passing existing
+tests does not close the newly identified cases. All workstreams below are highest
+execution priority, while individual findings have different impact levels.
+
+Work through these scopes separately, in the order below. Keep fixes small,
+add regression coverage for each reproduced defect, and retain explicit
+device-validation tasks where desktop mocks cannot prove the behavior.
+
+- [x] **P0-A — Telemetry client and settings (A1–A4).** Close sensitive-data
+  masking gaps for serialized JSON; prevent an old failed request from
+  restoring cleared events or sending them to a newly configured endpoint.
+  Separate suspension time from foreground event-loop lag, and define bounded
+  shutdown delivery, session markers, endpoint validation, and setting-save
+  behavior. Accept when masking and reconfiguration race tests pass and
+  lifecycle behavior has explicit loss/delivery semantics.
+  Implemented: structured-data masking, configuration-owned request
+  cancellation, retry classification, foreground-only lag measurement,
+  one-second explicit shutdown, bounded unload delivery, and atomic validated
+  settings with legacy migration and localized validation errors.
+  Unit and browser regression coverage is included; see the
+  [delivery and lifecycle contract](docs/telemetry-client.md) for validation
+  evidence. Synthetic LAN ingest passed. Completed for the client and settings
+  scope; physical webOS 4 validation is not a completion requirement for P0-A.
+- [ ] **P0-B — 24/7 classification and cache consistency (B1–B2).** Remove
+  mutation from the Xtream membership filter used on all cached channels.
+  Define how authoritative source type, stream route, container, and episode
+  name distinguish live, VOD, and unknown entries. Accept when fresh load,
+  cached restart, and refresh preserve the intended types for M3U-only,
+  Xtream-only, and shared-source entries, with matching Home, Live, Search,
+  and Series behavior and stable saved-item identities.
+- [ ] **P0-C — Turkish search and fallback parity (C1).** Share normalization
+  between worker EPG mapping search and its local fallback. Audit the M3U
+  catalog fallback and remaining search surfaces using the same synthetic
+  character matrix. Accept when worker success and forced failure produce
+  equivalent matches while retaining selected mappings and source ordering.
+- [ ] **P0-D — Luna request and subscription lifetime (D1–D2).** Bound the
+  lifetime of abandoned one-shot requests without breaking late startup
+  recovery. Audit DRM, captions, reminders, and service-event consumers;
+  reject invalid response shapes and define failed-subscription recovery.
+  Accept when no abandoned bridge or pending consumer state survives its
+  owning lifecycle and cancellation/late-callback tests pass.
+- [ ] **P0-E — Back navigation and exit semantics (E1; after P0-D).** Verify
+  Home return, repeated keys, overlays, input focus, delayed persistence,
+  and multiple distinct exit presses. Validate the change from launching
+  Home to `window.close()` on a real TV, including reopen and suspend/resume.
+  Accept when navigation never exits unintentionally, persistence failure
+  keeps the app open, and video, service, and subscription cleanup match
+  the documented exit contract.
+- [ ] **P0-F — Telemetry receiver and dashboard (F1–F2; align with P0-A).**
+  Distinguish malformed requests from transient storage failures and align
+  client retry policy with those responses. Validate body limits, liveness
+  versus readiness, provisioning, restart persistence, and metric meanings.
+  Accept when a synthetic event reaches the provisioned dashboard, storage
+  failure is visible, and retry events cannot be mistaken for unique stalls.
+- [ ] **P0-G — Final integration and device evidence.** Run typecheck, lint,
+  full unit tests, both E2E projects, and the build against the final changes.
+  Run service smoke if bundled-service code changes. Record actual device,
+  firmware, build identity, and lifecycle outcomes for P0-D/P0-E and the
+  cold-start gate below. Keep outstanding device or server checks open;
+  a mock-only pass is not sufficient to close them.
+
+Initial review evidence: typecheck and lint passed; 227 tests across nine
+relevant Vitest files passed. Controlled source-level probes reproduced
+additional cases listed in the report. Full E2E, TV, and server deployment
+validation were not performed during the initial review. That review captured
+the unfixed baseline; subsequent P0-A implementation and its recorded
+validation are tracked above and in the delivery and lifecycle contract.
 
 ### Priority 0: webOS 4 cold-start validation
 

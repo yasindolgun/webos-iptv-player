@@ -330,6 +330,7 @@ export const UK_MESSAGES = {
   'settings.telemetryTesting': 'Надсилання тестової події…',
   'settings.telemetryTestSuccess': 'Сервер отримав тестову подію.',
   'settings.telemetryTestFailed': 'Сервер не прийняв тестову подію.',
+  'settings.telemetryInvalidEndpoint': 'Введіть коректну HTTP(S)-адресу без облікових даних, параметрів запиту та фрагмента.',
   'settings.refreshAll': 'Оновити плейлист і телегід',
   'settings.refreshingData': 'Дані оновлюються…', 'settings.refreshProgress': 'Оновлено джерел: {completed} з {total}',
   'settings.refreshPhaseDownload': 'Плейлист завантажується…', 'settings.refreshPhaseParse': 'Плейлист обробляється…',

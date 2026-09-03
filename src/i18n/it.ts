@@ -324,6 +324,7 @@ export const IT_MESSAGES = {
   'settings.telemetryTesting': 'Invio evento di prova…',
   'settings.telemetryTestSuccess': 'Evento di prova ricevuto dal server.',
   'settings.telemetryTestFailed': 'Il server non ha accettato l’evento di prova.',
+  'settings.telemetryInvalidEndpoint': 'Inserisci un indirizzo HTTP(S) valido senza credenziali, parametri di query o frammento.',
   'settings.refreshAll': 'Aggiorna playlist e guida',
   'settings.refreshingData': 'Aggiornamento dati…', 'settings.refreshProgress': '{completed} di {total} sorgenti aggiornate',
   'settings.refreshPhaseDownload': 'Download della lista…', 'settings.refreshPhaseParse': 'Analisi della lista…',

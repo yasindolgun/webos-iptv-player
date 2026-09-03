@@ -330,6 +330,7 @@ export const RU_MESSAGES = {
   'settings.telemetryTesting': 'Отправка тестового события…',
   'settings.telemetryTestSuccess': 'Сервер получил тестовое событие.',
   'settings.telemetryTestFailed': 'Сервер не принял тестовое событие.',
+  'settings.telemetryInvalidEndpoint': 'Введите корректный HTTP(S)-адрес без учётных данных, параметров запроса и фрагмента.',
   'settings.refreshAll': 'Обновить плейлист и телегид',
   'settings.refreshingData': 'Данные обновляются…', 'settings.refreshProgress': 'Обновлено источников: {completed} из {total}',
   'settings.refreshPhaseDownload': 'Плейлист загружается…', 'settings.refreshPhaseParse': 'Плейлист обрабатывается…',

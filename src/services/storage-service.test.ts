@@ -26,6 +26,37 @@ describe('StorageService', () => {
     expect(StorageService.getPlaylists()).toEqual([]);
   });
 
+  it('saves diagnostics enablement and endpoint together, superseding legacy keys', () => {
+    localStorage.setItem('iptv_telemetry_enabled', 'true');
+    localStorage.setItem('iptv_telemetry_endpoint', '"host"');
+    expect(StorageService.setTelemetryConfig({ enabled: false, endpoint: 'host:9000' })).toBe(true);
+    expect(JSON.parse(localStorage.getItem('iptv_telemetry_config')!)).toEqual({
+      enabled: false, endpoint: 'http://host:9000/api/v1/events',
+    });
+    expect(StorageService.getTelemetryConfig()).toEqual({
+      enabled: false, endpoint: 'http://host:9000/api/v1/events',
+    });
+  });
+
+  it('preserves the complete previous diagnostics record when both write attempts fail', () => {
+    StorageService.setTelemetryConfig({ enabled: false, endpoint: 'host' });
+    const originalSet = Storage.prototype.setItem;
+    const setter = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage, key: string, value: string,
+    ) {
+      if (key === 'iptv_telemetry_config') throw new Error('storage unavailable');
+      originalSet.call(this, key, value);
+    });
+    try {
+      expect(StorageService.setTelemetryConfig({ enabled: true, endpoint: 'host:9000' })).toBe(false);
+      expect(StorageService.getTelemetryConfig()).toEqual({
+        enabled: false, endpoint: 'http://host:4318/api/v1/events',
+      });
+    } finally {
+      setter.mockRestore();
+    }
+  });
+
   it('clears all local storage when resetting the app', () => {
     StorageService.set('theme', 'light');
     localStorage.setItem('unrelated', 'value');

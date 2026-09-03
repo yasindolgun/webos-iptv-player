@@ -324,6 +324,7 @@ export const DE_MESSAGES = {
   'settings.telemetryTesting': 'Testereignis wird gesendet…',
   'settings.telemetryTestSuccess': 'Testereignis wurde vom Server empfangen.',
   'settings.telemetryTestFailed': 'Der Server hat das Testereignis nicht angenommen.',
+  'settings.telemetryInvalidEndpoint': 'Gültige HTTP(S)-Serveradresse ohne Zugangsdaten, Abfrageparameter oder Fragment eingeben.',
   'settings.refreshAll': 'Playlist und Programmführer aktualisieren',
   'settings.refreshingData': 'Daten werden aktualisiert…',
   'settings.refreshProgress': '{completed} von {total} Quellen aktualisiert',

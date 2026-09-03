@@ -128,6 +128,7 @@ export const TR_MESSAGES = {
   'settings.telemetryTesting': 'Deneme olayı gönderiliyor…',
   'settings.telemetryTestSuccess': 'Deneme olayı sunucu tarafından alındı.',
   'settings.telemetryTestFailed': 'Sunucu deneme olayını kabul etmedi.',
+  'settings.telemetryInvalidEndpoint': 'Kimlik bilgisi, sorgu parametresi veya parça işareti içermeyen geçerli bir HTTP(S) sunucu adresi girin.',
   'settings.refreshingData': 'Veriler yenileniyor…',
   'settings.refreshProgress': '{completed} / {total} kaynak yenilendi',
   'settings.refreshPhaseDownload': 'Liste indiriliyor…',

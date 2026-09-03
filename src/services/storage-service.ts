@@ -1,4 +1,5 @@
 import { CONFIG } from '../config';
+import { readTelemetryConfig, TELEMETRY_CONFIG_KEY, validateTelemetryConfig, type TelemetryConfig } from './telemetry-config';
 import { DEFAULT_THEME, DEFAULT_OVERLAY, DEFAULT_TEXT_SIZE, isValidTextSize, type OverlayStyle, type TextSize } from '../config/themes';
 import type { AudioPref, CatchupProgressEntry, Channel, ChannelCustomization, EpisodeCompletion, PlaybackTrackPreferences, PlaylistEntry, RecentlyWatchedLiveEntry, Reminder, ResumeEntry, ResumeKind, SubtitlePref, TzMode, WatchlistEntry, WatchlistKind, XtreamAccountStatusSnapshot } from '../types';
 import type { OnlineSubtitleConfig, PickedOnlineSub } from './subtitle-search/types';
@@ -806,16 +807,11 @@ export const StorageService = {
     set('locale', locale);
   },
 
-  getTelemetryConfig(): { enabled: boolean; endpoint: string } {
-    const endpoint = get<unknown>('telemetry_endpoint', '');
-    return {
-      enabled: get<boolean>('telemetry_enabled', false),
-      endpoint: typeof endpoint === 'string' ? endpoint.slice(0, 500) : '',
-    };
+  getTelemetryConfig(): TelemetryConfig {
+    return readTelemetryConfig();
   },
-  setTelemetryConfig(config: { enabled: boolean; endpoint: string }): void {
-    set('telemetry_enabled', config.enabled);
-    set('telemetry_endpoint', config.endpoint.trim().slice(0, 500));
+  setTelemetryConfig(config: TelemetryConfig): boolean {
+    return set(TELEMETRY_CONFIG_KEY, validateTelemetryConfig(config));
   },
 
   getPlaybackTrackPreferences(): PlaybackTrackPreferences {

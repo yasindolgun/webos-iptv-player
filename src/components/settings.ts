@@ -14,6 +14,7 @@ import {
 import { UploadClient, uploadIdFromUrl } from '../services/upload-client';
 import { SetupClient } from '../services/setup-client';
 import { Telemetry } from '../services/telemetry';
+import { validateTelemetryConfig } from '../services/telemetry-config';
 import { ReminderService } from '../services/reminder-service';
 import {
   ChannelHealthService,
@@ -1983,8 +1984,22 @@ export class Settings {
       ?.value.trim() ?? '';
     const telemetryEnabled = $('#telemetry-enabled .toggle-option.active', this.container)
       ?.dataset.value === 'on';
-    const telemetryConfig = { enabled: telemetryEnabled, endpoint: telemetryEndpoint };
-    StorageService.setTelemetryConfig(telemetryConfig);
+    let telemetryConfig;
+    try {
+      telemetryConfig = validateTelemetryConfig({ enabled: telemetryEnabled, endpoint: telemetryEndpoint });
+    } catch {
+      showToast(t('settings.telemetryInvalidEndpoint'));
+      return;
+    }
+    try {
+      if (!StorageService.setTelemetryConfig(telemetryConfig)) {
+        showToast(t('app.saveFailed'));
+        return;
+      }
+    } catch {
+      showToast(t('app.saveFailed'));
+      return;
+    }
     Telemetry.configure(telemetryConfig);
 
     // Read row-by-row so each row's stable id (data-id) is preserved; a row

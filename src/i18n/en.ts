@@ -337,6 +337,7 @@ export const EN_MESSAGES = {
   'settings.telemetryTesting': 'Sending a test event…',
   'settings.telemetryTestSuccess': 'Test event received by the server.',
   'settings.telemetryTestFailed': 'The server did not accept the test event.',
+  'settings.telemetryInvalidEndpoint': 'Enter a valid HTTP(S) server address without credentials, query parameters, or a fragment.',
   'settings.refreshAll': 'Refresh Playlist & Guide',
   'settings.refreshingData': 'Refreshing data…',
   'settings.refreshProgress': '{completed} of {total} sources refreshed',
