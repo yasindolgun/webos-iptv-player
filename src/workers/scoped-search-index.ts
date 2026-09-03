@@ -6,6 +6,7 @@ import {
   type PreparedNameSearchIndex,
   type PreparedSearchItem,
 } from '../utils/channel-search';
+import { foldDiacritics } from '../utils/unicode-text';
 import type {
   ListSearchIndexRequest,
   ListSearchQueryRequest,
@@ -116,7 +117,7 @@ export class ScopedSearchIndex {
       sessionId: request.sessionId,
       documents: request.documents.map(document => ({
         ...document,
-        normalizedFields: document.fields.map(field => field.toLowerCase()),
+        normalizedFields: document.fields.map(field => foldDiacritics(field)),
       })),
     });
     return { accepted: true };
@@ -125,7 +126,7 @@ export class ScopedSearchIndex {
   queryMapping(request: MappingSearchQueryRequest): SearchRankedIndices | null {
     const state = this.mappings.get(request.owner);
     if (!state || state.sessionId !== request.sessionId) return null;
-    const normalized = request.query.trim().toLowerCase();
+    const normalized = foldDiacritics(request.query.trim());
     const scored: Array<{ index: number; score: number }> = [];
     for (let index = 0; index < state.documents.length; index++) {
       const document = state.documents[index];

@@ -1,4 +1,4 @@
-import { splitLetterNumberTokens, stripDiacritics } from './unicode-text';
+import { foldDiacritics, splitLetterNumberTokens } from './unicode-text';
 import type { Channel } from '../types';
 
 export type M3uContentKind = NonNullable<Channel['contentKind']>;
@@ -17,7 +17,7 @@ const OTHER_TOKENS = [
 ];
 
 function fold(value: string): string[] {
-  return splitLetterNumberTokens(stripDiacritics(value.normalize('NFD')).toLowerCase());
+  return splitLetterNumberTokens(foldDiacritics(value));
 }
 
 function hasToken(tokens: string[], wanted: readonly string[]): boolean {
@@ -32,3 +32,4 @@ export function m3uContentKind(group: string): M3uContentKind {
   if (hasToken(tokens, MOVIE_TOKENS)) return 'movie';
   return 'live';
 }
+

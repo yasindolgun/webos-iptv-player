@@ -157,4 +157,23 @@ describe('rankByFields', () => {
     expect(result.items).toEqual(items.slice(0, 2));
     expect(result.hasMore).toBe(true);
   });
+
+  it('matches Turkish characters bidirectionally across upper and lower cases', () => {
+    const cs = [
+      ch('Ch Alpha Ç G I İ Ö Ş Ü'),
+      ch('Ch Bravo Cazibe'),
+      ch('Ch Charlie Işık'),
+    ];
+    expect(names(rankByName(cs, 'ç g ı i ö ş ü'))).toEqual(['Ch Alpha Ç G I İ Ö Ş Ü']);
+    expect(names(rankByName(cs, 'c g i i o s u'))).toEqual(['Ch Alpha Ç G I İ Ö Ş Ü']);
+    expect(names(rankByName(cs, 'Ç G I İ Ö Ş Ü'))).toEqual(['Ch Alpha Ç G I İ Ö Ş Ü']);
+    expect(names(rankByName(cs, 'cazıbe'))).toEqual(['Ch Bravo Cazibe']);
+    expect(names(rankByName(cs, 'CAZİBE'))).toEqual(['Ch Bravo Cazibe']);
+    expect(names(rankByName(cs, 'cazibe'))).toEqual(['Ch Bravo Cazibe']);
+    expect(names(rankByName(cs, 'isik'))).toEqual(['Ch Charlie Işık']);
+    expect(names(rankByName(cs, 'ışık'))).toEqual(['Ch Charlie Işık']);
+    expect(names(rankByName(cs, 'IŞIK'))).toEqual(['Ch Charlie Işık']);
+    expect(names(rankByName(cs, 'İSİK'))).toEqual(['Ch Charlie Işık']);
+  });
 });
+

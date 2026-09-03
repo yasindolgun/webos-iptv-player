@@ -68,6 +68,12 @@ export function stripCombiningDiacritics(value: string): string {
   return value.replace(COMBINING_DIACRITIC_MARKS_RE, '');
 }
 
+export function foldDiacritics(value: string): string {
+  return stripDiacritics(value.replace(/\u0130/g, 'i').normalize('NFD'))
+    .toLowerCase()
+    .replace(/\u0131/g, 'i');
+}
+
 export function splitLetterNumberTokens(value: string): string[] {
   return value.split(LETTER_NUMBER_SEPARATOR_RE).filter(Boolean);
 }

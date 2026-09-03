@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Channel } from '../types';
 import {
+  is247SeriesStream,
   m3uSeriesCatalog,
   m3uSeriesCatalogInFrames,
   parseM3uSeriesEpisodeName,
@@ -52,5 +53,12 @@ describe('m3uSeriesCatalog', () => {
 
     expect(catalog?.series[0].episodesBySeason[1].map(item => item.channel.id))
       .toEqual(['e1', 'e2']);
+  });
+
+  it('identifies 24/7 series live streams vs VOD episodes', () => {
+    expect(is247SeriesStream('Alpha 24/7 Show', 'http://host/play/abc')).toBe(true);
+    expect(is247SeriesStream('Alpha Show S01E01', 'http://host/play/abc#.mkv')).toBe(false);
+    expect(is247SeriesStream('Alpha Show', 'http://host/series/abc.mp4')).toBe(false);
+    expect(is247SeriesStream('Alpha Show 1x02', 'http://host/play/abc')).toBe(false);
   });
 });

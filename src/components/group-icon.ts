@@ -15,9 +15,9 @@
 
 import {
   containsArabicOrHan,
+  foldDiacritics,
   isLetterNumberWord,
   splitLetterNumberPlusTokens,
-  stripDiacritics,
 } from '../utils/unicode-text';
 
 const GROUP_ICON_DIR = 'assets/group-icons';
@@ -86,11 +86,10 @@ const GROUP_ICON_RULES: IconRule[] = [
 // unify Arabic alef/hamza/teh-marbuta/alef-maksura variants (so "الأطفال"
 // folds toward "اطفال"), and lowercase.
 function fold(value: string): string {
-  return stripDiacritics(value.normalize('NFD')) // accents + Arabic tashkeel/hamza/madda
+  return foldDiacritics(value)
     .replace(/[آأإٱ]/gu, 'ا')        // آأإٱ -> ا
     .replace(/ى/gu, 'ي')             // ى -> ي
-    .replace(/ة/gu, 'ه')             // ة -> ه
-    .toLowerCase();
+    .replace(/ة/gu, 'ه');            // ة -> ه
 }
 
 // Split into word tokens on anything that isn't a letter, digit or '+'.

@@ -25,6 +25,7 @@ const {
     getByContentKind: vi.fn(),
     search: vi.fn(() => [] as unknown[]),
     searchRanked: vi.fn(),
+    searchLocalRanked: vi.fn(),
     indexOf: vi.fn(() => 0),
   },
   epgMock: {
@@ -136,6 +137,10 @@ beforeEach(() => {
       (channel as { contentKind?: string }).contentKind === kind));
   playlistMock.search.mockReturnValue([]);
   playlistMock.searchRanked.mockImplementation((query: string, limit: number) => {
+    const items = playlistMock.search(query);
+    return { items: items.slice(0, limit), hasMore: items.length > limit };
+  });
+  playlistMock.searchLocalRanked.mockImplementation((query: string, limit: number) => {
     const items = playlistMock.search(query);
     return { items: items.slice(0, limit), hasMore: items.length > limit };
   });
@@ -702,5 +707,29 @@ describe('Search (M3U-only, no account)', () => {
     container.dispatchEvent(new MouseEvent('click', { clientX: 100, clientY: 50, bubbles: true }));
     document.elementFromPoint = orig;
     expect(handlers.onPlayChannel).toHaveBeenCalledWith(5);
+  });
+
+  it('displays 24/7 continuous series stream channels in the channels list', async () => {
+    const live247 = {
+      ...chan('Alpha 24/7 Show'),
+      url: 'http://host/play/12345',
+      contentKind: 'series' as const,
+    };
+    playlistMock.channels = [live247];
+    playlistMock.getByContentKind.mockImplementation((kind: string) =>
+      playlistMock.channels.filter(c => c.contentKind === kind));
+    playlistMock.indexOf.mockImplementation((channel: unknown) =>
+      playlistMock.channels.indexOf(channel));
+    const { view } = await openM3U();
+
+    await view.setQuery('alpha');
+
+    expect(container.querySelector('.search-channel-row')?.textContent)
+      .toContain('Alpha 24/7 Show');
+
+    const local = (view as unknown as {
+      queryLocally: (q: string) => { series: { documents: unknown[] } };
+    }).queryLocally('alpha');
+    expect(local.series.documents).toHaveLength(0);
   });
 });

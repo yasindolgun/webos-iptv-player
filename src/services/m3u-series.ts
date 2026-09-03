@@ -1,6 +1,13 @@
 import type { Channel } from '../types';
 import { m3uCatalogCategoryId } from './m3u-catalog';
 import { runInFrameSlices } from '../utils/frame-slices';
+import {
+  is247SeriesStream,
+  parseM3uSeriesEpisodeName,
+  type ParsedEpisodeName,
+} from '../utils/m3u-episode';
+
+export { is247SeriesStream, parseM3uSeriesEpisodeName, type ParsedEpisodeName };
 
 export interface M3uSeriesEpisode {
   channel: Channel;
@@ -21,26 +28,6 @@ export interface M3uSeries {
 export interface M3uSeriesCatalog {
   series: M3uSeries[];
   flat: Channel[];
-}
-
-interface ParsedEpisodeName {
-  series: string;
-  season: number;
-  episode: number;
-  title: string;
-}
-
-const SEASON_EPISODE = /^(.*?)\s*(?:[._ -]+)?s(?:eason)?\s*(\d{1,2})\s*(?:[._ -]+)?e(?:pisode)?\s*(\d{1,3})(?:\s*(?:[-._ ]+)(.*))?$/i;
-const X_EPISODE = /^(.*?)\s*(?:[._ -]+)?(\d{1,2})x(\d{1,3})(?:\s*(?:[-._ ]+)(.*))?$/i;
-
-export function parseM3uSeriesEpisodeName(name: string): ParsedEpisodeName | null {
-  const match = SEASON_EPISODE.exec(name) ?? X_EPISODE.exec(name);
-  if (!match) return null;
-  const series = match[1].replace(/[._ -]+$/, '').trim();
-  const season = parseInt(match[2], 10);
-  const episode = parseInt(match[3], 10);
-  if (!series || season < 1 || episode < 1) return null;
-  return { series, season, episode, title: (match[4] ?? '').trim() };
 }
 
 export function m3uSeriesCatalog(channels: Channel[]): M3uSeriesCatalog {

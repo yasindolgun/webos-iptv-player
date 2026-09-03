@@ -1,7 +1,7 @@
 import {
+  foldDiacritics,
   isLetterOrNumber,
   splitLetterNumberTokens,
-  stripCombiningDiacritics,
 } from './unicode-text';
 
 const SYNONYM_GROUPS = [
@@ -16,7 +16,7 @@ const SYNONYM_GROUPS = [
 const STOP_WORDS = new Set(['find', 'me', 'show', 'watch', 'for', 'please', 'channel', 'channels', 'program', 'programs']);
 
 function fold(value: string): string {
-  return stripCombiningDiacritics(value.normalize('NFD')).toLowerCase();
+  return foldDiacritics(value);
 }
 
 function splitFolded(value: string): string[] {

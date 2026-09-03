@@ -47,6 +47,7 @@ import { getCachedPlaylist } from './idb-cache';
 import { scheduleCachedPlaylistOffThread } from '../workers/playlist-cache-client';
 import { isSourceEnabled } from '../utils/playlist';
 import { m3uContentKind, type M3uContentKind } from '../utils/m3u-content-kind';
+import { is247SeriesStream } from '../utils/m3u-episode';
 import { getCachedM3uCatalog, setCachedM3uCatalog } from './m3u-catalog-cache';
 
 const log = createLogger('Playlist');
@@ -79,11 +80,19 @@ function isXtreamLiveEntry(channel: Channel): boolean {
     const firstPathPart = new URL(channel.url).pathname.split('/').filter(Boolean)[0]
       ?.toLowerCase();
     if (firstPathPart === 'movie' || firstPathPart === 'series') return false;
-    if (firstPathPart === 'live') return true;
+    if (firstPathPart === 'live') {
+      channel.contentKind = 'live';
+      return true;
+    }
   } catch {
     // Fall back to the M3U group classification for non-standard stream routes.
   }
-  return (channel.contentKind ?? m3uContentKind(channel.sourceGroup ?? channel.group)) === 'live';
+  const kind = channel.contentKind ?? m3uContentKind(channel.sourceGroup ?? channel.group);
+  if (kind === 'series' && is247SeriesStream(channel.name, channel.url)) {
+    channel.contentKind = 'live';
+    return true;
+  }
+  return kind === 'live';
 }
 
 function xtreamLivePlaylist(

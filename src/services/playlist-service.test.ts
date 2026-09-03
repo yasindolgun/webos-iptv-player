@@ -525,6 +525,34 @@ http://host:8080/series/u1/p1/301.mkv`);
     expect(cachedChannels.map(channel => channel.name)).toEqual(['Alpha', 'Bravo']);
   });
 
+  it('keeps 24/7 continuous series stream channels in the live channel cache', async () => {
+    fetchTextMock.mockImplementation((url: string) => {
+      if (url.includes('action=get_live_streams')) return Promise.resolve('[]');
+      if (url.includes('player_api.php')) return Promise.resolve('{}');
+      return Promise.resolve(`${XT}
+#EXTINF:-1 group-title="Series",Continuous Series Channel
+http://host:8080/play/streamtoken`);
+    });
+
+    const channels = await PlaylistService.refresh();
+
+    expect(channels.map(channel => channel.name)).toEqual(['Alpha', 'Bravo', 'Continuous Series Channel']);
+  });
+
+  it('omits movies with non-standard stream routes from the live channel cache', async () => {
+    fetchTextMock.mockImplementation((url: string) => {
+      if (url.includes('action=get_live_streams')) return Promise.resolve('[]');
+      if (url.includes('player_api.php')) return Promise.resolve('{}');
+      return Promise.resolve(`${XT}
+#EXTINF:-1 group-title="Movies",Movie One
+http://host:8080/play/streamtoken`);
+    });
+
+    const channels = await PlaylistService.refresh();
+
+    expect(channels.map(channel => channel.name)).toEqual(['Alpha', 'Bravo']);
+  });
+
   it('does not request live categories when get.php returns live channels', async () => {
     await PlaylistService.refresh();
     expect(fetchTextMock.mock.calls.some(([url]) =>
