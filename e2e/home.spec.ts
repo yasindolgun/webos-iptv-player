@@ -240,6 +240,7 @@ test('Back from Live returns to Home instead of exiting', async ({ page }) => {
     state.__exitCalls = 0;
     state.webOS = state.webOS ?? {};
     state.webOS.platformBack = () => { state.__exitCalls++; };
+    window.close = () => { state.__exitCalls++; };
   });
 
   await page.keyboard.press('Enter');
@@ -268,6 +269,7 @@ test('Back on Home requires a second press to exit', async ({ page }) => {
     state.__exitCalls = 0;
     state.webOS = state.webOS ?? {};
     state.webOS.platformBack = () => { state.__exitCalls++; };
+    window.close = () => { state.__exitCalls++; };
   });
 
   await page.keyboard.press('Escape');

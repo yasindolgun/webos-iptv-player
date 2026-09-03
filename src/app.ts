@@ -13,6 +13,7 @@ import {
 import { SetupClient } from './services/setup-client';
 import { BackupClient } from './services/backup-client';
 import { setServicePort } from './services/service-http';
+import { isLunaAvailable, lunaRequest, type LunaRequestHandle } from './services/luna';
 import { ChannelList } from './components/channel-list';
 import { Player } from './components/player';
 import { EpgGrid } from './components/epg-grid';
@@ -98,6 +99,7 @@ class App {
   private loadChannelsAfterUploadSync = false;
   private remindersInitialized = false;
   private bundledServiceStarting = false;
+  private serviceEventsSubscription: LunaRequestHandle | null = null;
   private deviceSetupSync = Promise.resolve();
   private epgRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private dataRefreshPromise: Promise<import('./components/settings').SettingsRefreshResult> | null = null;
@@ -367,9 +369,18 @@ class App {
       showToast(t('app.saveFailed'));
       return;
     }
-    const webOS = (window as unknown as Record<string, { platformBack?: () => void }>).webOS;
-    if (webOS?.platformBack) webOS.platformBack();
-    else window.close();
+    this.stopBundledService();
+    window.close();
+  }
+
+  private cancelServiceEventsSubscription(): void {
+    if (!this.serviceEventsSubscription) return;
+    try {
+      this.serviceEventsSubscription.cancel();
+    } catch (e) {
+      log.warn('serviceEvents cancellation threw:', e);
+    }
+    this.serviceEventsSubscription = null;
   }
 
   /**
@@ -379,12 +390,13 @@ class App {
    * persists in the background.
    */
   private stopBundledService(): void {
-    type LunaService = { request: (uri: string, opts: unknown) => void };
-    const w = window as unknown as { webOS?: { service?: LunaService } };
-    const request = w.webOS?.service?.request;
-    if (!request) return;
+    this.cancelServiceEventsSubscription();
+    if (!isLunaAvailable()) {
+      setServicePort(null);
+      return;
+    }
     try {
-      request(`luna://${CONFIG.SERVICE_ID}`, {
+      lunaRequest(`luna://${CONFIG.SERVICE_ID}`, {
         method: 'stop',
         parameters: {},
         onSuccess: (resp: unknown) => log.info('Bundled service stop onSuccess:', JSON.stringify(resp)),
@@ -408,10 +420,7 @@ class App {
   private async startBundledService(): Promise<boolean> {
     if (this.bundledServiceStarting) return false;
     this.bundledServiceStarting = true;
-    type LunaService = { request: (uri: string, opts: unknown) => void };
-    const w = window as unknown as { webOS?: { service?: LunaService } };
-    const request = w.webOS?.service?.request;
-    if (!request) {
+    if (!isLunaAvailable()) {
       this.bundledServiceStarting = false;
       log.debug('webOS Luna service bus not available — skipping bundled service start');
       return false;
@@ -427,11 +436,11 @@ class App {
         resolve(started);
       };
       const timer = setTimeout(() => finish(false, 'timeout after 3s'), 3000);
-      // NOTE: no trailing '/' on the URI — the shim appends '/' + method,
+      // NOTE: no trailing '/' on the URI — the Luna client appends '/' + method,
       // so a trailing slash here produces 'luna://.../service//start' (double
       // slash) which Luna treats as a missing method and returns onFailure.
       try {
-        request(`luna://${CONFIG.SERVICE_ID}`, {
+        lunaRequest(`luna://${CONFIG.SERVICE_ID}`, {
           method: 'start',
           parameters: {},
           onSuccess: (resp: unknown) => {
@@ -521,11 +530,8 @@ class App {
    * keep the retail in-app path.
    */
   private async queryDevMode(): Promise<boolean> {
-    type LunaService = { request: (uri: string, opts: unknown) => void };
-    const w = window as unknown as { webOS?: { service?: LunaService } };
-    const request = w.webOS?.service?.request;
     ReminderService.setDevMode(false);
-    if (!request) {
+    if (!isLunaAvailable()) {
       log.debug('Luna unavailable — dev-mode alert disabled, using in-app prompt');
       return false;
     }
@@ -539,7 +545,7 @@ class App {
       };
       const timer = setTimeout(() => finish(false), 3000);
       try {
-        request(`luna://${CONFIG.SERVICE_ID}`, {
+        lunaRequest(`luna://${CONFIG.SERVICE_ID}`, {
           method: 'getDevMode',
           parameters: {},
           onSuccess: (resp: unknown) => {
@@ -582,16 +588,14 @@ class App {
    * refresh calls that bundled-service initialization runs on open.
    */
   private subscribeToServiceEvents(): void {
-    type LunaService = { request: (uri: string, opts: unknown) => void };
-    const w = window as unknown as { webOS?: { service?: LunaService } };
-    const request = w.webOS?.service?.request;
-    if (!request) {
+    if (!isLunaAvailable()) {
       log.debug('Luna unavailable — service event subscription skipped');
       return;
     }
+    this.cancelServiceEventsSubscription();
     log.info('Subscribing to luna://' + CONFIG.SERVICE_ID + '/serviceEvents ...');
     try {
-      request(`luna://${CONFIG.SERVICE_ID}`, {
+      this.serviceEventsSubscription = lunaRequest(`luna://${CONFIG.SERVICE_ID}`, {
         method: 'serviceEvents',
         subscribe: true,
         parameters: {},

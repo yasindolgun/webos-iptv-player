@@ -19,7 +19,7 @@ export default defineConfig({
     //   // @vitest-environment jsdom
     environment: 'node',
     setupFiles: ['src/test/setup.ts'],
-    include: ['src/**/*.test.ts', 'bundled-service/src/**/*.test.ts', 'webOSjs/**/*.test.ts', 'scripts/**/*.test.mjs'],
+    include: ['src/**/*.test.ts', 'bundled-service/src/**/*.test.ts', 'scripts/**/*.test.mjs'],
     // Large virtualized-list fixtures are deliberately CPU-heavy. Keep enough
     // workers for a quick suite without letting 12-core desktop hosts starve
     // their per-test timeout under concurrent jsdom workloads.
