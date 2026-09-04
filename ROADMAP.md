@@ -412,6 +412,16 @@ device-validation tasks where desktop mocks cannot prove the behavior.
   Accept when navigation never exits unintentionally, persistence failure
   keeps the app open, and video, service, and subscription cleanup match
   the documented exit contract.
+  Implemented for the app and automated-browser scope: the confirmation window
+  is centralized, an accepted second press clears it immediately, and one
+  in-flight operation owns persistence and teardown so later Back presses
+  cannot duplicate writes or closure. Failed durable persistence keeps the app
+  open; successful persistence explicitly stops playback, overlays, refresh
+  work, Luna requests/subscriptions, and the bundled service before bounded
+  telemetry delivery and `window.close()`. The
+  [navigation and exit contract](docs/app-exit.md) records behavior and the
+  remaining device evidence. Keep P0-E open until physical webOS 4 exit,
+  relaunch, held-key, and suspend/resume validation is recorded.
 - [ ] **P0-F — Telemetry receiver and dashboard (F1–F2; align with P0-A).**
   Distinguish malformed requests from transient storage failures and align
   client retry policy with those responses. Validate body limits, liveness

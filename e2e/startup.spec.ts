@@ -9,6 +9,8 @@ import {
 
 interface StartupProbe {
   starts: number;
+  stops: number;
+  closes: number;
   startCancellations: number;
   loadingAtStart: boolean[];
   subscriptions: number;
@@ -58,6 +60,8 @@ async function installStartupHarness(
     };
     const probe: StartupProbe = {
       starts: 0,
+      stops: 0,
+      closes: 0,
       startCancellations: 0,
       loadingAtStart: [],
       subscriptions: 0,
@@ -80,6 +84,7 @@ async function installStartupHarness(
       PalmServiceBridge?: unknown;
     };
     win.__startupProbe__ = probe;
+    window.close = () => { probe.closes++; };
     win.__releaseServiceStart__ = () => {
       for (const callback of pendingStarts.splice(0)) {
         callback(startResult);
@@ -135,7 +140,9 @@ async function installStartupHarness(
             replace: parameters.replace === true,
           });
           this.respond({ returnValue: true });
-        } else if (method !== 'stop') {
+        } else if (method === 'stop') {
+          probe.stops++;
+        } else {
           this.respond({ returnValue: false, errorText: `unmocked method: ${method}` });
         }
       }
@@ -229,6 +236,31 @@ test('service event subscription is replaced across background restarts', async 
   await expect.poll(async () => (await startupProbe(page)).subscriptions).toBe(2);
   expect(await startupProbe(page)).toMatchObject({
     subscriptionCancellations: 1,
+  });
+});
+
+test('exit cancels the service subscription and stops the bundled service once', async ({ page }) => {
+  await page.route('http://127.0.0.1:9999/uploads', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await routePlaylist(page);
+  await seedPlaylist(page);
+  await installStartupHarness(page);
+
+  await page.goto('/');
+  await expect.poll(async () => (await startupProbe(page)).starts).toBe(1);
+  await releaseServiceStart(page);
+  await expect.poll(async () => (await startupProbe(page)).subscriptions).toBe(1);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#view-home')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.toast.visible')).toContainText('Press back again');
+  await page.keyboard.press('Escape');
+
+  await expect.poll(async () => (await startupProbe(page)).closes).toBe(1);
+  expect(await startupProbe(page)).toMatchObject({
+    stops: 1,
+    subscriptionCancellations: 1,
+    closes: 1,
   });
 });
 

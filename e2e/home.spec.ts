@@ -102,6 +102,42 @@ async function applyPendingResume(page: Page, duration: number): Promise<number>
   }, duration);
 }
 
+async function openPlayerAndToggleFavorite(page: Page): Promise<void> {
+  await page.locator('[data-home-action="live"]').click();
+  await expect(page.locator('#view-channels')).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#view-player')).toBeVisible();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.locator('#player-sidebar')).toBeVisible();
+  await page.evaluate(() => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 404, bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keyup', { keyCode: 404, bubbles: true }));
+  });
+  await page.waitForTimeout(0);
+}
+
+async function returnFromPlayerToHome(page: Page): Promise<void> {
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#player-sidebar')).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#view-channels')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#view-home')).toBeVisible();
+}
+
+async function mockWindowClose(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const state = window as unknown as { __exitCalls: number };
+    state.__exitCalls = 0;
+    window.close = () => { state.__exitCalls++; };
+  });
+}
+
+async function exitCalls(page: Page): Promise<number> {
+  return page.evaluate(() =>
+    (window as unknown as { __exitCalls: number }).__exitCalls);
+}
+
 test('launches into the remote-friendly home dashboard', async ({ page }) => {
   const cards = page.locator('[data-home-action]');
   await expect(cards).toHaveCount(7);
@@ -280,6 +316,108 @@ test('Back on Home requires a second press to exit', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect.poll(() => page.evaluate(() =>
     (window as unknown as { __exitCalls: number }).__exitCalls)).toBe(1);
+});
+
+test('an expired exit confirmation requires two fresh presses', async ({ page }) => {
+  await mockWindowClose(page);
+  await page.evaluate(() => {
+    let now = Date.now();
+    Date.now = () => now;
+    (window as unknown as { __advanceExitClock: () => void }).__advanceExitClock = () => {
+      now += 3100;
+    };
+  });
+
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => {
+    (window as unknown as { __advanceExitClock: () => void }).__advanceExitClock();
+  });
+  await page.keyboard.press('Escape');
+  expect(await exitCalls(page)).toBe(0);
+
+  await page.keyboard.press('Escape');
+  await expect.poll(() => exitCalls(page)).toBe(1);
+});
+
+test('a pending exit ignores further distinct Back presses', async ({ page }) => {
+  await routeLiveManifest(page);
+  await neuterVideo(page);
+  await page.reload();
+  await expect(page.locator('#view-home')).toBeVisible();
+  await page.evaluate(() => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('iptv');
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction('favorites', 'readwrite');
+      const store = tx.objectStore('favorites');
+      let holding = true;
+      const pulse = (): void => {
+        const keepAlive = store.get('__exit_hold__');
+        keepAlive.onerror = () => reject(keepAlive.error);
+        keepAlive.onsuccess = () => {
+          if (holding) pulse();
+        };
+      };
+      (window as unknown as { __releaseExitWrite: () => void }).__releaseExitWrite = () => {
+        holding = false;
+        tx.oncomplete = () => db.close();
+      };
+      pulse();
+      resolve();
+    };
+  }));
+  await openPlayerAndToggleFavorite(page);
+  await returnFromPlayerToHome(page);
+  await mockWindowClose(page);
+
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  expect(await exitCalls(page)).toBe(0);
+
+  await page.evaluate(() => {
+    (window as unknown as { __releaseExitWrite: () => void }).__releaseExitWrite();
+  });
+  await expect.poll(() => exitCalls(page)).toBe(1);
+  await page.waitForTimeout(100);
+  expect(await exitCalls(page)).toBe(1);
+});
+
+test('a durable write failure keeps the app open and resets confirmation', async ({ page }) => {
+  await routeLiveManifest(page);
+  await neuterVideo(page);
+  await page.reload();
+  await expect(page.locator('#view-home')).toBeVisible();
+  await page.evaluate(() => {
+    const original = IDBDatabase.prototype.transaction;
+    (window as unknown as { __restoreTransactions: () => void }).__restoreTransactions = () => {
+      IDBDatabase.prototype.transaction = original;
+    };
+    IDBDatabase.prototype.transaction = function (
+      this: IDBDatabase,
+      storeNames: string | string[],
+      mode?: IDBTransactionMode,
+    ): IDBTransaction {
+      if (mode === 'readwrite') throw new Error('synthetic write failure');
+      return original.call(this, storeNames, mode);
+    } as typeof original;
+  });
+  await openPlayerAndToggleFavorite(page);
+  await returnFromPlayerToHome(page);
+  await mockWindowClose(page);
+
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.toast.visible')).toContainText('Unable to save changes');
+  expect(await exitCalls(page)).toBe(0);
+
+  await page.evaluate(() => {
+    (window as unknown as { __restoreTransactions: () => void }).__restoreTransactions();
+  });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.toast.visible')).toContainText('Press back again');
+  expect(await exitCalls(page)).toBe(0);
 });
 
 test('opens and plays an M3U movie from Home', async ({ page }) => {

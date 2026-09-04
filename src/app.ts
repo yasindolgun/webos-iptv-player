@@ -75,6 +75,7 @@ class App {
   private views!: Record<ViewName, HTMLElement>;
   private navigator = new ViewNavigator<ViewName>('home');
   private backPressTime = 0;
+  private exitPromise: Promise<void> | null = null;
   private viewBeforeSearch: ViewName | null = null;
   private epgOrigin: ViewName = 'home';
   private settingsOrigin: ViewName = 'home';
@@ -367,14 +368,33 @@ class App {
     }
   }
 
-  private async exitApp(): Promise<void> {
+  private exitApp(): Promise<void> {
+    if (this.exitPromise) return this.exitPromise;
+    const pending = this.performExit();
+    this.exitPromise = pending;
+    const release = (): void => {
+      if (this.exitPromise === pending) this.exitPromise = null;
+    };
+    void pending.then(release, release);
+    return pending;
+  }
+
+  private async performExit(): Promise<void> {
     if (!await this.flushUserData('exit')) {
       this.backPressTime = 0;
       showToast(t('app.saveFailed'));
       return;
     }
-    await Telemetry.end();
+    this.player.stop();
+    this.sidebar.hide();
+    this.menu.hide();
+    hideNumberEntry();
+    if (this.epgRefreshTimer !== null) {
+      clearInterval(this.epgRefreshTimer);
+      this.epgRefreshTimer = null;
+    }
     this.stopBundledService();
+    await Telemetry.end();
     window.close();
   }
 
@@ -1011,8 +1031,14 @@ class App {
   }
 
   private requestExit(): void {
+    if (this.exitPromise) {
+      log.debug('Exit already pending', 'event=app.exit.pending');
+      return;
+    }
     const now = Date.now();
-    if (this.backPressTime > 0 && now - this.backPressTime < 3000) {
+    if (this.backPressTime > 0
+        && now - this.backPressTime < CONFIG.EXIT_CONFIRM_TIMEOUT_MS) {
+      this.backPressTime = 0;
       void this.exitApp();
     } else {
       this.backPressTime = now;
