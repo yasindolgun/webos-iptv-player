@@ -25,6 +25,7 @@ interface IndexedName {
 export class SearchWorkerIndex {
   private sessionId: number | null = null;
   private channels: PreparedSearchItem<number>[] = [];
+  private liveChannels: PreparedSearchItem<number>[] = [];
   private channelNames: PreparedNameSearchIndex<IndexedName> = { items: [], values: [] };
   private channelRevision: number | null = null;
   private programmes: PreparedSearchItem<number>[] = [];
@@ -39,6 +40,7 @@ export class SearchWorkerIndex {
     if (request.reset) {
       this.sessionId = request.sessionId;
       this.channels = [];
+      this.liveChannels = [];
       this.channelNames = { items: [], values: [] };
       this.channelRevision = null;
       this.programmes = [];
@@ -54,6 +56,9 @@ export class SearchWorkerIndex {
 
     if (request.channels) {
       this.channels = prepareFields(request.channels);
+      this.liveChannels = request.liveChannelIndices
+        ? request.liveChannelIndices.map(index => this.channels[index]).filter(Boolean)
+        : this.channels;
       this.channelNames = prepareNameSearchItems(request.channels.map((fields, index) => ({
         id: String(index),
         name: fields[0] ?? '',
@@ -91,7 +96,7 @@ export class SearchWorkerIndex {
   query(request: SearchQueryRequest): SearchQueryResponse | null {
     if (request.sessionId !== this.sessionId) return null;
     return {
-      channels: rankedFields(this.channels, request.query, request.limit),
+      channels: rankedFields(this.liveChannels, request.query, request.limit),
       programmes: rankedFields(this.programmes, request.query, request.limit),
       movies: request.includeCatalog
         ? rankedNames(this.movies, request.query, request.limit)

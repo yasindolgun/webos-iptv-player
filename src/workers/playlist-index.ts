@@ -4,7 +4,7 @@ import {
   channelKeyHash,
   legacyChannelKeyHash,
 } from '../utils/channel-key';
-import { m3uContentKind, type M3uContentKind } from '../utils/m3u-content-kind';
+import { channelContentKind, m3uContentKind, type M3uContentKind } from '../utils/m3u-content-kind';
 
 export interface PlaylistIndexDocument {
   url: string;
@@ -171,7 +171,7 @@ export function playlistIndexDocument(channel: Channel): PlaylistIndexDocument {
     group: channel.group,
     groupKey: channel.groupKey ?? '',
     sourceGroup: channel.sourceGroup ?? '',
-    contentKind: channel.contentKind ?? '',
+    contentKind: channelContentKind(channel),
     playlistIds: channel.playlistIds,
   };
 }

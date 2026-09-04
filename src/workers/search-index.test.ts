@@ -2,6 +2,27 @@ import { describe, expect, it } from 'vitest';
 import { SearchWorkerIndex } from './search-index';
 
 describe('SearchWorkerIndex', () => {
+  it('applies the live scope before the limit without narrowing shared channel search', () => {
+    const index = new SearchWorkerIndex();
+    index.index({
+      sessionId: 1, reset: true, channelRevision: 1,
+      channels: [['Alpha'], ['Alpha Part 1'], ['Alpha Live']],
+      localMovieIndices: [0], localSeriesIndices: [1], liveChannelIndices: [2],
+    });
+    expect(index.query({ sessionId: 1, query: 'alpha', limit: 1, includeCatalog: true }))
+      .toMatchObject({
+        channels: { indices: [2], hasMore: false },
+        movies: { documents: [{ id: 'm3u:0', name: 'Alpha' }] },
+        series: { documents: [{ id: 'm3u:1', name: 'Alpha Part 1' }] },
+      });
+    expect(index.queryChannels({ channelRevision: 1, channelCount: 3,
+      query: 'alpha', limit: 1, mode: 'fields' }))
+      .toEqual({ indices: [0], hasMore: true });
+    index.index({ sessionId: 2, reset: true, channels: [['Bravo']], liveChannelIndices: [] });
+    expect(index.query({ sessionId: 2, query: 'bravo', limit: 1, includeCatalog: false })?.channels)
+      .toEqual({ indices: [], hasMore: false });
+  });
+
   it('indexes and ranks every search collection', () => {
     const index = new SearchWorkerIndex();
     expect(index.index({

@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Channel, PlaylistEntry } from '../types';
-import { clearAllCachedData } from './idb-cache';
+import { clearAllCachedData, getCachedCatalog, setCachedCatalog } from './idb-cache';
 import {
   getCachedM3uCatalog,
   m3uSourceSignature,
@@ -26,6 +26,21 @@ const channel = (name: string, group: string): Channel => ({
 describe('m3u-catalog-cache', () => {
   beforeEach(async () => {
     await clearAllCachedData();
+  });
+
+  it('normalizes a legacy catalog without overwriting its stored records', async () => {
+    const channels = [
+      { ...channel('Alpha 24/7', 'Series'), contentKind: 'series', url: 'http://host/play/ch1' },
+      { ...channel('Alpha Part 1', 'Series'), contentKind: 'series', url: 'http://host/a.m3u8' },
+    ];
+    const key = 'm3u-catalog|p1|series';
+    await setCachedCatalog(key, {
+      version: 2, sourceSignature: m3uSourceSignature(source()), kind: 'series', channels,
+    }, 60_000);
+    const restored = await getCachedM3uCatalog(source(), 'series');
+    expect(restored?.map(ch => ch.contentKind)).toEqual(['live', 'series']);
+    const stored = await getCachedCatalog<{ channels: Channel[] }>(key);
+    expect(stored?.data.channels.map(ch => ch.contentKind)).toEqual(['series', 'series']);
   });
 
   it('stores each content type separately', async () => {

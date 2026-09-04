@@ -356,13 +356,23 @@ device-validation tasks where desktop mocks cannot prove the behavior.
   [delivery and lifecycle contract](docs/telemetry-client.md) for validation
   evidence. Synthetic LAN ingest passed. Completed for the client and settings
   scope; physical webOS 4 validation is not a completion requirement for P0-A.
-- [ ] **P0-B — 24/7 classification and cache consistency (B1–B2).** Remove
+- [x] **P0-B — 24/7 classification and cache consistency (B1–B2).** Remove
   mutation from the Xtream membership filter used on all cached channels.
   Define how authoritative source type, stream route, container, and episode
   name distinguish live, VOD, and unknown entries. Accept when fresh load,
   cached restart, and refresh preserve the intended types for M3U-only,
   Xtream-only, and shared-source entries, with matching Home, Live, Search,
   and Series behavior and stable saved-item identities.
+  Implemented: pure Xtream membership filtering, copy-on-change cache
+  normalization, shared source/route/container/title classification, and
+  persisted Player API live authority across merged sources. Ambiguous HLS
+  and extensionless series entries retain their catalog scope. Unified Search
+  applies its live scope before result limits in both worker and fallback paths.
+  Validation: typecheck, lint, the full unit suite and added parser/cache
+  regressions, the production build and compatibility gate, and 58 relevant
+  E2E tests across both browser projects passed. See the
+  [classification contract](docs/content-classification.md)
+  for the decision table, cache migration limits, and lifecycle coverage.
 - [ ] **P0-C — Turkish search and fallback parity (C1).** Share normalization
   between worker EPG mapping search and its local fallback. Audit the M3U
   catalog fallback and remaining search surfaces using the same synthetic

@@ -22,17 +22,30 @@ export function parseM3uSeriesEpisodeName(name: string): ParsedEpisodeName | nul
 }
 
 export function isVodUrl(url: string): boolean {
-  return VOD_EXTENSIONS.has(extFromUrl(url));
+  if (VOD_EXTENSIONS.has(extFromUrl(url))) return true;
+  try {
+    const params = new URL(url).searchParams;
+    return ['extension', 'output', 'output_format'].some(key =>
+      VOD_EXTENSIONS.has((params.get(key) ?? '').toLowerCase()));
+  } catch {
+    return false;
+  }
 }
 
-// A continuous 24/7 series stream is delivered as a live broadcast rather
-// than a discrete VOD episode file (no VOD container extension, no /movie/ or
-// /series/ route, and no season/episode designation in the title).
-export function is247SeriesStream(name: string, url: string): boolean {
-  if (isVodUrl(url)) return false;
+export function streamContentRoute(url: string): 'live' | 'movie' | 'series' | null {
   try {
-    const firstPathPart = new URL(url).pathname.split('/').filter(Boolean)[0]?.toLowerCase();
-    if (firstPathPart === 'movie' || firstPathPart === 'series') return false;
-  } catch {}
-  return parseM3uSeriesEpisodeName(name) === null;
+    const path = new URL(url).pathname;
+    const match = /^\/(live|movie|series)\//i.exec(path)
+      ?? /\/(live|movie|series)\/[^/]+\/[^/]+\/[^/]+\/?$/i.exec(path);
+    return match ? match[1].toLowerCase() as 'live' | 'movie' | 'series' : null;
+  } catch {
+    return null;
+  }
+}
+
+export function is247SeriesStream(name: string, url: string): boolean {
+  const route = streamContentRoute(url);
+  if (route) return route === 'live';
+  if (isVodUrl(url)) return false;
+  return /\b24\s*[\/-]\s*7\b/.test(name) && parseM3uSeriesEpisodeName(name) === null;
 }

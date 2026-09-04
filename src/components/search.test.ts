@@ -646,6 +646,33 @@ describe('Search (M3U-only, no account)', () => {
     return { view, handlers };
   }
 
+  it('keeps ambiguous series and live matches in the same scopes after worker failure', async () => {
+    playlistMock.channels = [
+      { ...chan('Alpha'), contentKind: 'movie', url: 'http://host/a.mp4' },
+      { ...chan('Alpha Part 1'), contentKind: 'series', url: 'http://host/a.m3u8' },
+      { ...chan('Alpha 24/7'), contentKind: 'live', url: 'http://host/play/ch1' },
+    ];
+    playlistMock.indexOf.mockImplementation(ch => playlistMock.channels.indexOf(ch));
+    const { view } = await openM3U();
+    const state = view as unknown as {
+      resultLimit: number;
+      visibleChannels: unknown[];
+      visibleSeries: unknown[];
+      hasMoreResults: boolean;
+    };
+    state.resultLimit = 1;
+    await view.setQuery('alpha');
+    expect(state.visibleChannels).toEqual([playlistMock.channels[2]]);
+    expect(state.visibleSeries).toEqual([{ id: 'm3u:1', name: 'Alpha Part 1' }]);
+    expect(state.hasMoreResults).toBe(false);
+    workerMock.run.mockRejectedValueOnce(new Error('worker unavailable'));
+    workerMock.run.mockRejectedValueOnce(new Error('recovery unavailable'));
+    await view.setQuery('alpha ');
+    expect(state.visibleChannels).toEqual([playlistMock.channels[2]]);
+    expect(state.visibleSeries).toEqual([{ id: 'm3u:1', name: 'Alpha Part 1' }]);
+    expect(state.hasMoreResults).toBe(false);
+  });
+
   it('does not load a catalog for an M3U-only account', async () => {
     await openM3U();
     expect(catalogMock.loadAllVodStreams).not.toHaveBeenCalled();
@@ -713,7 +740,7 @@ describe('Search (M3U-only, no account)', () => {
     const live247 = {
       ...chan('Alpha 24/7 Show'),
       url: 'http://host/play/12345',
-      contentKind: 'series' as const,
+      contentKind: 'live' as const,
     };
     playlistMock.channels = [live247];
     playlistMock.getByContentKind.mockImplementation((kind: string) =>

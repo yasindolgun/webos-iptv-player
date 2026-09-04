@@ -46,6 +46,7 @@ export interface SearchIndexRequest {
   channelRevision?: number;
   localMovieIndices?: number[];
   localSeriesIndices?: number[];
+  liveChannelIndices?: number[];
 }
 
 export interface SearchIndexResponse {

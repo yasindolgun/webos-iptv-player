@@ -10,7 +10,7 @@ import {
   xtreamCatchupSources,
   xtreamCredentialsFromLiveUrl,
 } from '../utils/xtream-url';
-import { m3uContentKind } from '../utils/m3u-content-kind';
+import { channelContentKind } from '../utils/m3u-content-kind';
 
 export interface M3UParseOptions {
   maxChannels?: number;
@@ -494,7 +494,7 @@ class M3UStreamParser {
     }
     if (this.current.group) this.groupSet.add(this.current.group);
     for (const group of this.current.sourceGroups ?? []) this.groupSet.add(group);
-    this.current.contentKind = m3uContentKind(this.current.group);
+    this.current.contentKind = channelContentKind(this.current);
     this.channels.push(this.current);
     this.totalChannels++;
     this.current = null;

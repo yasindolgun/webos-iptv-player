@@ -10,6 +10,20 @@ import {
 import { UNCATEGORIZED_GROUP } from '../types';
 
 describe('parseM3U', () => {
+  it('resolves series and live evidence identically in text and chunked byte parsing', () => {
+    const fixture = [
+      '#EXTM3U',
+      '#EXTINF:-1 group-title="Series",Alpha Part 1', 'http://host/a.m3u8',
+      '#EXTINF:-1 group-title="Series",Alpha 24/7', 'http://host/play/ch1',
+      '#EXTINF:-1 group-title="Series",Bravo S01E01', 'http://host/service/live/u/p/ch2',
+      '#EXTINF:-1 group-title="Series",Charlie 24/7', 'http://host/a?extension=mp4',
+    ].join('\n');
+    const text = parseM3U(fixture);
+    const bytes = parseM3UBytesWithMetrics(new TextEncoder().encode(fixture), '', {}, 7).data;
+    expect(text.channels.map(ch => ch.contentKind)).toEqual(['series', 'live', 'live', 'series']);
+    expect(bytes.channels).toEqual(text.channels);
+  });
+
   it('parses a basic channel with URL', () => {
     const m3u = ['#EXTM3U', '#EXTINF:-1,Channel One', 'http://example.com/1.m3u8'].join('\n');
     const result = parseM3U(m3u);

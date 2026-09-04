@@ -11,7 +11,7 @@ import {
   prepareSearchItems,
   rankPreparedTopK,
 } from '../utils/channel-search';
-import { is247SeriesStream } from '../utils/m3u-episode';
+import { channelContentKind } from '../utils/m3u-content-kind';
 import { channelKey, legacyChannelKey } from '../utils/channel';
 import { formatDayLabel, formatTime } from '../utils/time';
 import { showToast } from './toast';
@@ -181,6 +181,7 @@ export class Search {
       ]),
       localMovieIndices,
       localSeriesIndices,
+      liveChannelIndices: this.liveChannelIndices(),
     });
     if (!channelsIndexed || !this.active || sessionId !== this.workerSession) return;
     await this.buildProgramIndex(false, sessionId);
@@ -518,9 +519,16 @@ export class Search {
 
   private localCatalogIndices(kind: 'movie' | 'series'): number[] {
     return PlaylistService.getByContentKind(kind)
-      .filter(channel => kind !== 'series' || !is247SeriesStream(channel.name, channel.url))
       .map(channel => PlaylistService.indexOf(channel))
       .filter(index => index >= 0);
+  }
+
+  private liveChannelIndices(): number[] {
+    const indices: number[] = [];
+    PlaylistService.channels.forEach((channel, index) => {
+      if (channelContentKind(channel) === 'live') indices.push(index);
+    });
+    return indices;
   }
 
   private localCatalogChannel(id: string): Channel | null {
@@ -769,7 +777,14 @@ export class Search {
   }
 
   private queryLocally(query: string): SearchQueryResponse {
-    const channels = PlaylistService.searchLocalRanked(query, this.resultLimit);
+    const channels = rankPreparedTopK(
+      prepareSearchItems(
+        this.liveChannelIndices().map(index => PlaylistService.channels[index]),
+        channel => [channel.name, channel.group, channel.sourceName ?? ''],
+      ),
+      query,
+      this.resultLimit,
+    );
     const movies = this.queryLocalCatalog('movie', query);
     const series = this.queryLocalCatalog('series', query);
     const programmes = rankPreparedTopK(
@@ -804,8 +819,7 @@ export class Search {
   }
 
   private queryLocalCatalog(kind: 'movie' | 'series', query: string) {
-    const channels = PlaylistService.getByContentKind(kind)
-      .filter(channel => kind !== 'series' || !is247SeriesStream(channel.name, channel.url));
+    const channels = PlaylistService.getByContentKind(kind);
     return rankPreparedTopK(
       prepareSearchItems(channels, channel => [
         channel.name,
@@ -846,6 +860,7 @@ export class Search {
         ]),
         localMovieIndices: this.localCatalogIndices('movie'),
         localSeriesIndices: this.localCatalogIndices('series'),
+        liveChannelIndices: this.liveChannelIndices(),
       });
       if (!indexed) return null;
       if (this.account) {
@@ -889,8 +904,7 @@ export class Search {
   }
 
   private applyQueryResponse(response: SearchQueryResponse): void {
-    this.visibleChannels = itemsAt(PlaylistService.channels, response.channels.indices)
-      .filter(channel => channel.contentKind !== 'movie' && (channel.contentKind !== 'series' || is247SeriesStream(channel.name, channel.url)));
+    this.visibleChannels = itemsAt(PlaylistService.channels, response.channels.indices);
     this.visiblePrograms = itemsAt(this.programIndex, response.programmes.indices);
     this.visibleMovies = response.movies.documents;
     this.visibleSeries = response.series.documents;

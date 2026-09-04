@@ -48,6 +48,7 @@ import {
 } from '../utils/channel';
 import { ChannelCustomizationService } from './channel-customization';
 import { CONFIG } from '../config';
+import { m3uItemKey } from '../utils/m3u-item';
 
 function channel(over: Partial<Channel>): Channel {
   return {
@@ -530,13 +531,13 @@ http://host:8080/series/u1/p1/301.mkv`);
       if (url.includes('action=get_live_streams')) return Promise.resolve('[]');
       if (url.includes('player_api.php')) return Promise.resolve('{}');
       return Promise.resolve(`${XT}
-#EXTINF:-1 group-title="Series",Continuous Series Channel
+#EXTINF:-1 group-title="Series",Alpha 24/7
 http://host:8080/play/streamtoken`);
     });
 
     const channels = await PlaylistService.refresh();
 
-    expect(channels.map(channel => channel.name)).toEqual(['Alpha', 'Bravo', 'Continuous Series Channel']);
+    expect(channels.map(channel => channel.name)).toEqual(['Alpha', 'Bravo', 'Alpha 24/7']);
   });
 
   it('omits movies with non-standard stream routes from the live channel cache', async () => {
@@ -815,8 +816,94 @@ https://host/token/abc?token=new&x=1`;
 });
 
 describe('PlaylistService.load', () => {
+  it.each(['m3u', 'xtream', 'shared'] as const)(
+    'keeps %s classification and saved identities through refresh and restart', async mode => {
+      const m3u = { id: 'm1', name: 'M1', url: 'http://host/a.m3u' };
+      const xtream = { id: 'x1', name: 'X1', url: 'http://host', source: 'xtream',
+        xtream: { username: 'u', password: 'p' } };
+      storageMock.getPlaylists.mockReturnValue(mode === 'm3u' ? [m3u]
+        : mode === 'xtream' ? [xtream] : [m3u, xtream]);
+      const fixture = [
+        '#EXTM3U',
+        '#EXTINF:-1 group-title="Series",Alpha Part 1', 'http://host/play/ch1',
+        '#EXTINF:-1 group-title="Series",Alpha Part 2', 'http://host/a.m3u8',
+        '#EXTINF:-1 group-title="Series",Alpha 24/7', 'http://host/play/ch2',
+        '#EXTINF:-1 group-title="Series",Bravo S01E01', 'http://host/live/u/p/ch3.ts',
+        '#EXTINF:-1 group-title="Series",Charlie S01E01', 'http://host/series/u/p/ch4',
+      ].join('\n');
+      fetchTextMock.mockImplementation((url: string) => Promise.resolve(
+        url.includes('get_live_streams') ? '[]' : url.includes('player_api.php') ? '{}' : fixture,
+      ));
+      const snapshot = () => PlaylistService.channels.map(ch => ({
+        name: ch.name, kind: ch.contentKind, sources: ch.playlistIds.slice(),
+        favorite: channelKey(ch), saved: m3uItemKey(ch),
+      }));
+      await PlaylistService.load();
+      const fresh = snapshot();
+      expect(PlaylistService.getByContentKind('live').map(ch => ch.name))
+        .toEqual(['Alpha 24/7', 'Bravo S01E01']);
+      expect(PlaylistService.getByContentKind('series').map(ch => ch.name))
+        .toEqual(mode === 'xtream' ? [] : ['Alpha Part 1', 'Alpha Part 2', 'Charlie S01E01']);
+      if (mode === 'shared') {
+        expect(PlaylistService.getByContentKind('live')[0].playlistIds).toEqual(['m1', 'x1']);
+        expect(PlaylistService.getByContentKind('series')[0].playlistIds).toEqual(['m1']);
+      }
+      const saved = JSON.parse(JSON.stringify({ channels: PlaylistService.allChannels, epgSources: [] }));
+      const before = JSON.stringify(saved);
+      cacheMock.getCachedPlaylist.mockResolvedValue(saved);
+      PlaylistService.reset();
+      fetchTextMock.mockClear();
+      await PlaylistService.load();
+      expect(fetchTextMock).not.toHaveBeenCalled();
+      expect(snapshot()).toEqual(fresh);
+      expect(JSON.stringify(saved)).toBe(before);
+      await PlaylistService.refresh();
+      expect(snapshot()).toEqual(fresh);
+    },
+  );
+
+  it('preserves a shared ambiguous M3U series when compacting legacy Xtream membership', async () => {
+    const input = channel({ name: 'Alpha Part 1', group: 'Series', contentKind: 'series',
+      url: 'http://host/a.m3u8', playlistIds: ['m1', 'x1'] });
+    storageMock.getPlaylists.mockReturnValue([
+      { id: 'm1', name: 'M1', url: 'http://host/a.m3u' },
+      { id: 'x1', name: 'X1', url: 'http://host', source: 'xtream' },
+    ]);
+    cacheMock.getCachedPlaylist.mockResolvedValue({ channels: [input], epgSources: [] });
+    await PlaylistService.load();
+    expect(PlaylistService.allChannels[0]).toMatchObject({ contentKind: 'series', playlistIds: ['m1'] });
+    expect(input).toMatchObject({ contentKind: 'series', playlistIds: ['m1', 'x1'] });
+  });
+
+  it.each([false, true])('keeps authoritative shared live records with Xtream first=%s', async xtreamFirst => {
+    const m3u = { id: 'm1', name: 'M1', url: 'http://host/a.m3u' };
+    const xtream = { id: 'x1', name: 'X1', url: 'http://host', source: 'xtream',
+      xtream: { username: 'u', password: 'p' } };
+    storageMock.getPlaylists.mockReturnValue(xtreamFirst ? [xtream, m3u] : [m3u, xtream]);
+    fetchTextMock.mockImplementation((url: string) => {
+      if (url.includes('get_live_streams')) return Promise.resolve(JSON.stringify([
+        { stream_id: 1, name: 'Alpha Part 1', direct_source: 'http://host/series/u/p/1.mp4' },
+      ]));
+      if (url.includes('get_live_categories')) return Promise.resolve('[]');
+      if (url.includes('player_api.php')) return Promise.resolve('{}');
+      if (url.includes('get.php')) return Promise.resolve('#EXTM3U');
+      return Promise.resolve('#EXTM3U\n#EXTINF:-1 group-title="Series",Alpha Part 1\nhttp://host/series/u/p/1.mp4');
+    });
+    await PlaylistService.refresh();
+    const fresh = JSON.parse(JSON.stringify(PlaylistService.allChannels));
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0]).toMatchObject({ contentKind: 'live', contentKindSource: 'xtream-live' });
+    expect(fresh[0].playlistIds).toHaveLength(2);
+    cacheMock.getCachedPlaylist.mockResolvedValue({ channels: fresh, epgSources: [] });
+    PlaylistService.reset();
+    await PlaylistService.load();
+    expect(PlaylistService.allChannels).toEqual(fresh);
+    await PlaylistService.refresh();
+    expect(PlaylistService.allChannels).toEqual(fresh);
+  });
+
   it('uses the cached playlist without hitting the network', async () => {
-    const cached = [channel({ id: 'a', name: 'Alpha', group: 'News', playlistIds: ['P1'] })];
+    const cached = [channel({ id: 'a', name: 'Alpha', group: 'News', contentKind: 'live', playlistIds: ['P1'] })];
     const epgSources = [{ url: 'http://e', playlistIds: ['P1'], kind: 'm3u' }];
     storageMock.getPlaylists.mockReturnValue([
       { id: 'P1', name: 'P1', url: 'http://host/p1.m3u' },

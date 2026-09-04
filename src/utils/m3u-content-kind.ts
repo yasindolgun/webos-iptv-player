@@ -1,5 +1,6 @@
 import { foldDiacritics, splitLetterNumberTokens } from './unicode-text';
 import type { Channel } from '../types';
+import { is247SeriesStream, isVodUrl, parseM3uSeriesEpisodeName, streamContentRoute } from './m3u-episode';
 
 export type M3uContentKind = NonNullable<Channel['contentKind']>;
 
@@ -31,5 +32,23 @@ export function m3uContentKind(group: string): M3uContentKind {
   if (hasToken(tokens, SERIES_TOKENS)) return 'series';
   if (hasToken(tokens, MOVIE_TOKENS)) return 'movie';
   return 'live';
+}
+
+export function channelContentKind(channel: Channel): M3uContentKind {
+  const kind = channel.contentKind ?? m3uContentKind(channel.sourceGroup ?? channel.group);
+  if (kind === 'other') return kind;
+  if (channel.contentKindSource === 'xtream-live') return 'live';
+  const route = streamContentRoute(channel.url);
+  if (route) return route;
+  const name = channel.sourceName ?? channel.name;
+  if (parseM3uSeriesEpisodeName(name) && kind !== 'movie') return 'series';
+  if (isVodUrl(channel.url)) return kind === 'series' ? 'series' : 'movie';
+  if (kind === 'series' && is247SeriesStream(name, channel.url)) return 'live';
+  return kind;
+}
+
+export function normalizeChannelContentKind(channel: Channel): Channel {
+  const contentKind = channelContentKind(channel);
+  return contentKind === channel.contentKind ? channel : { ...channel, contentKind };
 }
 

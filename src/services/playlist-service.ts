@@ -46,8 +46,7 @@ import {
 import { getCachedPlaylist } from './idb-cache';
 import { scheduleCachedPlaylistOffThread } from '../workers/playlist-cache-client';
 import { isSourceEnabled } from '../utils/playlist';
-import { m3uContentKind, type M3uContentKind } from '../utils/m3u-content-kind';
-import { is247SeriesStream } from '../utils/m3u-episode';
+import { channelContentKind, normalizeChannelContentKind, type M3uContentKind } from '../utils/m3u-content-kind';
 import { getCachedM3uCatalog, setCachedM3uCatalog } from './m3u-catalog-cache';
 
 const log = createLogger('Playlist');
@@ -76,23 +75,7 @@ function usableDirectSource(value: string): string {
 }
 
 function isXtreamLiveEntry(channel: Channel): boolean {
-  try {
-    const firstPathPart = new URL(channel.url).pathname.split('/').filter(Boolean)[0]
-      ?.toLowerCase();
-    if (firstPathPart === 'movie' || firstPathPart === 'series') return false;
-    if (firstPathPart === 'live') {
-      channel.contentKind = 'live';
-      return true;
-    }
-  } catch {
-    // Fall back to the M3U group classification for non-standard stream routes.
-  }
-  const kind = channel.contentKind ?? m3uContentKind(channel.sourceGroup ?? channel.group);
-  if (kind === 'series' && is247SeriesStream(channel.name, channel.url)) {
-    channel.contentKind = 'live';
-    return true;
-  }
-  return kind === 'live';
+  return channelContentKind(channel) === 'live';
 }
 
 function xtreamLivePlaylist(
@@ -116,6 +99,7 @@ function xtreamLivePlaylist(
     catchupDays: 0,
     catchupStreamId: stream.streamId,
     contentKind: 'live',
+    contentKindSource: 'xtream-live',
   }));
   const groups = Array.from(new Set(channels.map(channel => channel.group)));
   return {
@@ -207,8 +191,11 @@ class PlaylistServiceImpl {
       let compactedXtreamEntries = 0;
       let channelsChanged = false;
       const filteredChannels: Channel[] = [];
-      for (const channel of cached.channels) {
-        const keepXtreamMembership = isXtreamLiveEntry(channel);
+      for (const cachedChannel of cached.channels) {
+        const channel = normalizeChannelContentKind(cachedChannel);
+        if (channel !== cachedChannel) channelsChanged = true;
+        const keepXtreamMembership = !channel.playlistIds.some(id => xtreamIds.has(id))
+          || isXtreamLiveEntry(channel);
         const playlistIds = channel.playlistIds.filter(id =>
           enabledIds.has(id) && (!xtreamIds.has(id) || keepXtreamMembership));
         if (playlistIds.length !== channel.playlistIds.length) {
@@ -241,8 +228,8 @@ class PlaylistServiceImpl {
           'event=xtream.playlist.cache.compacted',
           `entries=${compactedXtreamEntries}`,
         );
-        scheduleCachedPlaylistOffThread(this.allChannels, this.epgSources);
       }
+      if (channelsChanged) scheduleCachedPlaylistOffThread(this.allChannels, this.epgSources);
       await this.applyCustomizationOffThread();
       this.buildPlaylistTabs();
       StorageService.migrateFavoriteKeys(this.channels);
@@ -479,6 +466,10 @@ class PlaylistServiceImpl {
             // (so "All" stays de-duplicated), but record this playlist too so
             // its own tab still appears and shows the channel.
             if (!existing.playlistIds.includes(plKey)) existing.playlistIds.push(plKey);
+            if (ch.contentKindSource === 'xtream-live' && existing.contentKind !== 'other') {
+              existing.contentKindSource = ch.contentKindSource;
+              existing.contentKind = 'live';
+            }
             dupes++;
           } else {
             ch.playlistIds = [plKey];
@@ -549,7 +540,8 @@ class PlaylistServiceImpl {
       const previousChannels = previousChannelsByPlaylist.get(playlistId) ?? [];
       const previousSources = previousEpgSourcesByPlaylist.get(playlistId) ?? [];
       if (!previousChannels.length && !previousSources.length) return false;
-      for (const previous of previousChannels) {
+      for (const cachedChannel of previousChannels) {
+        const previous = normalizeChannelContentKind(cachedChannel);
         const existing = byUrl.get(previous.url);
         if (existing) {
           const existingRank = existing.playlistIds.reduce(
@@ -558,8 +550,16 @@ class PlaylistServiceImpl {
           );
           const restoredRank = playlistRanks.get(playlistId) ?? Infinity;
           if (!existing.playlistIds.includes(playlistId)) existing.playlistIds.push(playlistId);
+          if (previous.contentKindSource === 'xtream-live' && existing.contentKind !== 'other') {
+            existing.contentKindSource = previous.contentKindSource;
+            existing.contentKind = 'live';
+          }
           if (restoredRank < existingRank) {
             const restored = { ...previous, playlistIds: existing.playlistIds.slice() };
+            if (existing.contentKindSource === 'xtream-live' && restored.contentKind !== 'other') {
+              restored.contentKindSource = existing.contentKindSource;
+              restored.contentKind = 'live';
+            }
             const index = allChannels.indexOf(existing);
             if (index >= 0) allChannels[index] = restored;
             byUrl.set(restored.url, restored);

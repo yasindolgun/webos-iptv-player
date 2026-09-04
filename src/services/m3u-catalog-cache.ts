@@ -1,7 +1,7 @@
 import type { Channel, PlaylistEntry } from '../types';
 import { CONFIG } from '../config';
 import { getCachedCatalog, setCachedCatalog } from './idb-cache';
-import { m3uContentKind, type M3uContentKind } from '../utils/m3u-content-kind';
+import { channelContentKind, normalizeChannelContentKind, type M3uContentKind } from '../utils/m3u-content-kind';
 
 const CACHE_VERSION = 2;
 const KEY_PREFIX = 'm3u-catalog';
@@ -27,10 +27,6 @@ function cacheKey(sourceId: string, kind: M3uContentKind): string {
   return `${KEY_PREFIX}|${sourceId}|${kind}`;
 }
 
-function contentKind(channel: Channel): M3uContentKind {
-  return channel.contentKind ?? m3uContentKind(channel.sourceGroup ?? channel.group);
-}
-
 export async function getCachedM3uCatalog(
   source: PlaylistEntry,
   kind: M3uContentKind,
@@ -41,7 +37,7 @@ export async function getCachedM3uCatalog(
       || payload.version !== CACHE_VERSION
       || payload.kind !== kind
       || payload.sourceSignature !== m3uSourceSignature(source)) return null;
-  return payload.channels;
+  return payload.channels.map(normalizeChannelContentKind);
 }
 
 export function setCachedM3uCatalog(
@@ -50,7 +46,7 @@ export function setCachedM3uCatalog(
   channels: Channel[],
 ): Promise<void> {
   const catalog = channels
-    .filter(channel => contentKind(channel) === kind)
+    .filter(channel => channelContentKind(channel) === kind)
     .map(channel => ({ ...channel, playlistIds: [source.id] }));
   return setCachedCatalog(cacheKey(source.id, kind), {
     version: CACHE_VERSION,
