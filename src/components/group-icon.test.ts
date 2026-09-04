@@ -31,6 +31,8 @@ describe('matchGroupIcon', () => {
       expect(matchGroupIcon('Notícias')).toBe('newspaper');
       expect(matchGroupIcon('Música')).toBe('musical_note');
       expect(matchGroupIcon('Niños')).toBe('teddy_bear');
+      expect(matchGroupIcon('ÇOCUK')).toBe('teddy_bear');
+      expect(matchGroupIcon('MU\u0308ZI\u0307K')).toBe('musical_note');
     });
 
     it('strips IPTV prefixes, flags and quality tags', () => {

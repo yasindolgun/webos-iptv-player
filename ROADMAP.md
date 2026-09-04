@@ -373,11 +373,20 @@ device-validation tasks where desktop mocks cannot prove the behavior.
   E2E tests across both browser projects passed. See the
   [classification contract](docs/content-classification.md)
   for the decision table, cache migration limits, and lifecycle coverage.
-- [ ] **P0-C — Turkish search and fallback parity (C1).** Share normalization
+- [x] **P0-C — Turkish search and fallback parity (C1).** Share normalization
   between worker EPG mapping search and its local fallback. Audit the M3U
   catalog fallback and remaining search surfaces using the same synthetic
   character matrix. Accept when worker success and forced failure produce
   equivalent matches while retaining selected mappings and source ordering.
+  Implemented: EPG mapping IDs, display names, aliases, and queries now use
+  the shared diacritic fold in both worker and local paths. The bounded M3U
+  catalog fallback uses the same name ranker as its worker index. Regression
+  coverage compares worker and local results across Turkish case variants,
+  composed and decomposed Unicode, punctuation, selected mappings, and source
+  order; it also forces both EPG and M3U worker failures. Group-icon and M3U
+  content-kind dictionaries retain their expected normalized matches.
+  Validation: typecheck, lint, 2,408 unit tests, the production build, and the
+  Chromium 53 compatibility gate passed.
 - [ ] **P0-D — Luna request and subscription lifetime (D1–D2).** Bound the
   lifetime of abandoned one-shot requests without breaking late startup
   recovery. Audit DRM, captions, reminders, and service-event consumers;

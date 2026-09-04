@@ -3,7 +3,16 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Channel } from '../types';
 import type { RecentlyWatchedItem } from '../services/recently-watched';
 
-const { data, customization, playlistMock, epgMock, storageMock, recentMock, toastMock } = vi.hoisted(() => {
+const {
+  data,
+  customization,
+  playlistMock,
+  epgMock,
+  storageMock,
+  recentMock,
+  toastMock,
+  workerMock,
+} = vi.hoisted(() => {
   const mk = (o: Partial<Channel>): Channel => ({
     id: '', name: '', logo: '', group: '', url: '', extras: null,
     playlistIds: [], catchup: '', catchupSource: '', catchupDays: 0, ...o,
@@ -71,6 +80,7 @@ const { data, customization, playlistMock, epgMock, storageMock, recentMock, toa
       catchupInfo: vi.fn(),
     },
     toastMock: { showToast: vi.fn() },
+    workerMock: { failMappingQuery: false },
   };
 });
 
@@ -92,6 +102,7 @@ vi.mock('../workers/app-worker-client', async () => {
         return Promise.resolve(index.indexMapping(payload));
       }
       if (task === 'mapping-search.query') {
+        if (workerMock.failMappingQuery) return Promise.reject(new Error('worker failed'));
         return Promise.resolve(index.queryMapping(payload));
       }
       if (task === 'mapping-search.release') {
@@ -180,6 +191,7 @@ beforeEach(() => {
   recentMock.getItems.mockClear();
   recentMock.catchupInfo.mockReset();
   toastMock.showToast.mockClear();
+  workerMock.failMappingQuery = false;
   playlistMock.playlistTabs = [];
   storageMock.toggleFavorite.mockClear();
   storageMock.setFavorites.mockClear();
@@ -662,6 +674,33 @@ describe('ChannelList edit mode', () => {
 
     await waitForEpgSearch();
     expect(input.dataset.searchQuery).toBe('Guide B');
+  });
+
+  it('uses the local EPG mapping path after a worker query failure', async () => {
+    const mappedId = `${encodeURIComponent('http://host/epg')}::guide-a`;
+    epgMock.getLocalMappingCandidates.mockReturnValue([{
+      id: mappedId,
+      channelId: 'guide-a',
+      name: 'Alpha Işık',
+      sourceName: 'Guide',
+    }]);
+    workerMock.failMappingQuery = true;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    enterEdit();
+    hover(channelItems()[0]);
+    list.handleAction('select');
+    hover(container.querySelector<HTMLElement>('[data-epg-action]')!);
+    list.handleAction('select');
+    await waitForEpgSearch();
+
+    const input = container.querySelector<HTMLInputElement>('.epg-mapping-search')!;
+    input.value = 'isik';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await waitForEpgSearch();
+
+    expect(epgMock.getLocalMappingCandidates).toHaveBeenLastCalledWith(data.raw[0], 'isik');
+    expect(container.querySelector(`[data-epg-channel="${mappedId}"]`)?.textContent)
+      .toContain('Alpha Işık');
   });
 
   it('closes the EPG picker when Escape originates from the search input', () => {

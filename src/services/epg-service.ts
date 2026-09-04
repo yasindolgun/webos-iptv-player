@@ -14,6 +14,7 @@ import { getCachedEpg, setCachedEpg } from './idb-cache';
 import type { CachedEpgFilter } from './idb-cache';
 import { ChannelCustomizationService } from './channel-customization';
 import { channelKey } from '../utils/channel';
+import { foldDiacritics } from '../utils/unicode-text';
 
 const log = createLogger('EPG');
 
@@ -374,7 +375,7 @@ class EpgServiceImpl {
             channelId: id,
             name: epgChannel.name,
             fields: [id, epgChannel.name, ...(epgChannel.aliases ?? [])]
-              .map(value => value.toLowerCase()),
+              .map(foldDiacritics),
           });
         }
       }
@@ -398,7 +399,7 @@ class EpgServiceImpl {
     query: string,
     limit?: number,
   ): EpgMappingCandidate[] {
-    const normalized = query.trim().toLowerCase();
+    const normalized = foldDiacritics(query.trim());
     const current = ChannelCustomizationService.overrideFor(channelKey(channel))?.epgChannelId;
     const candidates: Array<EpgMappingCandidate & { score: number }> = [];
     for (const entry of this.getMappingSearchEntries(channel)) {

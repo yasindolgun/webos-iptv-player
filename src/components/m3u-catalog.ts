@@ -26,6 +26,7 @@ import { createLogger } from '../utils/logger';
 import { runInFrameSlices } from '../utils/frame-slices';
 import { formatLocalDate, formatPosition } from '../utils/time';
 import { t } from '../i18n';
+import { rankByNameTopK } from '../utils/channel-search';
 
 const CARD_HEIGHT = 128;
 const VIEWPORT_HEIGHT = 720;
@@ -495,10 +496,11 @@ export class M3uCatalog {
         'event=m3u.catalog.search.worker.failed',
         error,
       );
-      const normalized = query.toLowerCase();
-      this.items = this.categoryItems
-        .filter(item => item.name.toLowerCase().indexOf(normalized) >= 0)
-        .slice(0, CONFIG.M3U.CATALOG_SEARCH_RESULT_CAP);
+      this.items = rankByNameTopK(
+        this.categoryItems,
+        query,
+        CONFIG.M3U.CATALOG_SEARCH_RESULT_CAP,
+      ).items;
       this.queryPending = false;
       this.render();
     });

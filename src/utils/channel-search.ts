@@ -341,11 +341,19 @@ export function rankByFields<T>(items: T[], query: string, fields: (item: T) => 
 }
 
 export function rankByName<T extends { name: string }>(items: T[], query: string): T[] {
+  return rankByNameTopK(items, query, items.length).items;
+}
+
+export function rankByNameTopK<T extends { name: string }>(
+  items: T[],
+  query: string,
+  limit: number,
+): RankedSearchResult<T> {
   return rankPreparedNamesTopK(
     prepareNameSearchItems(items),
     query,
-    items.length,
-  ).items;
+    limit,
+  );
 }
 
 export function rankChannels<T extends { name: string; group: string; sourceName?: string }>(

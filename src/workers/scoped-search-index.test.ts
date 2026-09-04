@@ -160,6 +160,50 @@ describe('ScopedSearchIndex', () => {
     })?.indices).toEqual([0, 1]);
   });
 
+  it.each([
+    ['Turkish dotted and dotless I', 'isik', [0]],
+    ['Turkish uppercase query', 'İSİK', [0]],
+    ['cedilla and breve alias', 'cagri', [0]],
+    ['decomposed umlauts', 'oncu', [1]],
+    ['cedilla, breve, umlaut and punctuation', 'ç—ğ—ö—ş—ü', [2]],
+  ])('normalizes EPG mapping %s', (_label, query, expected) => {
+    const index = new ScopedSearchIndex();
+    index.indexMapping({
+      owner: 'mapping',
+      sessionId: 6,
+      documents: [
+        {
+          id: 'a',
+          channelId: 'epg.ışık',
+          name: 'Alpha Işık',
+          fields: ['epg.ışık', 'Alpha Işık', 'Çağrı'],
+          sourceIndex: 0,
+        },
+        {
+          id: 'b',
+          channelId: 'epg.oncu',
+          name: 'Bravo O\u0308ncu\u0308',
+          fields: ['epg.oncu', 'Bravo O\u0308ncu\u0308'],
+          sourceIndex: 1,
+        },
+        {
+          id: 'c',
+          channelId: 'epg.marks',
+          name: 'Charlie C—G—O—S—U',
+          fields: ['epg.marks', 'Charlie C—G—O—S—U'],
+          sourceIndex: 0,
+        },
+      ],
+    });
+
+    expect(index.queryMapping({
+      owner: 'mapping',
+      sessionId: 6,
+      query,
+      selectedId: '',
+    })?.indices).toEqual(expected);
+  });
+
   it('releases only the matching mapping session', () => {
     const index = new ScopedSearchIndex();
     index.indexMapping({

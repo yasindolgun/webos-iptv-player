@@ -12,6 +12,8 @@ describe('m3uContentKind', () => {
   it('recognizes series groups across common M3U labels', () => {
     expect(m3uContentKind('Series Drama')).toBe('series');
     expect(m3uContentKind('Diziler')).toBe('series');
+    expect(m3uContentKind('DİZİLER')).toBe('series');
+    expect(m3uContentKind('DI\u0307ZI\u0307LER')).toBe('series');
     expect(m3uContentKind('Serien')).toBe('series');
   });
 
@@ -21,6 +23,7 @@ describe('m3uContentKind', () => {
 
   it('does not surface restricted groups in live, movie, or series catalogs', () => {
     expect(m3uContentKind('Adult')).toBe('other');
+    expect(m3uContentKind('YETİŞKİN')).toBe('other');
   });
 });
 

@@ -147,6 +147,28 @@ describe('M3uCatalog', () => {
     expect(container.textContent).not.toContain('Movie One');
   });
 
+  it('keeps Turkish and decomposed-name matches when worker search fails', async () => {
+    const first = { ...movie('first'), name: 'Alpha Işık' };
+    const second = { ...movie('second'), name: 'Bravo O\u0308ncu\u0308' };
+    catalogSearchMock.query.mockRejectedValue(new Error('worker failed'));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const catalog = new M3uCatalog(container, onPlay);
+    catalog.open([first, second], 'movie');
+
+    const input = container.querySelector<HTMLInputElement>('.m3u-catalog-search')!;
+    input.value = 'ISIK';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
+    await vi.waitFor(() => expect(container.textContent).toContain('Alpha Işık'));
+    expect(container.textContent).not.toContain('Bravo O\u0308ncu\u0308');
+
+    input.value = 'öncü';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
+    await vi.waitFor(() => expect(container.textContent).toContain('Bravo O\u0308ncu\u0308'));
+    expect(container.textContent).not.toContain('Alpha Işık');
+  });
+
   it('opens structured M3U series by season and resumes an episode', () => {
     const first = {
       ...movie('e1'), name: 'Show One S01E01 - First', group: 'Series', sourceGroup: 'Series',

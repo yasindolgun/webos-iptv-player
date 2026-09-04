@@ -51,6 +51,7 @@ import { fetchMaybeGzipText } from '../utils/fetch-helper';
 import type { Channel, EpgSource, ParsedEpg, Programme } from '../types';
 import { CONFIG } from '../config';
 import { channelKey } from '../utils/channel';
+import { ScopedSearchIndex } from '../workers/scoped-search-index';
 
 function prog(over: Partial<Programme>): Programme {
   return {
@@ -373,6 +374,42 @@ describe('EpgService multi-source matching', () => {
       name: 'Bravo Guide',
       sourceName: 'EPG 1',
     }]);
+  });
+
+  it('keeps worker and local mapping searches equivalent across normalized fields', async () => {
+    const first = parsed('epg.ışık', 'Alpha Işık', 'A');
+    first.channels['epg.ışık'].aliases = ['Çağrı'];
+    const second = parsed('epg.oncu', 'Bravo O\u0308ncu\u0308', 'B');
+    parseXMLTVMock.mockImplementation((text) => text === 'http://a' ? first : second);
+    const selectedId = `${encodeURIComponent('http://b')}::epg.oncu`;
+    channelOverrideMock.mockReturnValue({ epgChannelId: selectedId });
+    const playlistChannel = channel({
+      name: 'Charlie',
+      url: 'http://host/a',
+      playlistIds: ['a', 'b'],
+    });
+    await EpgService.load([
+      source('http://a', ['a']),
+      source('http://b', ['b']),
+    ], [playlistChannel]);
+    const entries = EpgService.getMappingSearchEntries(playlistChannel);
+    const index = new ScopedSearchIndex();
+    index.indexMapping({ owner: 'mapping', sessionId: 7, documents: entries });
+
+    for (const query of [
+      'isik', 'IŞIK', 'İSİK', 'epg.isik', 'cagri', 'ÇAĞRI',
+      'oncu', 'öncü', 'O\u0308NCU\u0308', '—', 'missing', '',
+    ]) {
+      const workerIds = index.queryMapping({
+        owner: 'mapping',
+        sessionId: 7,
+        query,
+        selectedId,
+      })?.indices.map(position => entries[position].id);
+      const localIds = EpgService.getLocalMappingCandidates(playlistChannel, query)
+        .map(candidate => candidate.id);
+      expect(localIds, query).toEqual(workerIds);
+    }
   });
 
   it('returns the complete candidate catalog when no limit is requested', async () => {
