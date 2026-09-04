@@ -49,6 +49,7 @@ function installBridge(options: {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   Reflect.deleteProperty(window, 'PalmServiceBridge');
 });
 
@@ -176,17 +177,145 @@ describe('Luna request transport', () => {
     });
   });
 
-  it('treats valid non-object JSON as a malformed response', () => {
+  it.each(['"unexpected"', 'null', '1', '[]'])(
+    'treats valid non-record JSON %s as a malformed response',
+    (message) => {
+      const bridge = installBridge();
+      const onFailure = vi.fn();
+      lunaRequest('luna://com.foo', { onFailure });
+
+      bridge.callbacks[0](message);
+
+      expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+        returnValue: false,
+        errorCode: -1,
+      }));
+      expect(bridge.cancelCount()).toBe(1);
+    },
+  );
+
+  it.each([
+    '{"returnValue":"true"}',
+    '{"errorCode":"1"}',
+    '{"errorText":false}',
+  ])('rejects invalid Luna control fields in %s', (message) => {
     const bridge = installBridge();
     const onFailure = vi.fn();
     lunaRequest('luna://com.foo', { onFailure });
 
-    bridge.callbacks[0]('"unexpected"');
+    bridge.callbacks[0](message);
 
     expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
       returnValue: false,
       errorCode: -1,
     }));
+    expect(bridge.cancelCount()).toBe(1);
+  });
+
+  it('times out and releases an unanswered one-shot request exactly once', () => {
+    vi.useFakeTimers();
+    const bridge = installBridge();
+    const onFailure = vi.fn();
+    const onComplete = vi.fn();
+    lunaRequest('luna://com.foo', {
+      timeoutMs: 50,
+      onFailure,
+      onComplete,
+    });
+    const lateCallback = bridge.callbacks[0];
+
+    vi.advanceTimersByTime(50);
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+      errorText: 'Luna request timed out after 50ms',
+    }));
+    expect(onComplete).toHaveBeenCalledOnce();
+    expect(bridge.cancelCount()).toBe(1);
+
+    lateCallback('{"returnValue":true}');
+    vi.advanceTimersByTime(50);
+    expect(onFailure).toHaveBeenCalledOnce();
+    expect(onComplete).toHaveBeenCalledOnce();
+    expect(bridge.cancelCount()).toBe(1);
+  });
+
+  it('bounds the initial response wait without expiring a live subscription', () => {
+    vi.useFakeTimers();
+    const bridge = installBridge();
+    const firstFailure = vi.fn();
+    lunaRequest('luna://com.foo', {
+      subscribe: true,
+      timeoutMs: 50,
+      onFailure: firstFailure,
+    });
+    vi.advanceTimersByTime(50);
+    expect(firstFailure).toHaveBeenCalledOnce();
+    expect(bridge.cancelCount()).toBe(1);
+
+    const onSuccess = vi.fn();
+    const handle = lunaRequest('luna://com.foo', {
+      subscribe: true,
+      timeoutMs: 50,
+      onSuccess,
+    });
+    bridge.callbacks[1]('{"subscribed":true}');
+    vi.advanceTimersByTime(500);
+    bridge.callbacks[1]('{"value":1}');
+    expect(onSuccess).toHaveBeenCalledTimes(2);
+    expect(bridge.cancelCount()).toBe(1);
+    handle.cancel();
+    expect(bridge.cancelCount()).toBe(2);
+  });
+
+  it('does not arm a timeout after a synchronous subscription acknowledgement', () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn();
+    const onSuccess = vi.fn();
+    class SynchronousPalmServiceBridge {
+      onservicecallback: ((message: string) => void) | null = null;
+
+      call(): void {
+        this.onservicecallback?.('{"subscribed":true}');
+      }
+
+      cancel(): void {
+        cancel();
+        this.onservicecallback = null;
+      }
+    }
+    Object.defineProperty(window, 'PalmServiceBridge', {
+      configurable: true,
+      value: SynchronousPalmServiceBridge,
+    });
+
+    const handle = lunaRequest('luna://com.foo', {
+      subscribe: true,
+      timeoutMs: 50,
+      onSuccess,
+    });
+    vi.advanceTimersByTime(500);
+
+    expect(onSuccess).toHaveBeenCalledOnce();
+    expect(cancel).not.toHaveBeenCalled();
+    handle.cancel();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it('treats a subscription failure as terminal', () => {
+    const bridge = installBridge();
+    const onFailure = vi.fn();
+    const onComplete = vi.fn();
+    lunaRequest('luna://com.foo', {
+      subscribe: true,
+      onFailure,
+      onComplete,
+    });
+    const callback = bridge.callbacks[0];
+
+    callback('{"returnValue":false,"errorCode":1}');
+    callback('{"returnValue":true}');
+
+    expect(onFailure).toHaveBeenCalledOnce();
+    expect(onComplete).toHaveBeenCalledOnce();
     expect(bridge.cancelCount()).toBe(1);
   });
 
@@ -246,6 +375,20 @@ describe('Luna request transport', () => {
     expect(() => {
       bridge.callbacks[0]('{"returnValue":true}');
     }).toThrow('consumer failed');
+    expect(bridge.cancelCount()).toBe(1);
+  });
+
+  it('releases failed requests even when the failure callback throws', () => {
+    const bridge = installBridge();
+    lunaRequest('luna://com.foo', {
+      onFailure: () => {
+        throw new Error('failure handler failed');
+      },
+    });
+
+    expect(() => {
+      bridge.callbacks[0]('{"returnValue":false}');
+    }).toThrow('failure handler failed');
     expect(bridge.cancelCount()).toBe(1);
   });
 

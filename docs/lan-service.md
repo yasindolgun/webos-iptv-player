@@ -141,6 +141,20 @@ port and resubscribes to `serviceEvents`. `Settings.refreshSetupInfo()` and
 `Settings.refreshUploads()` run so the QR code and upload list reflect the
 new port and current state.
 
+The three-second startup wait is a UI readiness boundary, not a transport
+timeout. A late `start` or `getDevMode` response is still accepted while the
+same foreground lifecycle owns it. Backgrounding, stopping, or starting a new
+lifecycle cancels the old bridge first, so a stale callback cannot restart the
+service or update reminder mode. Other one-shot Luna calls use a five-second
+transport timeout.
+
+`serviceEvents` must acknowledge within five seconds. A malformed response or
+terminal subscription failure releases that bridge and retries after 1, 2, and
+4 seconds. A successful acknowledgement resets the retry budget; backgrounding
+cancels both the live subscription and any scheduled retry. Luna responses must
+be JSON records; arrays, primitives, and incorrectly typed control fields are
+routed through the failure callback.
+
 The service process itself stays alive across stop/start cycles — only
 the HTTP server is torn down. Luna respawns the process on cold start
 (first call to `start` after a TV reboot or app uninstall).

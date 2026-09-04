@@ -99,7 +99,11 @@ class App {
   private loadChannelsAfterUploadSync = false;
   private remindersInitialized = false;
   private bundledServiceStarting = false;
+  private bundledServiceStartRequestCancel: (() => void) | null = null;
+  private devModeRequestCancel: (() => void) | null = null;
   private serviceEventsSubscription: LunaRequestHandle | null = null;
+  private serviceEventsRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private serviceEventsRetryAttempt = 0;
   private deviceSetupSync = Promise.resolve();
   private epgRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private dataRefreshPromise: Promise<import('./components/settings').SettingsRefreshResult> | null = null;
@@ -375,13 +379,28 @@ class App {
   }
 
   private cancelServiceEventsSubscription(): void {
-    if (!this.serviceEventsSubscription) return;
-    try {
-      this.serviceEventsSubscription.cancel();
-    } catch (e) {
-      log.warn('serviceEvents cancellation threw:', e);
+    if (this.serviceEventsRetryTimer !== null) {
+      clearTimeout(this.serviceEventsRetryTimer);
+      this.serviceEventsRetryTimer = null;
     }
-    this.serviceEventsSubscription = null;
+    this.serviceEventsRetryAttempt = 0;
+    if (this.serviceEventsSubscription) {
+      try {
+        this.serviceEventsSubscription.cancel();
+      } catch (e) {
+        log.warn('serviceEvents cancellation threw:', e);
+      }
+      this.serviceEventsSubscription = null;
+    }
+  }
+
+  private cancelBundledServiceRequests(): void {
+    const cancelStart = this.bundledServiceStartRequestCancel;
+    this.bundledServiceStartRequestCancel = null;
+    cancelStart?.();
+    const cancelDevMode = this.devModeRequestCancel;
+    this.devModeRequestCancel = null;
+    cancelDevMode?.();
   }
 
   /**
@@ -391,6 +410,7 @@ class App {
    * persists in the background.
    */
   private stopBundledService(): void {
+    this.cancelBundledServiceRequests();
     this.cancelServiceEventsSubscription();
     if (!isLunaAvailable()) {
       setServicePort(null);
@@ -400,6 +420,7 @@ class App {
       lunaRequest(`luna://${CONFIG.SERVICE_ID}`, {
         method: 'stop',
         parameters: {},
+        timeoutMs: CONFIG.LUNA.REQUEST_TIMEOUT_MS,
         onSuccess: (resp: unknown) => log.info('Bundled service stop onSuccess:', JSON.stringify(resp)),
         onFailure: (err: unknown) => log.warn('Bundled service stop onFailure:', JSON.stringify(err)),
       });
@@ -420,6 +441,7 @@ class App {
    */
   private async startBundledService(): Promise<boolean> {
     if (this.bundledServiceStarting) return false;
+    this.cancelBundledServiceRequests();
     this.bundledServiceStarting = true;
     if (!isLunaAvailable()) {
       this.bundledServiceStarting = false;
@@ -429,6 +451,7 @@ class App {
     log.info('Calling luna://' + CONFIG.SERVICE_ID + '/start ...');
     return new Promise<boolean>((resolve) => {
       let settled = false;
+      let handle: LunaRequestHandle | null = null;
       const finish = (started: boolean, why: string): void => {
         if (settled) return;
         settled = true;
@@ -437,15 +460,28 @@ class App {
         resolve(started);
       };
       const timer = setTimeout(() => finish(false, 'timeout after 3s'), 3000);
+      const releaseOwnedRequest = (): void => {
+        if (this.bundledServiceStartRequestCancel === cancelRequest) {
+          this.bundledServiceStartRequestCancel = null;
+        }
+      };
+      const cancelRequest = (): void => {
+        clearTimeout(timer);
+        releaseOwnedRequest();
+        handle?.cancel();
+        finish(false, 'cancelled by service lifecycle');
+      };
+      this.bundledServiceStartRequestCancel = cancelRequest;
       // NOTE: no trailing '/' on the URI — the Luna client appends '/' + method,
       // so a trailing slash here produces 'luna://.../service//start' (double
       // slash) which Luna treats as a missing method and returns onFailure.
       try {
-        lunaRequest(`luna://${CONFIG.SERVICE_ID}`, {
+        handle = lunaRequest(`luna://${CONFIG.SERVICE_ID}`, {
           method: 'start',
           parameters: {},
           onSuccess: (resp: unknown) => {
             clearTimeout(timer);
+            releaseOwnedRequest();
             const lateSuccess = settled;
             if (document.visibilityState === 'hidden') {
               log.info('Bundled service started after app was hidden — stopping it');
@@ -472,12 +508,14 @@ class App {
           },
           onFailure: (err: unknown) => {
             clearTimeout(timer);
+            releaseOwnedRequest();
             log.error('Bundled service start onFailure:', JSON.stringify(err));
             finish(false, 'onFailure');
           },
         });
       } catch (e) {
         clearTimeout(timer);
+        releaseOwnedRequest();
         log.error('Bundled service start threw:', e);
         finish(false, 'threw');
       }
@@ -531,6 +569,9 @@ class App {
    * keep the retail in-app path.
    */
   private async queryDevMode(): Promise<boolean> {
+    const previousRequest = this.devModeRequestCancel;
+    this.devModeRequestCancel = null;
+    previousRequest?.();
     ReminderService.setDevMode(false);
     if (!isLunaAvailable()) {
       log.debug('Luna unavailable — dev-mode alert disabled, using in-app prompt');
@@ -538,6 +579,7 @@ class App {
     }
     return new Promise<boolean>((resolve) => {
       let settled = false;
+      let handle: LunaRequestHandle | null = null;
       const finish = (initialized: boolean): void => {
         if (!settled) {
           settled = true;
@@ -545,12 +587,23 @@ class App {
         }
       };
       const timer = setTimeout(() => finish(false), 3000);
+      const releaseOwnedRequest = (): void => {
+        if (this.devModeRequestCancel === cancelRequest) this.devModeRequestCancel = null;
+      };
+      const cancelRequest = (): void => {
+        clearTimeout(timer);
+        releaseOwnedRequest();
+        handle?.cancel();
+        finish(false);
+      };
+      this.devModeRequestCancel = cancelRequest;
       try {
-        lunaRequest(`luna://${CONFIG.SERVICE_ID}`, {
+        handle = lunaRequest(`luna://${CONFIG.SERVICE_ID}`, {
           method: 'getDevMode',
           parameters: {},
           onSuccess: (resp: unknown) => {
             clearTimeout(timer);
+            releaseOwnedRequest();
             const lateSuccess = settled;
             if (document.visibilityState === 'hidden') {
               finish(false);
@@ -567,12 +620,14 @@ class App {
           },
           onFailure: (err: unknown) => {
             clearTimeout(timer);
+            releaseOwnedRequest();
             log.warn('getDevMode onFailure:', JSON.stringify(err));
             finish(false);
           },
         });
       } catch (e) {
         clearTimeout(timer);
+        releaseOwnedRequest();
         log.warn('getDevMode threw:', e);
         finish(false);
       }
@@ -588,32 +643,70 @@ class App {
    * the subscribe call fails, we silently fall back to the explicit
    * refresh calls that bundled-service initialization runs on open.
    */
-  private subscribeToServiceEvents(): void {
+  private scheduleServiceEventsRetry(): void {
+    if (document.visibilityState === 'hidden'
+        || this.serviceEventsRetryAttempt >= CONFIG.LUNA.SUBSCRIPTION_RETRY_MAX
+        || this.serviceEventsRetryTimer !== null) return;
+    const delay = CONFIG.LUNA.SUBSCRIPTION_RETRY_BASE_MS
+      * Math.pow(2, this.serviceEventsRetryAttempt);
+    this.serviceEventsRetryAttempt++;
+    log.info('Retrying serviceEvents subscription',
+      `attempt=${String(this.serviceEventsRetryAttempt)}`,
+      `delay=${String(delay)}ms`);
+    this.serviceEventsRetryTimer = setTimeout(() => {
+      this.serviceEventsRetryTimer = null;
+      this.subscribeToServiceEvents(false);
+    }, delay);
+  }
+
+  private subscribeToServiceEvents(resetRetry = true): void {
     if (!isLunaAvailable()) {
       log.debug('Luna unavailable — service event subscription skipped');
       return;
     }
-    this.cancelServiceEventsSubscription();
+    if (this.serviceEventsRetryTimer !== null) {
+      clearTimeout(this.serviceEventsRetryTimer);
+      this.serviceEventsRetryTimer = null;
+    }
+    if (resetRetry) this.serviceEventsRetryAttempt = 0;
+    this.serviceEventsSubscription?.cancel();
+    this.serviceEventsSubscription = null;
     log.info('Subscribing to luna://' + CONFIG.SERVICE_ID + '/serviceEvents ...');
+    let handle: LunaRequestHandle | null = null;
+    let terminal = false;
+    const failSubscription = (reason: unknown): void => {
+      if (terminal) return;
+      terminal = true;
+      handle?.cancel();
+      if (this.serviceEventsSubscription === handle) this.serviceEventsSubscription = null;
+      log.warn('serviceEvents subscription failed:', JSON.stringify(reason));
+      this.scheduleServiceEventsRetry();
+    };
     try {
-      this.serviceEventsSubscription = lunaRequest(`luna://${CONFIG.SERVICE_ID}`, {
+      handle = lunaRequest(`luna://${CONFIG.SERVICE_ID}`, {
         method: 'serviceEvents',
         subscribe: true,
         parameters: {},
+        timeoutMs: CONFIG.LUNA.SUBSCRIPTION_ACK_TIMEOUT_MS,
         onSuccess: (resp: unknown) => {
           log.info('serviceEvents push:', JSON.stringify(resp));
-          if (resp && typeof resp === 'object' &&
-              (resp as { subscribed?: unknown }).subscribed === true) return;
-          if (resp && typeof resp === 'object' &&
-              (resp as { event?: unknown }).event === 'setup-changed') {
+          const response = resp as { subscribed?: unknown; event?: unknown };
+          if (response.subscribed === true) {
+            this.serviceEventsRetryAttempt = 0;
+            return;
+          }
+          if (response.event === 'setup-changed') {
             void this.queueDeviceSetupSync();
             return;
           }
-          if (resp && typeof resp === 'object' &&
-              (resp as { event?: unknown }).event === 'backup-changed') {
+          if (response.event === 'backup-changed') {
             void BackupClient.applyPendingImports().then((applied) => {
               if (applied) location.reload();
             }).catch(err => log.error('Backup import sync failed:', err));
+            return;
+          }
+          if (response.event !== 'uploads-changed') {
+            failSubscription({ errorText: 'Invalid serviceEvents response' });
             return;
           }
           void this.settings.refreshUploads()
@@ -621,11 +714,13 @@ class App {
             .catch(err => log.error('Upload event refresh failed:', err));
         },
         onFailure: (err: unknown) => {
-          log.warn('serviceEvents subscription failed:', JSON.stringify(err));
+          failSubscription(err);
         },
       });
+      if (!terminal) this.serviceEventsSubscription = handle;
     } catch (e) {
       log.warn('serviceEvents subscribe threw:', e);
+      this.scheduleServiceEventsRetry();
     }
   }
 

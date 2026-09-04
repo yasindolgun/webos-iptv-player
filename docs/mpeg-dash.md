@@ -165,6 +165,10 @@ The DRM client and rights-error subscription are released on channel changes,
 player teardown and app suspension. Widevine and unknown protection schemes
 trigger `event=playback.dash.drm.unsupported` and normal channel fallback.
 The generic `mp4protection` descriptor alone does not mark a stream as DRM.
+Each one-shot DRM request has an eight-second ceiling, and teardown cancels its
+pending bridge and promise immediately. The rights-error subscription has a
+bounded acknowledgement wait; a failed subscription is terminal for that
+client while playback continues without the diagnostic callback.
 Once the native DRM client is ready, the player OSD shows a `PlayReady` stream
 information pill.
 

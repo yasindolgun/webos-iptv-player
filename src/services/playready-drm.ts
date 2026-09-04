@@ -1,4 +1,5 @@
 import { PLAYREADY_SCHEME } from '../parsers/mpd-manifest';
+import { CONFIG } from '../config';
 import { createLogger } from '../utils/logger';
 import { isLunaAvailable, lunaRequest } from './luna';
 
@@ -26,11 +27,19 @@ interface ServiceHandle {
 interface ServiceOptions {
   method: string;
   parameters: Record<string, unknown>;
+  timeoutMs?: number;
   onSuccess?: (response: ServiceResponse) => void;
   onFailure?: (error: ServiceResponse) => void;
 }
 
 type ServiceRequest = (uri: string, options: ServiceOptions) => ServiceHandle;
+
+interface PendingServiceCall {
+  handle: ServiceHandle | null;
+  reject: (error: Error) => void;
+  method: string;
+  settled: boolean;
+}
 
 export interface PlayReadyConfig {
   type: 'playready';
@@ -232,6 +241,7 @@ export class PlayReadyDrm {
   private clientId = '';
   private subscription: ServiceHandle | null = null;
   private messageIds = new Set<string>();
+  private pendingCalls = new Set<PendingServiceCall>();
 
   async prepare(
     config: PlayReadyConfig,
@@ -257,9 +267,12 @@ export class PlayReadyDrm {
       }
       this.clientId = clientId;
       this.messageIds.clear();
-      this.subscription = request(DRM_URI, {
+      let subscription: ServiceHandle | null = null;
+      let subscriptionFailed = false;
+      subscription = request(DRM_URI, {
         method: 'getRightsError',
         parameters: { clientId, subscribe: true },
+        timeoutMs: CONFIG.LUNA.SUBSCRIPTION_ACK_TIMEOUT_MS,
         onSuccess: response => {
           if (generation !== this.generation || typeof response.errorState !== 'number') return;
           if (!response.contentId || !this.messageIds.has(response.contentId)) return;
@@ -267,11 +280,14 @@ export class PlayReadyDrm {
         },
         onFailure: error => {
           if (generation === this.generation) {
+            subscriptionFailed = true;
+            if (this.subscription === subscription) this.subscription = null;
             log.warn('Rights-error subscription failed',
               `code=${String(error.errorCode ?? '')}`);
           }
         },
       });
+      if (!subscriptionFailed) this.subscription = subscription;
 
       const messages = [licenseServerMessage(config.licenseUrl)];
       if (config.customData) messages.push(customDataMessage(config.customData));
@@ -308,24 +324,57 @@ export class PlayReadyDrm {
     parameters: Record<string, unknown>,
   ): Promise<ServiceResponse> {
     return new Promise((resolve, reject) => {
-      request(DRM_URI, {
+      const pending: PendingServiceCall = {
+        handle: null,
+        reject,
         method,
-        parameters,
-        onSuccess: response => {
-          if (response.returnValue === false) {
-            reject(new Error(response.errorText || `${method} failed`));
-            return;
-          }
-          resolve(response);
-        },
-        onFailure: error => {
-          reject(new Error(error.errorText || `${method} failed`));
-        },
-      });
+        settled: false,
+      };
+      const finish = (callback: () => void): void => {
+        if (pending.settled) return;
+        pending.settled = true;
+        this.pendingCalls.delete(pending);
+        callback();
+      };
+      this.pendingCalls.add(pending);
+      try {
+        pending.handle = request(DRM_URI, {
+          method,
+          parameters,
+          timeoutMs: CONFIG.LUNA.DRM_REQUEST_TIMEOUT_MS,
+          onSuccess: response => {
+            finish(() => {
+              if (response.returnValue === false) {
+                reject(new Error(response.errorText || `${method} failed`));
+                return;
+              }
+              resolve(response);
+            });
+          },
+          onFailure: error => {
+            finish(() => reject(new Error(error.errorText || `${method} failed`)));
+          },
+        });
+        if (pending.settled) pending.handle.cancel();
+      } catch (error) {
+        finish(() => reject(error instanceof Error ? error : new Error(String(error))));
+      }
     });
   }
 
+  private cancelPendingCalls(): void {
+    const pendingCalls = Array.from(this.pendingCalls);
+    for (const pending of pendingCalls) {
+      if (pending.settled) continue;
+      pending.settled = true;
+      this.pendingCalls.delete(pending);
+      pending.handle?.cancel();
+      pending.reject(new Error(`${pending.method} cancelled`));
+    }
+  }
+
   private async unloadCurrent(): Promise<void> {
+    this.cancelPendingCalls();
     const request = serviceRequest();
     const clientId = this.clientId;
     this.clientId = '';

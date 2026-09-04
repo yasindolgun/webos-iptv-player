@@ -19,7 +19,8 @@ import { DashSubtitles } from '../services/dash-subtitles';
 import { VodSubtitles } from '../services/vod-subtitles';
 import { AssSubtitles, isAssSidecar } from '../services/ass-subtitles';
 import { getCachedSubtitle, setCachedSubtitle } from '../services/idb-cache';
-import { isLunaAvailable, lunaRequest } from '../services/luna';
+import { isLunaAvailable, lunaRequest, type LunaRequestHandle } from '../services/luna';
+import { CONFIG } from '../config';
 import {
   audioLabel,
   chooseAudioIndex,
@@ -82,6 +83,7 @@ export class PlayerTracks {
   private ccEnabled = false; // live state of the native caption compositor (setSubtitleEnable)
   private ccPending: boolean | null = null;
   private ccRequestSeq = 0;
+  private ccRequest: LunaRequestHandle | null = null;
   private selfRenderIndex = -1; // manifest subtitle rendition currently self-rendered (-1 = off)
   private masterUrl = ''; // HLS master URL of the active stream, for re-pointing self-render
   private subs = new HlsSubtitles(); // self-rendered subtitles on the webOS native path
@@ -104,6 +106,8 @@ export class PlayerTracks {
     this.manifestSubtitles = [];
     this.manifestClosedCaptions = [];
     this.ccEnabled = false; // fresh pipeline — captions start off (608 doesn't auto-draw)
+    this.ccRequest?.cancel();
+    this.ccRequest = null;
     this.ccPending = null;
     this.ccRequestSeq++;
     this.selfRenderIndex = -1;
@@ -137,11 +141,19 @@ export class PlayerTracks {
   }
 
   suspend(): void {
+    this.ccRequest?.cancel();
+    this.ccRequest = null;
+    this.ccPending = null;
+    this.ccRequestSeq++;
     this.subs.stop();
     this.dashSubs.stop();
   }
 
   stop(): void {
+    this.ccRequest?.cancel();
+    this.ccRequest = null;
+    this.ccPending = null;
+    this.ccRequestSeq++;
     this.subs.stop();
     this.dashSubs.stop();
     this.vodSubs.clear();
@@ -658,23 +670,35 @@ export class PlayerTracks {
       return;
     }
     if (!isLunaAvailable()) return;
+    this.ccRequest?.cancel();
+    this.ccRequest = null;
     const requestSeq = ++this.ccRequestSeq;
     this.ccPending = enable;
-    lunaRequest('luna://com.webos.media', {
+    let requestFinished = false;
+    let request: LunaRequestHandle | null = null;
+    const finishRequest = (): void => {
+      requestFinished = true;
+      if (this.ccRequest === request) this.ccRequest = null;
+    };
+    request = lunaRequest('luna://com.webos.media', {
       method: 'setSubtitleEnable',
       parameters: { mediaId, enable },
+      timeoutMs: CONFIG.LUNA.REQUEST_TIMEOUT_MS,
       onSuccess: () => {
+        finishRequest();
         if (requestSeq !== this.ccRequestSeq) return;
         this.ccEnabled = enable;
         this.ccPending = null;
         log.info('CC: setSubtitleEnable', enable, 'ok');
       },
       onFailure: (error) => {
+        finishRequest();
         if (requestSeq !== this.ccRequestSeq) return;
         this.ccPending = null;
         log.warn('CC: setSubtitleEnable failed:', JSON.stringify(error));
       },
     });
+    if (!requestFinished) this.ccRequest = request;
   }
 
   // Route a subtitle pick to the active engine (index -1 = off). stpp and wvtt

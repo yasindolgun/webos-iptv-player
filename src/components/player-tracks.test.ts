@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CONFIG } from '../config';
 import type { Channel, VodPlayback } from '../types';
 import { channelKey, legacyChannelKey } from '../utils/channel';
 import { StorageService } from '../services/storage-service';
@@ -143,6 +144,11 @@ describe('PlayerTracks', () => {
       getChannel: () => channel,
       getVod: () => vod,
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   // Native path with a collapsed manifest: 3 declared renditions but the TV
@@ -573,6 +579,42 @@ describe('PlayerTracks', () => {
 
       userAgent.mockRestore();
       vi.unstubAllGlobals();
+    });
+
+    it('bounds and cancels pending native compositor requests', () => {
+      vi.useFakeTimers();
+      const userAgent = vi.spyOn(window.navigator, 'userAgent', 'get')
+        .mockReturnValue('webOS');
+      const cancel = vi.fn();
+      class FakePalmServiceBridge {
+        onservicecallback: ((message: string) => void) | null = null;
+
+        call(): void {}
+
+        cancel(): void {
+          cancel();
+          this.onservicecallback = null;
+        }
+      }
+      vi.stubGlobal('PalmServiceBridge', FakePalmServiceBridge);
+      setup([{
+        ...rendition('Track 1', 'l1'),
+        dash: { kind: 'native' },
+      }]);
+      (video as HTMLVideoElement & { mediaId?: string }).mediaId = 'media1';
+
+      tracks.selectSubtitleTrack(0);
+      expect(trackInternals(tracks).ccPending).toBe(true);
+      vi.advanceTimersByTime(CONFIG.LUNA.REQUEST_TIMEOUT_MS);
+      expect(trackInternals(tracks).ccPending).toBeNull();
+      expect(cancel).toHaveBeenCalledOnce();
+
+      tracks.reapplyNativeSubtitleCompositor();
+      expect(trackInternals(tracks).ccPending).toBe(true);
+      tracks.stop();
+      expect(trackInternals(tracks).ccPending).toBeNull();
+      expect(cancel).toHaveBeenCalledTimes(2);
+      userAgent.mockRestore();
     });
 
     it('lists the manifest renditions with the self-rendered one active and all selectable', () => {

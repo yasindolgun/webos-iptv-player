@@ -8,6 +8,7 @@ export interface LunaRequestOptions<T extends LunaResponse = LunaResponse> {
   method?: string;
   parameters?: Record<string, unknown>;
   subscribe?: boolean;
+  timeoutMs?: number;
   onSuccess?: (response: T) => void;
   onFailure?: (response: T) => void;
   onComplete?: (response: T) => void;
@@ -60,6 +61,24 @@ function isFailure(response: LunaResponse): boolean {
     (typeof response.errorCode === 'number' && response.errorCode !== 0);
 }
 
+function parseResponse(message: string): LunaResponse {
+  const parsed: unknown = JSON.parse(message);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Invalid Luna response');
+  }
+  const response = parsed as Record<string, unknown>;
+  if (response.returnValue !== undefined && typeof response.returnValue !== 'boolean') {
+    throw new Error('Invalid Luna returnValue');
+  }
+  if (response.errorCode !== undefined && typeof response.errorCode !== 'number') {
+    throw new Error('Invalid Luna errorCode');
+  }
+  if (response.errorText !== undefined && typeof response.errorText !== 'string') {
+    throw new Error('Invalid Luna errorText');
+  }
+  return response as LunaResponse;
+}
+
 export function lunaRequest<T extends LunaResponse = LunaResponse>(
   uri: string,
   options: LunaRequestOptions<T> = {},
@@ -71,11 +90,17 @@ export function lunaRequest<T extends LunaResponse = LunaResponse>(
   const onComplete = options.onComplete ?? (() => {});
   let bridge: PalmServiceBridgeInstance | null = null;
   let cancelled = false;
+  let initialResponseReceived = false;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
 
   const request: LunaRequestHandle = {
     cancel(): void {
       if (cancelled) return;
       cancelled = true;
+      if (timeout !== null) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
       removeActiveRequest(request);
       if (!bridge) return;
       bridge.onservicecallback = null;
@@ -89,16 +114,20 @@ export function lunaRequest<T extends LunaResponse = LunaResponse>(
   };
   activeRequests.push(request);
 
-  const completeFailure = (response: LunaResponse): void => {
+  const completeTerminal = (
+    response: LunaResponse,
+    callback: (value: T) => void,
+  ): void => {
+    request.cancel();
     try {
-      onFailure(response as T);
+      callback(response as T);
     } finally {
-      try {
-        onComplete(response as T);
-      } finally {
-        request.cancel();
-      }
+      onComplete(response as T);
     }
+  };
+
+  const completeFailure = (response: LunaResponse): void => {
+    completeTerminal(response, onFailure);
   };
 
   const Bridge = bridgeConstructor();
@@ -116,25 +145,31 @@ export function lunaRequest<T extends LunaResponse = LunaResponse>(
 
   bridge.onservicecallback = (message: string): void => {
     if (cancelled) return;
+    initialResponseReceived = true;
 
     let response: LunaResponse;
     try {
-      const parsed: unknown = JSON.parse(message);
-      if (!parsed || typeof parsed !== 'object') throw new Error('Invalid Luna response');
-      response = parsed as LunaResponse;
+      response = parseResponse(message);
     } catch (error) {
       response = failureResponse(error, 'Invalid Luna response');
     }
 
+    if (isFailure(response)) {
+      completeFailure(response);
+      return;
+    }
+    if (!subscribe) {
+      completeTerminal(response, onSuccess);
+      return;
+    }
+    if (timeout !== null) {
+      clearTimeout(timeout);
+      timeout = null;
+    }
     try {
-      if (isFailure(response)) onFailure(response as T);
-      else onSuccess(response as T);
+      onSuccess(response as T);
     } finally {
-      try {
-        onComplete(response as T);
-      } finally {
-        if (!subscribe) request.cancel();
-      }
+      onComplete(response as T);
     }
   };
 
@@ -152,6 +187,17 @@ export function lunaRequest<T extends LunaResponse = LunaResponse>(
     bridge.call(requestUri, JSON.stringify(payload));
   } catch (error) {
     completeFailure(failureResponse(error, 'PalmServiceBridge call failed'));
+    return request;
+  }
+
+  if (!cancelled && !initialResponseReceived
+      && typeof options.timeoutMs === 'number' && options.timeoutMs > 0) {
+    timeout = setTimeout(() => {
+      completeFailure(failureResponse(
+        null,
+        `Luna request timed out after ${String(options.timeoutMs)}ms`,
+      ));
+    }, options.timeoutMs);
   }
 
   return request;

@@ -284,7 +284,9 @@ path (`src/utils/subtitle-tracks.ts`, `src/components/player-tracks.ts`).
 - **Toggle:** a single on/off entry, gated on the manifest declaration, toggled with
   `setSubtitleEnable {mediaId, enable}` and remembered per channel (as `cc: true`, §2). **No channel list**
   (CC1/CC2, languages) — `selectTrack` decode-freezes the video (§4), so whichever CC channel the stream
-  defaults to is what shows.
+  defaults to is what shows. The Luna toggle has a five-second ceiling; a new
+  toggle, tune, stop, or app suspension cancels the previous request and clears
+  its pending state.
 - **Off by default.** ✅ Verified even with the TV's global "Closed Captions" accessibility setting
   turned ON: nothing draws until `setSubtitleEnable:true`. That global setting drives the TV's
   **tuner/broadcast** path, **not** the app's `com.webos.media` pipeline. (The app needn't force

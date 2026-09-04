@@ -387,12 +387,24 @@ device-validation tasks where desktop mocks cannot prove the behavior.
   content-kind dictionaries retain their expected normalized matches.
   Validation: typecheck, lint, 2,408 unit tests, the production build, and the
   Chromium 53 compatibility gate passed.
-- [ ] **P0-D — Luna request and subscription lifetime (D1–D2).** Bound the
+- [x] **P0-D — Luna request and subscription lifetime (D1–D2).** Bound the
   lifetime of abandoned one-shot requests without breaking late startup
   recovery. Audit DRM, captions, reminders, and service-event consumers;
   reject invalid response shapes and define failed-subscription recovery.
   Accept when no abandoned bridge or pending consumer state survives its
   owning lifecycle and cancellation/late-callback tests pass.
+  Implemented: the transport now rejects non-record JSON and incorrectly typed
+  control fields, treats subscription failures as terminal, and supports an
+  explicit initial-response timeout. Reminder, service-stop, native-caption,
+  and PlayReady calls have bounded waits. Player teardown cancels pending DRM
+  and caption work immediately. Bundled-service start and Developer Mode keep
+  their intentional late-success path only while the same foreground lifecycle
+  owns the request; backgrounding or replacement cancels it. `serviceEvents`
+  validates its event contract and uses a bounded 1/2/4-second resubscription
+  sequence that is cancelled in the background.
+  Validation: typecheck, lint, 2,422 unit tests, 409 E2E tests across both
+  browser projects, and the production build passed. Repeated real-device
+  lifecycle resource measurements remain part of P0-G device evidence.
 - [ ] **P0-E — Back navigation and exit semantics (E1; after P0-D).** Verify
   Home return, repeated keys, overlays, input focus, delayed persistence,
   and multiple distinct exit presses. Validate the change from launching

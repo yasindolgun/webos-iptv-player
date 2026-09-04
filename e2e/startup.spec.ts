@@ -9,6 +9,7 @@ import {
 
 interface StartupProbe {
   starts: number;
+  startCancellations: number;
   loadingAtStart: boolean[];
   subscriptions: number;
   subscriptionCancellations: number;
@@ -21,6 +22,7 @@ async function installStartupHarness(
     visibility?: DocumentVisibilityState;
     devMode?: boolean;
     startResult?: unknown;
+    subscriptionFailures?: number;
   } = {},
 ): Promise<void> {
   await page.route('http://127.0.0.1:9999/setup-state', route =>
@@ -43,7 +45,12 @@ async function installStartupHarness(
         pairingCode: '123456',
       }),
     }));
-  await page.addInitScript(({ initialVisibility, devMode, startResult }) => {
+  await page.addInitScript(({
+    initialVisibility,
+    devMode,
+    startResult,
+    subscriptionFailures,
+  }) => {
     type Cb = (resp: unknown) => void;
     type LunaParameters = {
       activity?: { name?: string; callback?: { method?: string } };
@@ -51,6 +58,7 @@ async function installStartupHarness(
     };
     const probe: StartupProbe = {
       starts: 0,
+      startCancellations: 0,
       loadingAtStart: [],
       subscriptions: 0,
       subscriptionCancellations: 0,
@@ -58,6 +66,7 @@ async function installStartupHarness(
     };
     const pendingStarts: Cb[] = [];
     let visibility = initialVisibility;
+    let remainingSubscriptionFailures = subscriptionFailures;
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
       get: () => visibility,
@@ -88,6 +97,7 @@ async function installStartupHarness(
       onservicecallback: ((message: string) => void) | null = null;
       private subscription = false;
       private cancelled = false;
+      private method = '';
 
       private respond(response: unknown): void {
         setTimeout(() => {
@@ -97,6 +107,7 @@ async function installStartupHarness(
 
       call(uri: string, payload: string): void {
         const method = uri.slice(uri.lastIndexOf('/') + 1);
+        this.method = method;
         const parameters = JSON.parse(payload) as LunaParameters;
         this.subscription = method === 'serviceEvents';
         if (method === 'start') {
@@ -108,7 +119,12 @@ async function installStartupHarness(
           pendingStarts.push((response) => this.respond(response));
         } else if (method === 'serviceEvents') {
           probe.subscriptions++;
-          this.respond({ subscribed: true });
+          if (remainingSubscriptionFailures > 0) {
+            remainingSubscriptionFailures--;
+            this.respond({ returnValue: false, errorCode: 1, errorText: 'subscribe failed' });
+          } else {
+            this.respond({ subscribed: true });
+          }
         } else if (method === 'getDevMode') {
           this.respond({ devmode: devMode });
         } else if (method === 'create') {
@@ -127,6 +143,7 @@ async function installStartupHarness(
       cancel(): void {
         if (this.cancelled) return;
         this.cancelled = true;
+        if (this.method === 'start') probe.startCancellations++;
         if (this.subscription) probe.subscriptionCancellations++;
       }
     }
@@ -135,6 +152,7 @@ async function installStartupHarness(
     initialVisibility: options.visibility ?? 'visible',
     devMode: options.devMode ?? false,
     startResult: options.startResult ?? { running: true, port: 9999 },
+    subscriptionFailures: options.subscriptionFailures ?? 0,
   });
 }
 
@@ -210,6 +228,65 @@ test('service event subscription is replaced across background restarts', async 
   await releaseServiceStart(page);
   await expect.poll(async () => (await startupProbe(page)).subscriptions).toBe(2);
   expect(await startupProbe(page)).toMatchObject({
+    subscriptionCancellations: 1,
+  });
+});
+
+test('late service start still initializes within the same foreground lifecycle', async ({ page }) => {
+  await page.route('http://127.0.0.1:9999/uploads', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await routePlaylist(page);
+  await seedPlaylist(page);
+  await installStartupHarness(page);
+
+  await page.goto('/');
+  await expect.poll(async () => (await startupProbe(page)).starts).toBe(1);
+  await page.waitForTimeout(3100);
+  expect(await startupProbe(page)).toMatchObject({
+    starts: 1,
+    startCancellations: 0,
+    subscriptions: 0,
+  });
+
+  await releaseServiceStart(page);
+  await expect.poll(async () => (await startupProbe(page)).subscriptions).toBe(1);
+});
+
+test('backgrounding cancels a pending service start before restarting', async ({ page }) => {
+  await page.route('http://127.0.0.1:9999/uploads', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await routePlaylist(page);
+  await seedPlaylist(page);
+  await installStartupHarness(page);
+
+  await page.goto('/');
+  await expect.poll(async () => (await startupProbe(page)).starts).toBe(1);
+  await page.evaluate(() => {
+    (window as unknown as { __hideApp__: () => void }).__hideApp__();
+  });
+  await expect.poll(async () => (await startupProbe(page)).startCancellations).toBe(1);
+
+  await page.evaluate(() => {
+    (window as unknown as { __showApp__: () => void }).__showApp__();
+  });
+  await expect.poll(async () => (await startupProbe(page)).starts).toBe(2);
+  await releaseServiceStart(page);
+  await expect.poll(async () => (await startupProbe(page)).subscriptions).toBe(1);
+});
+
+test('retries a failed service event subscription without restarting the service', async ({ page }) => {
+  await page.route('http://127.0.0.1:9999/uploads', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await routePlaylist(page);
+  await seedPlaylist(page);
+  await installStartupHarness(page, { subscriptionFailures: 1 });
+
+  await page.goto('/');
+  await releaseServiceStart(page);
+
+  await expect.poll(async () => (await startupProbe(page)).subscriptions).toBe(2);
+  expect(await startupProbe(page)).toMatchObject({
+    starts: 1,
     subscriptionCancellations: 1,
   });
 });

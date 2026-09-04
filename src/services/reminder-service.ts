@@ -276,6 +276,7 @@ class ReminderServiceImpl {
     try {
       lunaRequest('luna://com.webos.service.activitymanager', {
         method: 'create',
+        timeoutMs: CONFIG.LUNA.REQUEST_TIMEOUT_MS,
         parameters: {
           activity: {
             name,
@@ -312,6 +313,7 @@ class ReminderServiceImpl {
     try {
       lunaRequest('luna://com.webos.service.activitymanager', {
         method: 'cancel',
+        timeoutMs: CONFIG.LUNA.REQUEST_TIMEOUT_MS,
         parameters: { activityName: activityName(chKey, startMs) },
         onSuccess: () => log.debug(
           'Reminder activity cancelled',

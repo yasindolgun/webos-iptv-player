@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CONFIG } from '../config';
 import { nativeDrmConfig, PlayReadyDrm } from './playready-drm';
 
 describe('nativeDrmConfig', () => {
@@ -119,6 +120,11 @@ describe('PlayReadyDrm', () => {
     });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+    Reflect.deleteProperty(window, 'PalmServiceBridge');
+  });
+
   it('loads, subscribes and configures post-acquisition before playback', async () => {
     const drm = new PlayReadyDrm();
     await expect(drm.prepare({
@@ -155,5 +161,70 @@ describe('PlayReadyDrm', () => {
       expect(request.mock.calls.some(call => call[1].method === 'unload')).toBe(true);
     });
     expect(cancelSubscription).toHaveBeenCalledOnce();
+  });
+
+  it('times out an unanswered DRM call and releases its bridge', async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn();
+    class SilentPalmServiceBridge {
+      onservicecallback: ((message: string) => void) | null = null;
+
+      call(): void {}
+
+      cancel(): void {
+        cancel();
+        this.onservicecallback = null;
+      }
+    }
+    Object.defineProperty(window, 'PalmServiceBridge', {
+      configurable: true,
+      value: SilentPalmServiceBridge,
+    });
+    const drm = new PlayReadyDrm();
+    const prepared = drm.prepare({
+      type: 'playready',
+      licenseUrl: '',
+      customData: '',
+      unsupportedOptions: [],
+    }, vi.fn());
+    const rejection = expect(prepared).rejects.toThrow('timed out');
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(CONFIG.LUNA.DRM_REQUEST_TIMEOUT_MS);
+
+    await rejection;
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it('cancels an in-flight DRM call when playback releases it', async () => {
+    const cancel = vi.fn();
+    class SilentPalmServiceBridge {
+      onservicecallback: ((message: string) => void) | null = null;
+
+      call(): void {}
+
+      cancel(): void {
+        cancel();
+        this.onservicecallback = null;
+      }
+    }
+    Object.defineProperty(window, 'PalmServiceBridge', {
+      configurable: true,
+      value: SilentPalmServiceBridge,
+    });
+    const drm = new PlayReadyDrm();
+    const prepared = drm.prepare({
+      type: 'playready',
+      licenseUrl: '',
+      customData: '',
+      unsupportedOptions: [],
+    }, vi.fn());
+    const rejection = expect(prepared).rejects.toThrow('load cancelled');
+    await Promise.resolve();
+
+    drm.release();
+
+    await rejection;
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });
