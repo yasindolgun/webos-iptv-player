@@ -213,6 +213,23 @@ describe('PlayerPipeline desktop routing', () => {
     expect(pipeline.isMseActive()).toBe(false);
   });
 
+  it('records the HTTP content-type classification outcome', async () => {
+    const info = vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response('', { status: 200, headers: { 'content-type': 'video/mp4' } }),
+    ));
+    const pipeline = new PlayerPipeline(callbacks());
+    pipeline.setVideoElement(videoElement());
+
+    pipeline.load('http://host/a', null);
+    await settle();
+
+    expect(info.mock.calls.flat().join(' ')).toContain('event=playback.classify.result');
+    expect(info.mock.calls.flat().join(' ')).toContain('status=200');
+    expect(info.mock.calls.flat().join(' ')).toContain('contentType=video/mp4');
+    expect(info.mock.calls.flat().join(' ')).toContain('outcome=header');
+  });
+
   it('routes detected HLS through hls.js', async () => {
     installPreviewGlobals();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(

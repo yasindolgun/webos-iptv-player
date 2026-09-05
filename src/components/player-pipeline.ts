@@ -317,6 +317,7 @@ export class PlayerPipeline {
   // real signal. Headers are enough, so cancel the body. Returns '' on a
   // CORS/network failure, leaving the caller on its URL heuristic (default HLS).
   private async detectContentType(url: string, loadToken: number): Promise<string> {
+    const startedAt = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), CONFIG.PLAYER.MANIFEST_TIMEOUT);
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -324,15 +325,27 @@ export class PlayerPipeline {
       const res = await fetch(url, { signal: controller.signal });
       const ct = (res.headers.get('content-type') || '').toLowerCase();
       const baseType = ct.split(';')[0].trim();
+      const probeDetail = (resolvedType: string, outcome: string): void => {
+        log.info('Content-type classification result', 'event=playback.classify.result',
+          this.callbacks.playbackLabel(loadToken),
+          `status=${String(res.status)}`, `ok=${String(res.ok)}`,
+          `contentType=${resolvedType || '(none)'}`,
+          `outcome=${outcome}`, `elapsedMs=${String(Date.now() - startedAt)}`,
+          'url=', diagnosticStreamUrl(url));
+      };
       const sniffBody = baseType === 'application/octet-stream'
         || baseType === 'application/xml'
         || baseType === 'text/xml';
       if (!sniffBody) {
         res.body?.cancel().catch(() => {});
+        probeDetail(ct, res.ok ? 'header' : 'http-error');
         return ct;
       }
       reader = res.body?.getReader() ?? null;
-      if (!reader) return ct;
+      if (!reader) {
+        probeDetail(ct, res.ok ? 'header-no-body' : 'http-error');
+        return ct;
+      }
       const chunks: Uint8Array[] = [];
       let length = 0;
       while (length < 4096) {
@@ -348,11 +361,16 @@ export class PlayerPipeline {
         prefix.set(chunk, offset);
         offset += chunk.length;
       }
-      return sniffStreamContentType(ct, prefix);
+      const resolvedType = sniffStreamContentType(ct, prefix);
+      probeDetail(resolvedType, res.ok ? 'sniffed' : 'http-error-sniffed');
+      return resolvedType;
     } catch (error) {
       log.warn('Content-type classification failed', 'event=playback.classify.failed',
         this.callbacks.playbackLabel(loadToken),
-        error instanceof Error ? error.name : 'Error');
+        `outcome=${error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'network'}`,
+        `elapsedMs=${String(Date.now() - startedAt)}`,
+        error instanceof Error ? error.name : 'Error',
+        'url=', diagnosticStreamUrl(url));
       return '';
     } finally {
       if (reader) void reader.cancel().catch(() => {});
