@@ -34,6 +34,7 @@ import {
   assertStartupHoverBenchmark,
   runGroupBenchmark,
   summarizeRetainedMemory,
+  summarizeHeapCheckpoints,
   assertRetainedMemory,
   assertXMLTVCatalogBenchmark,
   assertGroupBenchmarkScale,
@@ -56,6 +57,7 @@ const KEY_SAMPLES = Number(process.env.BENCHMARK_KEY_SAMPLES ?? '30');
 const QUERY_SAMPLES = Number(process.env.BENCHMARK_QUERY_SAMPLES ?? '5');
 const PORT = Number(process.env.TV_CDP_PORT ?? '9998');
 const cleanupOnly = process.argv.includes('--cleanup');
+const preflightOnly = process.argv.includes('--preflight');
 
 for (const [name, value] of [
   ['BENCHMARK_SCALE', SCALE],
@@ -197,6 +199,10 @@ async function reloadApp(client, selectors = ['#view-channels']) {
   }, { selectors, timeoutMs: READY_TIMEOUT_MS });
 }
 
+async function reloadDocument(client) {
+  await waitForLoad(client, () => client.call('Page.reload', { ignoreCache: true }));
+}
+
 async function installFixture(client) {
   return evaluate(client, installBenchmarkFixture, {
     scale: SCALE,
@@ -216,10 +222,21 @@ async function cleanupFixture(client) {
 }
 
 async function runSuites(client) {
-  return evaluate(client, runBenchmarkSuites, {
-    keySamples: KEY_SAMPLES,
-    querySamples: QUERY_SAMPLES,
+  await client.call('Runtime.enable');
+  const removeListener = client.on('Runtime.consoleAPICalled', (event) => {
+    const message = event.args?.[0]?.value;
+    if (typeof message === 'string' && message.indexOf('[benchmark-ui]') === 0) {
+      console.log(message);
+    }
   });
+  try {
+    return await evaluate(client, runBenchmarkSuites, {
+      keySamples: KEY_SAMPLES,
+      querySamples: QUERY_SAMPLES,
+    });
+  } finally {
+    removeListener();
+  }
 }
 
 async function runColdLoad(client) {
@@ -335,29 +352,66 @@ async function verifyInstalledBuild(client) {
 
 async function runTvBenchmark() {
   let client = await connect();
+  if (preflightOnly) {
+    try {
+      const build = await verifyInstalledBuild(client);
+      const device = await readDevice(client);
+      console.log(JSON.stringify({
+        status: 'ready',
+        appId: APP_ID,
+        ...build,
+        device,
+      }, null, 2));
+    } finally {
+      client.close();
+    }
+    return;
+  }
   if (cleanupOnly) {
-    const cleanup = await cleanupFixture(client);
-    await reloadApp(client, ['#view-channels', '#view-settings']);
-    console.log(JSON.stringify(cleanup, null, 2));
-    client.close();
+    try {
+      const cleanup = await cleanupFixture(client);
+      await reloadDocument(client);
+      console.log(JSON.stringify(cleanup, null, 2));
+    } finally {
+      client.close();
+    }
     return;
   }
   let fixtureAttempted = false;
   try {
     const build = await verifyInstalledBuild(client);
+    console.log(
+      '[benchmark-tv] qualification requires the physical panel to remain on '
+      + 'with no system overlay; discard the run if Screen Off appears',
+    );
+    const heapCheckpoints = [];
+    const captureHeap = async (stage) => {
+      heapCheckpoints.push({
+        stage,
+        ...await client.call('Runtime.getHeapUsage'),
+      });
+    };
+    await captureHeap('before fixture');
     fixtureAttempted = true;
+    console.log(`[benchmark-tv] installing ${PROFILE} fixture`);
     const fixtureStarted = Date.now();
     const fixture = await installFixture(client);
     const fixtureSetupMs = Date.now() - fixtureStarted;
+    await captureHeap('after fixture');
     const startupStarted = Date.now();
     await reloadApp(client);
     const startupReadyMs = Date.now() - startupStarted;
+    await captureHeap('after cached startup');
     const startupHover = await evaluate(client, measureStartupHoverBenchmark);
     assertStartupHoverBenchmark(startupHover);
     await installParserBundle(client);
+    console.log('[benchmark-tv] running raw parser workloads');
     const parsers = await evaluate(client, runRawParserBenchmarks, { scale: SCALE });
+    await captureHeap('after raw parsers');
     await client.call('HeapProfiler.collectGarbage');
+    console.log('[benchmark-tv] running UI workloads');
     const suites = await runSuites(client);
+    await captureHeap('after view suites');
     suites.parsers = parsers;
     const pointer = await evaluate(client, preparePointerBenchmark);
     await client.call('Input.dispatchMouseEvent', {
@@ -396,6 +450,8 @@ async function runTvBenchmark() {
     const retained = summarizeRetainedMemory(beforeReopen.usedSize, reopenHeap);
     assertRetainedMemory(retained);
     const heap = await client.call('Runtime.getHeapUsage');
+    heapCheckpoints.push({ stage: 'after reopen cycles', ...heap });
+    console.log('[benchmark-tv] running hosted XMLTV pipelines');
     const xmltvPipeline = await measureHostedXMLTVPipelineComparison({
       scale: SCALE,
       deviceIp: resolveConfiguredDeviceIp(),
@@ -409,14 +465,18 @@ async function runTvBenchmark() {
     });
     parsers.xmltvPipelineBuffered = xmltvPipeline.buffered;
     parsers.xmltvPipeline = xmltvPipeline.streaming;
+    await captureHeap('after XMLTV pipelines');
     // Runs last of the in-page work: its multi-megabyte feed would otherwise
     // skew the reopen heap samples measured above.
+    console.log('[benchmark-tv] running XMLTV catalog comparison');
     parsers.xmltvCatalog = await measureXMLTVCatalogBenchmark(SCALE, {
       evaluate: (fn, arg) => evaluate(client, fn, arg),
       collectGarbage: () => client.call('HeapProfiler.collectGarbage'),
       heapUsed: async () => (await client.call('Runtime.getHeapUsage')).usedSize,
     });
     assertXMLTVCatalogBenchmark(parsers.xmltvCatalog);
+    await captureHeap('after XMLTV catalog');
+    console.log('[benchmark-tv] running M3U Search workload');
     await evaluate(client, installM3USearchFixture);
     await reloadApp(client);
     suites.search.m3u = await evaluate(
@@ -425,6 +485,8 @@ async function runTvBenchmark() {
       { querySamples: QUERY_SAMPLES },
     );
     assertM3USearchBenchmark(suites.search.m3u);
+    await captureHeap('after M3U search');
+    console.log('[benchmark-tv] running unique-group workload');
     await evaluate(client, installUniqueGroupFixture, SCALE);
     const groupStartupStarted = Date.now();
     await reloadApp(client);
@@ -432,12 +494,15 @@ async function runTvBenchmark() {
     groups.startupMs = Date.now() - groupStartupStarted;
     assertGroupBenchmarkScale(groups, SCALE);
     suites.groups = groups;
+    await captureHeap('after unique groups');
+    console.log('[benchmark-tv] running cold-load workload');
     const coldLoad = await runColdLoad(client);
     assertColdLoadBenchmark(coldLoad, SCALE);
     suites.coldLoad = coldLoad;
+    await captureHeap('after cold load');
     const device = await readDevice(client);
     const report = {
-      version: 1,
+      version: 2,
       target: 'webos-tv',
       generatedAt: new Date().toISOString(),
       profile: PROFILE,
@@ -462,6 +527,7 @@ async function runTvBenchmark() {
           usedHeapMiB: Math.round(heap.usedSize / 1_048_576 * 10) / 10,
           totalHeapMiB: Math.round(heap.totalSize / 1_048_576 * 10) / 10,
           retained,
+          pageHeapCheckpoints: summarizeHeapCheckpoints(heapCheckpoints),
           ...readRendererMemory(),
         },
       },
@@ -477,8 +543,9 @@ async function runTvBenchmark() {
   } finally {
     if (fixtureAttempted) {
       try {
+        console.log('[benchmark-tv] restoring original TV data');
         await cleanupFixture(client);
-        await reloadApp(client, ['#view-channels', '#view-settings']);
+        await reloadDocument(client);
         const restored = await evaluate(client, async () => {
           const db = await new Promise((resolve, reject) => {
             const request = indexedDB.open('iptv');

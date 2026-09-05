@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   assertBenchmarkScale,
+  cleanupBenchmarkFixture,
   runBenchmarkSuites,
   runRawParserBenchmarks,
+  summarizeHeapCheckpoints,
 } from '../benchmarks/benchmark-suite.mjs';
 
 const originalWindow = globalThis.window;
@@ -51,6 +53,39 @@ describe('raw parser benchmark fixtures', () => {
 });
 
 describe('application benchmark lifecycle', () => {
+  it('cleans the benchmark catalog by key range without reading user records', () => {
+    const source = cleanupBenchmarkFixture.toString();
+
+    expect(source).toContain('IDBKeyRange.bound(accountPrefix');
+    expect(source).not.toContain('const cursorRequest = catalog.openCursor()');
+    expect(source).toContain("if (backupEntry && cleanupStores.indexOf('playlist-cache')");
+  });
+
+  it('summarizes named page-heap checkpoints without claiming a sampled peak', () => {
+    expect(summarizeHeapCheckpoints([
+      { stage: 'before fixture', usedSize: 10 * 1_048_576, totalSize: 20 * 1_048_576 },
+      { stage: 'after startup', usedSize: 25 * 1_048_576, totalSize: 30 * 1_048_576 },
+      { stage: 'after cleanup', usedSize: 12 * 1_048_576, totalSize: 24 * 1_048_576 },
+    ])).toEqual({
+      samples: [
+        { stage: 'before fixture', usedHeapMiB: 10, totalHeapMiB: 20 },
+        { stage: 'after startup', usedHeapMiB: 25, totalHeapMiB: 30 },
+        { stage: 'after cleanup', usedHeapMiB: 12, totalHeapMiB: 24 },
+      ],
+      startUsedHeapMiB: 10,
+      checkpointPeakUsedHeapMiB: 25,
+      checkpointPeakStage: 'after startup',
+      finalUsedHeapMiB: 12,
+    });
+  });
+
+  it('rejects missing or invalid page-heap checkpoints', () => {
+    expect(() => summarizeHeapCheckpoints([])).toThrow('at least one checkpoint');
+    expect(() => summarizeHeapCheckpoints([
+      { stage: 'invalid', usedSize: 2, totalSize: 1 },
+    ])).toThrow('Invalid page-heap checkpoint');
+  });
+
   it('bounds search waits and reports long-running UI stages', () => {
     const source = runBenchmarkSuites.toString();
 

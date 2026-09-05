@@ -14,12 +14,22 @@ Install Docker Engine and the Compose plugin, then copy this directory to the Pi
 cd ops/telemetry
 cp .env.example .env
 nano .env
+chmod a+rx . grafana grafana/provisioning \
+  grafana/provisioning/datasources grafana/provisioning/dashboards \
+  grafana/dashboards
+chmod a+r grafana/provisioning/datasources/loki.yml \
+  grafana/provisioning/dashboards/iptv.yml \
+  grafana/dashboards/iptv-overview.json
 docker compose config --quiet
 docker compose up -d --build
 docker compose ps
 curl -fsS http://127.0.0.1:4318/health
 curl -fsS http://127.0.0.1:4318/ready
 ```
+
+The explicit permissions keep Grafana's unprivileged container user able to
+read the bind-mounted provisioning files even when the directory was copied
+from a host that creates owner-only directories. They do not expose `.env`.
 
 `/health` is only a process liveness check. It returns 200 even when Loki is
 unavailable. `/ready` checks Loki and returns 503 after a failed storage write;

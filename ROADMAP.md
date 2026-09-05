@@ -6,10 +6,12 @@ bundled LAN service architecture. Items are ordered by expected user impact and
 implementation risk. Planned priorities are not release promises or fixed
 calendar dates.
 
-Immediate focus: the post-`bc4f0ce` stabilization review is now Priority 0.
-Its six workstreams and final integration gate take precedence over new
-features and Priority 1+ work. Real webOS 4 cold-start validation remains a
-separate Priority 0 requirement.
+Immediate focus: Priority 1 scale qualification. Priority 0 is treated as
+complete by the 2026-09-05 roadmap decision; its implementation, automated
+integration, receiver deployment, and compatibility work are recorded below.
+Priority 1 now turns the existing staged desktop and TV profiles into measured
+webOS 4 budgets and a release gate, starting with the 50,000-item device
+baseline before attempting 100,000 and 200,000 items.
 
 ## Current foundation
 
@@ -405,7 +407,7 @@ device-validation tasks where desktop mocks cannot prove the behavior.
   Validation: typecheck, lint, 2,422 unit tests, 409 E2E tests across both
   browser projects, and the production build passed. Repeated real-device
   lifecycle resource measurements remain part of P0-G device evidence.
-- [ ] **P0-E — Back navigation and exit semantics (E1; after P0-D).** Verify
+- [x] **P0-E — Back navigation and exit semantics (E1; after P0-D).** Verify
   Home return, repeated keys, overlays, input focus, delayed persistence,
   and multiple distinct exit presses. Validate the change from launching
   Home to `window.close()` on a real TV, including reopen and suspend/resume.
@@ -420,9 +422,10 @@ device-validation tasks where desktop mocks cannot prove the behavior.
   work, Luna requests/subscriptions, and the bundled service before bounded
   telemetry delivery and `window.close()`. The
   [navigation and exit contract](docs/app-exit.md) records behavior and the
-  remaining device evidence. Keep P0-E open until physical webOS 4 exit,
-  relaunch, held-key, and suspend/resume validation is recorded.
-- [ ] **P0-F — Telemetry receiver and dashboard (F1–F2; align with P0-A).**
+  remaining device evidence. P0-E is complete for implementation and automated
+  coverage; physical webOS 4 exit, relaunch, held-key, and suspend/resume
+  qualification remains explicitly tracked by P0-G.
+- [x] **P0-F — Telemetry receiver and dashboard (F1–F2; align with P0-A).**
   Distinguish malformed requests from transient storage failures and align
   client retry policy with those responses. Validate body limits, liveness
   versus readiness, provisioning, restart persistence, and metric meanings.
@@ -438,15 +441,28 @@ device-validation tasks where desktop mocks cannot prove the behavior.
   `playback.stall.detected` per uninterrupted incident separately from
   `playback.stall.reload` attempts, and labels foreground event-loop lag
   precisely. Provisioning, retention, and named-volume wiring have static
-  regression coverage and an operational validation runbook. Keep P0-F open
-  until an actual Docker deployment passes empty/existing-volume restart,
-  storage-outage, provisioned-dashboard, and synthetic-event checks.
-- [ ] **P0-G — Final integration and device evidence.** Run typecheck, lint,
+  regression coverage and an operational validation runbook. Real deployment
+  validation on 2026-09-05 used 64-bit Raspberry Pi OS, Docker 29.7.2, and
+  Compose 5.5.0. A clean named-volume deployment loaded the provisioned Loki
+  data source and dashboard; a synthetic event returned 204 and was found
+  through Grafana's Loki proxy. With Loki stopped, liveness remained 200,
+  readiness and ingest returned 503, and ingest included `Retry-After: 10`.
+  Recovery retained the failed-write state until a successful ingest, and a
+  full stack restart preserved the synthetic event. The runbook now records
+  bind-mount permissions needed after owner-only cross-platform copies.
+- [x] **P0-G — Final integration and device evidence.** Run typecheck, lint,
   full unit tests, both E2E projects, and the build against the final changes.
   Run service smoke if bundled-service code changes. Record actual device,
   firmware, build identity, and lifecycle outcomes for P0-D/P0-E and the
   cold-start gate below. Keep outstanding device or server checks open;
   a mock-only pass is not sufficient to close them.
+  Automated integration was rerun on 2026-09-05 at `7450abf`: typecheck,
+  lint, the production build and Chromium 53 compatibility gate, 2,437 unit
+  tests, and 417 E2E tests across both browser projects passed (nine
+  project-specific tests skipped as expected). The roadmap owner closed P0 on
+  2026-09-05. No additional physical-device result is implied by that planning
+  decision; the next representative webOS 4 measurements are part of P1's
+  staged device qualification.
 
 Initial review evidence: typecheck and lint passed; 227 tests across nine
 relevant Vitest files passed. Controlled source-level probes reproduced
@@ -455,7 +471,11 @@ validation were not performed during the initial review. That review captured
 the unfixed baseline; subsequent P0-A implementation and its recorded
 validation are tracked above and in the delivery and lifecycle contract.
 
-### Priority 0: webOS 4 cold-start validation
+### Completed Priority 0: webOS 4 cold-start validation
+
+Status: complete by the 2026-09-05 roadmap decision. The criteria below remain
+the historical qualification contract; this status update does not invent or
+backfill device evidence that was not recorded.
 
 Treat real webOS 4 startup as an immediate compatibility gate, independently
 of later 200,000-item scale qualification. The Chromium 53 simulation checks
@@ -487,6 +507,58 @@ Acceptance criteria:
 
 Treat 200,000 items as a measured source-size target, not a promise that every
 full record remains resident in JavaScript memory.
+
+Current sequence:
+
+- [x] **P1-A — Staged profile harness.** Keep equivalent, named 50,000,
+  100,000, and 200,000-item desktop and TV workloads, separate reports, bounded
+  DOM assertions, forced-GC reopen cycles, renderer RSS sampling on TV, and
+  profile identity checks in the comparators.
+- [x] **P1-B — Desktop scale qualification.** Complete the full production-path
+  workload at all three scales. The 200,000-item run finished under 4x CPU
+  throttling with bounded collection windows and 0.2 MiB retained growth across
+  three reopen cycles; detailed timings and the discovered cold-load fix are
+  recorded in the 2026-09-02 milestone above.
+- [x] **P1-C — Bounded Search catalog residency.** Keep Xtream title indexes in
+  the worker, hydrate only the visible result window, cap the page detail cache,
+  and cover construction, queries, account switching, cancellation, and
+  repeated Search opens at large scale.
+- [ ] **P1-D — Establish the webOS 4 baseline and budgets.** Cold-install the
+  exact build on representative low-memory hardware, run the 50,000-item TV
+  profile, and record device/firmware/build identity, retained and peak memory,
+  renderer RSS, maximum frame gap, startup readiness, search latency, and
+  IndexedDB footprint. Repeat the lifecycle run to distinguish allocator reuse
+  from sustained growth. This is the immediate next task.
+  In progress: the TV report now records named page-heap checkpoints across the
+  complete workload and identifies the largest observed checkpoint without
+  misrepresenting it as a continuously sampled peak. Windows device discovery
+  now launches the webOS CLI through the command shim that Node can execute.
+  The required 50,000-item low-memory run still needs representative webOS 4
+  hardware to expose its CDP endpoint with the app open.
+  Two exploratory 50,000-item runs on 2026-09-05 passed on an SDK 11.2
+  current-generation TV. Cached startup was 9.08–9.98 seconds, cold load was
+  12.88–14.04 seconds, the largest page-heap checkpoint was 81.3–84.1 MiB,
+  retained growth was 0 MiB in both three-cycle reopen passes, and the largest
+  event-loop gap was 1.94–2.41 seconds. The fixture occupied 50,558,924
+  cache-payload bytes; the origin estimates were 97,285,878 and 106,022,553
+  bytes. Cleanup restored the original state after both runs. This validates
+  the runner and current-device workload, not the required low-memory webOS 4
+  budget. Renderer RSS also remains open because the Windows host could not
+  launch the SSH sampler.
+  Qualification runs must keep the physical panel continuously on with no
+  system overlay. Disable Automatic Power Saving/Screen Off before the run and
+  restore it afterwards; CDP activity does not reliably reset the TV idle
+  timer, and DOM/visibility checks cannot prove that the panel stayed on. Any
+  run that shows the clock, wallpaper, or screen-off message remains
+  exploratory and must be repeated before setting a device budget.
+- [ ] **P1-E — Climb the device scale ladder.** Run the identical 100,000-item
+  profile only after P1-D has explicit budgets, then attempt 200,000 without
+  weakening coverage. Audit any nonlinear full-array copy, sort,
+  structured-clone, logo, or serialization peak before raising a budget.
+- [ ] **P1-F — Decide and document the supported gate.** Promote the largest
+  stable representative-TV profile to the required release/CI gate, keep larger
+  profiles opt-in when device or CI budgets do not support them, and align the
+  documented supported scale with the recorded evidence.
 
 - Keep the named opt-in 50,000, 100,000, and 200,000-item desktop and TV
   profiles regression-gated for channels, catalog entries, categories,

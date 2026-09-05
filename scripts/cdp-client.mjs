@@ -115,11 +115,22 @@ export function normalizeDeviceConfigurationError(error) {
   );
 }
 
-export function resolveConfiguredDeviceIp({ deviceName, execFile = execFileSync } = {}) {
+export function resolveConfiguredDeviceIp({
+  deviceName,
+  execFile = execFileSync,
+  environment = process.env,
+  platform = process.platform,
+} = {}) {
   try {
+    const command = platform === 'win32'
+      ? environment.ComSpec || 'cmd.exe'
+      : 'ares-setup-device';
+    const args = platform === 'win32'
+      ? ['/d', '/s', '/c', 'ares-setup-device.cmd -F -j']
+      : ['-F', '-j'];
     const raw = execFile(
-      'ares-setup-device',
-      ['-F', '-j'],
+      command,
+      args,
       { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
     );
     const devices = JSON.parse(raw);

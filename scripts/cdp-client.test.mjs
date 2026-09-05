@@ -121,8 +121,27 @@ describe('resolveConfiguredDeviceIp', () => {
 
     expect(resolveConfiguredDeviceIp({ deviceName: 'tv-b', execFile })).toBe('192.0.2.2');
     expect(execFile).toHaveBeenCalledWith(
-      'ares-setup-device',
-      ['-F', '-j'],
+      process.platform === 'win32' ? process.env.ComSpec || 'cmd.exe' : 'ares-setup-device',
+      process.platform === 'win32'
+        ? ['/d', '/s', '/c', 'ares-setup-device.cmd -F -j']
+        : ['-F', '-j'],
+      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+  });
+
+  it('uses the Windows command shim for direct Node child processes', () => {
+    const execFile = vi.fn(() => JSON.stringify([
+      { name: 'tv-a', default: true, deviceinfo: { ip: '192.0.2.1' } },
+    ]));
+
+    expect(resolveConfiguredDeviceIp({
+      execFile,
+      environment: { ComSpec: 'C:\\Windows\\System32\\cmd.exe' },
+      platform: 'win32',
+    })).toBe('192.0.2.1');
+    expect(execFile).toHaveBeenCalledWith(
+      'C:\\Windows\\System32\\cmd.exe',
+      ['/d', '/s', '/c', 'ares-setup-device.cmd -F -j'],
       { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
     );
   });

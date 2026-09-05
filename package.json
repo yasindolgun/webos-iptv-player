@@ -39,6 +39,7 @@
     "benchmark:profile:tv": "node benchmarks/run-profile.mjs --tv",
     "benchmark:tv:check": "npm run benchmark:tv && node benchmarks/compare.mjs --tv",
     "benchmark:tv:update": "npm run benchmark:tv && node benchmarks/compare.mjs --tv --update",
+    "benchmark:tv:preflight": "node benchmarks/tv-runner.mjs --preflight",
     "benchmark:tv:cleanup": "node benchmarks/tv-runner.mjs --cleanup"
   },
   "devDependencies": {

@@ -80,12 +80,12 @@ export async function installBenchmarkFixture(options) {
       const key = localStorage.key(index);
       if (key !== null) backup[key] = localStorage.getItem(key);
     }
-    let playlistCache = null;
+    let playlistCacheRecords = null;
     if (db.objectStoreNames.contains('playlist-cache')) {
       const playlistTx = db.transaction('playlist-cache', 'readonly');
-      playlistCache = await requestValue(
-        playlistTx.objectStore('playlist-cache').get('combined'),
-      ) || null;
+      playlistCacheRecords = await requestValue(
+        playlistTx.objectStore('playlist-cache').getAll(),
+      );
     }
     let cacheMeta = null;
     if (db.objectStoreNames.contains('cache-meta')) {
@@ -111,7 +111,7 @@ export async function installBenchmarkFixture(options) {
       key: options.backupKey,
       data: {
         localStorage: backup,
-        playlistCache,
+        playlistCacheRecords,
         cacheMeta,
         recentlyWatched,
         playbackProgress,
@@ -295,19 +295,36 @@ export async function installBenchmarkFixture(options) {
       },
     }));
     if (directStorage) {
-      fixtureTx.objectStore('playlist-cache').put(cacheRecord(
+      const playlistStore = fixtureTx.objectStore('playlist-cache');
+      const timestamp = Date.now();
+      const batchKeys = [];
+      for (let offset = 0; offset < channels.length; offset += 500) {
+        const key = `playlist-batch:benchmark-fixture:${String(offset / 500)}`;
+        batchKeys.push(key);
+        playlistStore.put(cacheRecord(
+          'playlist-cache',
+          'playlist',
+          {
+            key,
+            timestamp,
+            data: { version: 3, channels: channels.slice(offset, offset + 500) },
+          },
+        ));
+      }
+      playlistStore.put(cacheRecord(
         'playlist-cache',
         'playlist',
         {
-        key: 'combined',
-        timestamp: Date.now(),
-        data: {
-          version: 2,
-          sourceSignature: (sourceHash >>> 0).toString(16),
-          channels,
-          epgSources,
-          timestamp: Date.now(),
-        },
+          key: 'combined',
+          timestamp,
+          data: {
+            version: 3,
+            sourceSignature: (sourceHash >>> 0).toString(16),
+            epgSources,
+            timestamp,
+            channelCount: channels.length,
+            batchKeys,
+          },
         },
       ));
     }
@@ -655,24 +672,21 @@ export async function cleanupBenchmarkFixture(options) {
     const cleanupTx = db.transaction(cleanupStores, 'readwrite');
     cleanupTx.objectStore('epg-cache').delete(options.epgUrl);
     const catalog = cleanupTx.objectStore('catalog-cache');
-    const cursorRequest = catalog.openCursor();
-    cursorRequest.onsuccess = () => {
-      const cursor = cursorRequest.result;
-      if (!cursor) return;
-      const key = String(cursor.key);
-      if (key === options.backupKey || key.indexOf(`${options.accountId}|`) === 0) {
-        cursor.delete();
-      }
-      cursor.continue();
-    };
+    const accountPrefix = `${options.accountId}|`;
+    catalog.delete(options.backupKey);
+    catalog.delete(IDBKeyRange.bound(accountPrefix, `${accountPrefix}\uffff`));
     if (cleanupStores.indexOf('user-meta') >= 0) {
       cleanupTx.objectStore('user-meta').delete(options.backupKey);
     }
-    if (cleanupStores.indexOf('playlist-cache') >= 0) {
+    if (backupEntry && cleanupStores.indexOf('playlist-cache') >= 0) {
       const playlist = cleanupTx.objectStore('playlist-cache');
-      const savedPlaylist = backupEntry?.data?.playlistCache;
-      if (savedPlaylist) playlist.put(savedPlaylist);
-      else playlist.delete('combined');
+      const savedPlaylists = Array.isArray(backupEntry?.data?.playlistCacheRecords)
+        ? backupEntry.data.playlistCacheRecords
+        : backupEntry?.data?.playlistCache
+          ? [backupEntry.data.playlistCache]
+          : [];
+      playlist.clear();
+      for (const record of savedPlaylists) playlist.put(record);
     }
     if (cleanupStores.indexOf('cache-meta') >= 0
         && Array.isArray(backupEntry?.data?.cacheMeta)) {
@@ -1402,9 +1416,19 @@ export async function measureHostedXMLTVPipelineComparison(options, io) {
       channelIds: fixture.channelIds,
       channelNames: fixture.channelNames,
     };
+    const startProcessMemorySampling = async () => {
+      try {
+        return await startRendererRssSampler(options.appId);
+      } catch (error) {
+        const reason = error instanceof Error
+          ? `${error.code ? `${error.code}: ` : ''}${error.message}`
+          : String(error);
+        return async () => ({ rendererMemoryUnavailableReason: reason });
+      }
+    };
     const benchmarkIo = {
       ...io,
-      startProcessMemorySampling: () => startRendererRssSampler(options.appId),
+      startProcessMemorySampling,
     };
     return await measureXMLTVPipelineComparison(benchmarkOptions, benchmarkIo);
   } finally {
@@ -1480,33 +1504,59 @@ export async function installUniqueGroupFixture(scale) {
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
   });
-  const tx = db.transaction('playlist-cache', 'readwrite');
-  const store = tx.objectStore('playlist-cache');
-  const cached = await new Promise((resolve, reject) => {
-    const request = store.get('combined');
+  const requestValue = (request) => new Promise((resolve, reject) => {
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
   });
-  if (!cached || !cached.data || !Array.isArray(cached.data.channels)
-      || cached.data.channels.length !== scale) {
+  const readTx = db.transaction('playlist-cache', 'readonly');
+  const readStore = readTx.objectStore('playlist-cache');
+  const cached = await new Promise((resolve, reject) => {
+    const request = readStore.get('combined');
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+  });
+  if (!cached || !cached.data) {
     db.close();
     throw new Error('Cannot install unique groups without the channel fixture');
   }
-  for (let index = 0; index < cached.data.channels.length; index++) {
-    cached.data.channels[index].group = `Group ${String(index)}`;
+  let batches = [];
+  if (Array.isArray(cached.data.channels)) {
+    batches = [cached];
+  } else if (cached.data.version === 3 && Array.isArray(cached.data.batchKeys)) {
+    const batchTx = db.transaction('playlist-cache', 'readonly');
+    const batchStore = batchTx.objectStore('playlist-cache');
+    batches = await Promise.all(
+      cached.data.batchKeys.map(key => requestValue(batchStore.get(key))),
+    );
   }
-  cached.byteSize = 0;
-  cached.byteSize = new TextEncoder().encode(JSON.stringify(cached)).byteLength;
-  store.put(cached);
+  const channelCount = batches.reduce((total, batch) => (
+    total + (Array.isArray(batch?.data?.channels) ? batch.data.channels.length : 0)
+  ), 0);
+  if (channelCount !== scale) {
+    db.close();
+    throw new Error('Cannot install unique groups without the channel fixture');
+  }
+  let channelIndex = 0;
+  const writeTx = db.transaction('playlist-cache', 'readwrite');
+  const writeStore = writeTx.objectStore('playlist-cache');
+  for (const batch of batches) {
+    for (const channel of batch.data.channels) {
+      channel.group = `Group ${String(channelIndex)}`;
+      channelIndex++;
+    }
+    batch.byteSize = 0;
+    batch.byteSize = new TextEncoder().encode(JSON.stringify(batch)).byteLength;
+    writeStore.put(batch);
+  }
   await new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
+    writeTx.oncomplete = () => resolve();
+    writeTx.onerror = () => reject(writeTx.error);
+    writeTx.onabort = () => reject(writeTx.error);
   });
   db.close();
   return {
-    channels: cached.data.channels.length,
-    groups: cached.data.channels.length,
+    channels: channelCount,
+    groups: channelCount,
   };
 }
 
@@ -1543,7 +1593,16 @@ export async function installM3USearchFixture() {
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
   });
-  if (!cached || !cached.data || !Array.isArray(cached.data.channels)) {
+  const cachedChannels = cached?.data?.channels;
+  const cachedBatchKeys = cached?.data?.batchKeys;
+  if (!cached || !cached.data || (
+    !Array.isArray(cachedChannels)
+    && !(cached.data.version === 3
+      && Number.isInteger(cached.data.channelCount)
+      && cached.data.channelCount > 0
+      && Array.isArray(cachedBatchKeys)
+      && cachedBatchKeys.length > 0)
+  )) {
     db.close();
     throw new Error('M3U Search benchmark requires a cached playlist fixture');
   }
@@ -1804,6 +1863,41 @@ export function summarizeRetainedMemory(beforeBytes, cycleBytes) {
     growthMiB: samplesMiB.length > 1
       ? Math.round((samplesMiB[samplesMiB.length - 1] - samplesMiB[0]) * 10) / 10
       : 0,
+  };
+}
+
+export function summarizeHeapCheckpoints(checkpoints) {
+  if (!Array.isArray(checkpoints) || checkpoints.length === 0) {
+    throw new Error('Page-heap summary requires at least one checkpoint');
+  }
+  const toMiB = value => Math.round(value / 1_048_576 * 10) / 10;
+  const samples = checkpoints.map((checkpoint) => {
+    if (
+      !checkpoint
+      || typeof checkpoint.stage !== 'string'
+      || checkpoint.stage.length === 0
+      || !Number.isFinite(checkpoint.usedSize)
+      || checkpoint.usedSize < 0
+      || !Number.isFinite(checkpoint.totalSize)
+      || checkpoint.totalSize < checkpoint.usedSize
+    ) {
+      throw new Error('Invalid page-heap checkpoint');
+    }
+    return {
+      stage: checkpoint.stage,
+      usedHeapMiB: toMiB(checkpoint.usedSize),
+      totalHeapMiB: toMiB(checkpoint.totalSize),
+    };
+  });
+  const peak = samples.reduce((largest, sample) => (
+    sample.usedHeapMiB > largest.usedHeapMiB ? sample : largest
+  ));
+  return {
+    samples,
+    startUsedHeapMiB: samples[0].usedHeapMiB,
+    checkpointPeakUsedHeapMiB: peak.usedHeapMiB,
+    checkpointPeakStage: peak.stage,
+    finalUsedHeapMiB: samples[samples.length - 1].usedHeapMiB,
   };
 }
 

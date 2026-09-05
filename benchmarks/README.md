@@ -66,7 +66,7 @@ sample counts instead of comparing incompatible reports.
 | Interaction transitions | Rapid wheel-to-D-pad handoff, trusted Magic Remote-style pointer activation, connected focus, EPG channel/date changes, and non-empty virtual windows |
 | Frame/long tasks | Action-to-next-frame distributions, frames over 50ms, and Long Tasks observed during the suites |
 | Stress watchdog | Maximum event-loop heartbeat gap and explicit post-interaction document liveness |
-| Memory | Used/total V8 heap plus three post-GC reopen cycles to detect retained growth |
+| Memory | Used/total V8 heap, named page-heap checkpoints across the TV workload, and three post-GC reopen cycles to detect retained growth |
 
 The key distributions record both synchronous main-thread handler time and
 action-to-next-frame latency. Search-open remains a synchronous handler
@@ -135,10 +135,27 @@ measure a stale bundle.
 
 ## LG webOS runner
 
+Before every measured TV run:
+
+- Temporarily disable Automatic Power Saving, Screen Off, and any idle screen
+  timer that can blank the panel.
+- Confirm that the app is visible with no TV system overlay, clock, wallpaper,
+  or screen-off message before starting the command.
+- Do not use the physical remote during the measured workload; restore the
+  power-saving setting after the run.
+- Discard the run as qualification evidence if the panel turns off or a system
+  overlay appears at any point. Rerun it with the panel continuously visible.
+
+CDP input does not necessarily reset the TV's physical inactivity timer, and
+the app page can remain connected while the panel is off. The runner cannot
+infer panel power from `document.visibilityState` or its DOM liveness checks,
+so this is an explicit operator check, not an automated assertion.
+
 Install and cold-start the exact build that should be measured, then run:
 
 ```bash
 ./build.sh --install
+npm run benchmark:tv:preflight
 npm run benchmark:tv
 npm run benchmark:tv:update
 npm run benchmark:tv:check
@@ -152,6 +169,17 @@ endpoint used by `scripts/tv.sh`. It does not use Playwright or desktop CPU
 throttling. Results are written to
 `test-output/benchmarks/tv-latest.json`, and the independent checked-in
 reference is `benchmarks/tv-baseline.json`.
+
+`benchmark:tv:preflight` is read-only. It verifies that the app is open and
+inspectable, then requires its version and `js/app.js` SHA-256 to match the
+local `package.json` and `dist/js/app.js` before printing the device identity.
+Use it after installation to catch a stale suspended app without installing
+fixtures or starting the long workload.
+
+The TV runner prints each top-level workload and forwards the existing
+`[benchmark-ui]` view-stage markers from the app page. Long 50,000+ item runs
+therefore remain visibly active without adding polling or timing work inside
+the measured handlers.
 
 `benchmark-suite.mjs` owns the shared, browser-side fixtures, measurements,
 and assertions used by both runners. `performance.spec.ts` supplies Playwright
@@ -195,6 +223,16 @@ npm run benchmark:tv:cleanup
 The runner refuses to start while an interrupted backup record exists, so it
 cannot silently overwrite the only restore point. It also records V8 heap and,
 when TV SSH access is available, renderer RSS and high-water RSS.
+An unavailable SSH sampler is recorded as
+`rendererMemoryUnavailableReason` without discarding the remaining TV run;
+device qualification still requires a separate successful RSS measurement.
+
+Named TV page-heap checkpoints bracket fixture installation, cached startup,
+raw parsing, view suites, reopen cycles, XMLTV work, M3U Search, unique groups,
+and cold load. `checkpointPeakUsedHeapMiB` is the largest of those explicit CDP
+readings and includes its stage name; it is deliberately not labelled as a
+continuously sampled peak. XMLTV pipeline reports retain their higher-frequency
+V8 and renderer RSS sampling for that individual operation.
 
 Before changing state, the runner hashes the installed `js/app.js` and checks
 its version against `appinfo.json`. Both must match the local `dist/js/app.js`
