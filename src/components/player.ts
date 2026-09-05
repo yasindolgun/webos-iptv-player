@@ -157,6 +157,11 @@ export class Player {
           seeking: v.seeking,
         };
       },
+      onDetected: recovery => {
+        log.warn('Watchdog detected a stalled stream',
+          'event=playback.stall.detected', this.playbackLabel(),
+          this.recoveryState(recovery));
+      },
       onReload: recovery => {
         log.warn('Watchdog reloading a stalled stream',
           'event=playback.stall.reload', this.playbackLabel(),

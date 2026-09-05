@@ -428,6 +428,19 @@ device-validation tasks where desktop mocks cannot prove the behavior.
   versus readiness, provisioning, restart persistence, and metric meanings.
   Accept when a synthetic event reaches the provisioned dashboard, storage
   failure is visible, and retry events cannot be mistaken for unique stalls.
+  Implemented for the receiver and automated local scope: malformed JSON,
+  invalid envelopes/events, oversized bodies, and unavailable storage now have
+  distinct 400/413/422/503 responses aligned with the client's drop/retry
+  policy.
+  `/health` reports process liveness while `/ready` probes Loki and retains the
+  latest write failure until a successful ingest. Real localhost HTTP coverage
+  exercises the body limit and storage state. The dashboard now counts one
+  `playback.stall.detected` per uninterrupted incident separately from
+  `playback.stall.reload` attempts, and labels foreground event-loop lag
+  precisely. Provisioning, retention, and named-volume wiring have static
+  regression coverage and an operational validation runbook. Keep P0-F open
+  until an actual Docker deployment passes empty/existing-volume restart,
+  storage-outage, provisioned-dashboard, and synthetic-event checks.
 - [ ] **P0-G — Final integration and device evidence.** Run typecheck, lint,
   full unit tests, both E2E projects, and the build against the final changes.
   Run service smoke if bundled-service code changes. Record actual device,

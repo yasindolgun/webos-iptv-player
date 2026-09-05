@@ -19,7 +19,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
       "id": 1,
       "options": {
         "colorMode": "value",
@@ -54,7 +54,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 0 },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
       "id": 2,
       "options": {
         "colorMode": "value",
@@ -64,12 +64,47 @@
       },
       "targets": [
         {
-          "expr": "sum(count_over_time({app=\"webos-iptv-player\", event=~\"playback.stall.*\"}[24h]))",
+          "expr": "sum(count_over_time({app=\"webos-iptv-player\", event=\"playback.stall.detected\"}[24h]))",
           "queryType": "instant",
           "refId": "A"
         }
       ],
-      "title": "Playback stalls in 24 hours",
+      "title": "Playback stall incidents in 24 hours",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "$datasource" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({app=\"webos-iptv-player\", event=\"playback.stall.reload\"}[24h]))",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Stall reload attempts in 24 hours",
       "type": "stat"
     },
     {
@@ -89,7 +124,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
       "id": 3,
       "options": {
         "colorMode": "value",
@@ -104,7 +139,7 @@
           "refId": "A"
         }
       ],
-      "title": "UI freezes in 24 hours",
+      "title": "Foreground UI lag events in 24 hours",
       "type": "stat"
     },
     {
@@ -156,5 +191,5 @@
   "timezone": "browser",
   "title": "webOS IPTV Overview",
   "uid": "webos-iptv-overview",
-  "version": 2
+  "version": 3
 }

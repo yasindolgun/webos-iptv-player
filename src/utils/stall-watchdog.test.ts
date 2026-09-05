@@ -18,16 +18,18 @@ const OPTS = { pollMs: 1000, freezeTicks: 3, maxReloads: 2 };
 
 let onReload: ReturnType<typeof vi.fn>;
 let onEscalate: ReturnType<typeof vi.fn>;
+let onDetected: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.useFakeTimers();
   onReload = vi.fn();
   onEscalate = vi.fn();
+  onDetected = vi.fn();
 });
 afterEach(() => { vi.useRealTimers(); });
 
 function run(probe: () => StallProbe, ticks: number): StallWatchdog {
-  const wd = new StallWatchdog({ probe, onReload, onEscalate, ...OPTS });
+  const wd = new StallWatchdog({ probe, onDetected, onReload, onEscalate, ...OPTS });
   wd.start();
   vi.advanceTimersByTime(OPTS.pollMs * ticks);
   return wd;
@@ -54,7 +56,7 @@ describe('StallWatchdog', () => {
         playing(0, 4), playing(1), playing(2),         // recovered: time advances from reset baseline
         frozen(2, 1), frozen(2, 1), frozen(2, 1),      // freezes again -> should reload, NOT escalate
       ]),
-      onReload, onEscalate, ...OPTS,
+      onDetected, onReload, onEscalate, ...OPTS,
     });
     wd.start();
     vi.advanceTimersByTime(OPTS.pollMs * 10);
@@ -113,6 +115,20 @@ describe('StallWatchdog', () => {
     });
   });
 
+  it('reports one incident across retries and a new one after recovery', () => {
+    run(scriptedProbe([
+      playing(5),
+      frozen(5), frozen(5), frozen(5),
+      frozen(0), frozen(0), frozen(0),
+      playing(1),
+      frozen(1), frozen(1), frozen(1),
+    ]), 11);
+    expect(onDetected).toHaveBeenCalledTimes(2);
+    expect(onReload).toHaveBeenCalledTimes(3);
+    expect(onDetected.mock.calls[0][0].reloadCount).toBe(0);
+    expect(onDetected.mock.calls[1][0].reloadCount).toBe(0);
+  });
+
   it('keeps a watchdog alive when onEscalate starts another session', () => {
     // Model a caller that starts another session from onEscalate. The restarted
     // timer must survive cleanup of the exhausted session and detect the freeze.
@@ -122,6 +138,7 @@ describe('StallWatchdog', () => {
     const wd = new StallWatchdog({
       probe: () => probeState,
       onReload: reload,
+      onDetected,
       onEscalate: () => {
         escalated++;
         wd.start();             // next channel's fresh watchdog

@@ -19,6 +19,7 @@ export interface StallRecovery {
 
 export interface StallWatchdogOptions {
   probe: () => StallProbe;
+  onDetected: (recovery: StallRecovery) => void;
   onReload: (recovery: StallRecovery) => void;
   onEscalate: (recovery: StallRecovery) => void;
   pollMs: number;
@@ -33,6 +34,7 @@ const HAVE_FUTURE_DATA = 3;
 
 export class StallWatchdog {
   private readonly probe: () => StallProbe;
+  private readonly onDetected: (recovery: StallRecovery) => void;
   private readonly onReload: (recovery: StallRecovery) => void;
   private readonly onEscalate: (recovery: StallRecovery) => void;
   private readonly pollMs: number;
@@ -43,9 +45,11 @@ export class StallWatchdog {
   private lastTime = -1;
   private frozenTicks = 0;
   private reloadCount = 0;
+  private incidentActive = false;
 
   constructor(opts: StallWatchdogOptions) {
     this.probe = opts.probe;
+    this.onDetected = opts.onDetected;
     this.onReload = opts.onReload;
     this.onEscalate = opts.onEscalate;
     this.pollMs = opts.pollMs;
@@ -58,6 +62,7 @@ export class StallWatchdog {
     this.lastTime = -1;
     this.frozenTicks = 0;
     this.reloadCount = 0;
+    this.incidentActive = false;
     this.timer = setInterval(() => this.tick(), this.pollMs);
   }
 
@@ -67,6 +72,7 @@ export class StallWatchdog {
       this.timer = null;
     }
     this.frozenTicks = 0;
+    this.incidentActive = false;
   }
 
   private tick(): void {
@@ -84,6 +90,7 @@ export class StallWatchdog {
       this.lastTime = p.currentTime;
       this.frozenTicks = 0;
       this.reloadCount = 0;
+      this.incidentActive = false;
       return;
     }
 
@@ -107,6 +114,10 @@ export class StallWatchdog {
       reloadCount: this.reloadCount,
       maxReloads: this.maxReloads,
     };
+    if (!this.incidentActive) {
+      this.incidentActive = true;
+      this.onDetected({ ...recovery });
+    }
     if (this.reloadCount < this.maxReloads) {
       this.reloadCount++;
       recovery.reloadCount = this.reloadCount;
